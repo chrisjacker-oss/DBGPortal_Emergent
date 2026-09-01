@@ -1,0 +1,52 @@
+{
+  "summary": "Full e2e test of SignCraft sign-shop CRM (backend + frontend). Backend: 22 pytest cases across auth (login/register/me/refresh/lockout/bcrypt), RBAC, materials/customers/estimates/invoices/bills CRUD, estimate->invoice convert, dashboard math, Xero CSV exports, portal orders + reorder lifecycle -> 21 passed / 1 failed (invalid ObjectId -> 500). Frontend: admin login->dashboard KPIs, all 8 nav routes, Materials CRUD (create/edit/delete, margin %), Customers CRUD, Estimates (material autofill, 2 line items, 10% tax totals $195/$19.50/$214.50, edit, convert->INV, delete), Invoices (mark paid, delete, Xero CSV download), Payables (record bill, mark paid, edit keeps PAID, Xero bills CSV, delete, stat cards recompute), Receivables (only unpaid listed, Receive -> empty state + collected updates), customer self-registration -> /portal with role customer, RBAC redirect /dashboard->/portal + sidebar reduced to 1 link, reorder submit -> visible in portal and staff Reorders, staff advance requested->processing->completed, logout. All core flows PASS.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PUT/DELETE/PATCH /api/{customers,materials,estimates,invoices,bills,reorders}/{id}", "issue": "Malformed id raises bson.errors.InvalidId -> HTTP 500 (traceback in backend.err.log). Should validate id and return 400/404.", "priority": "HIGH"},
+      {"endpoint": "GET /api/materials", "issue": "Guarded only by get_current_user, so a customer-role account can read internal cost + supplier + stock for every material (verified: cost 1.2 returned to a freshly registered customer). Restrict to staff or strip cost/supplier for customers.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force lockout keyed on request.client.host, which behind the k8s ingress is the proxy pod IP (multiple replicas). Observed 7 wrong passwords all returning 401 (attempts split across 2 proxy IPs); 429 only appeared after ~16 tries. Use X-Forwarded-For (first hop) and/or count per-email. Also locked_until is rewritten on every failure even below the threshold, and count never expires without a successful login."},
+      {"endpoint": "POST /api/auth/logout", "issue": "Depends on get_current_user, so logging out with an expired/invalid access token returns 401 and the cookies are never cleared."},
+      {"endpoint": "POST /api/estimates, /api/invoices, /api/bills", "issue": "Document numbers come from count_documents()+1, so numbers are reused after a delete (reproduced: new estimate got EST-0002 twice). Use an atomic counters collection."},
+      {"endpoint": "PUT /api/invoices/{id}, PUT /api/estimates/{id}", "issue": "Full-replace update with Pydantic defaults: a client omitting 'status' silently resets a paid invoice to 'unpaid' and paid_at is left stale (never cleared on un-paying)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard", "issue": "No loading state: on first paint all KPI cards render $0.00 and the counters render '—' before /api/dashboard resolves, which briefly shows misleading zeros.", "selector": "[data-testid='stat-receivable']", "priority": "MEDIUM"},
+      {"component": "Materials edit dialog", "issue": "React console error: '`value` prop on input should not be null' when a material has stock/category null (uncontrolled->controlled). Use '' fallback.", "selector": "[data-testid='mat-stock']", "priority": "LOW"},
+      {"component": "Dialogs (DocBuilder / Material / Bill / Customer / Reorder)", "issue": "Radix a11y warning: 'Missing Description or aria-describedby for DialogContent' on every dialog open.", "selector": "[role='dialog']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Reorder dialog (Portal)", "issues": ["Reorder title input has no data-testid (only reorder-notes and submit-reorder-btn do); had to target the first input in the dialog."]},
+      {"screen": "Global", "issues": ["Delete actions on materials/customers/estimates/invoices/bills use window.confirm rather than an in-app confirm dialog (works, but inconsistent with the shadcn design system)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/backend/tests/cleanup_test_data.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Validate ObjectId path params (helper -> 400/404) instead of 500 on all id-based routes",
+    "Restrict GET /api/materials cost/supplier data from customer-role users (or require_staff)",
+    "Fix login lockout key to use X-Forwarded-For / per-email counting; don't extend locked_until below threshold",
+    "Make logout cookie clearing work without a valid access token",
+    "Replace count_documents()+1 numbering with an atomic sequence to avoid duplicate EST/INV/BILL numbers",
+    "Add loading skeleton to Dashboard (and avoid rendering $0.00 pre-fetch); fix null value on material inputs",
+    "Add data-testid to the reorder title input; add DialogDescription/aria-describedby to dialogs"
+  ],
+  "critical_code_review_comments": [
+    "server.py (661 lines) is a single module - split into routers (auth, sales, ap_ar, portal, export) before it grows further",
+    "Every ObjectId(...) call on a path param is unguarded -> guaranteed 500 on bad input; add a shared parse_object_id dependency",
+    "All list endpoints use to_list(1000/2000) with no pagination or per-customer scoping - will not scale and staff endpoints load everything on each page mount",
+    "@app.on_event('startup'/'shutdown') is deprecated in current FastAPI - migrate to lifespan",
+    "Auth playbook checks verified OK: bcrypt hash stored as $2b$..., httpOnly+Secure+SameSite=none cookies set on login, CORS allow_credentials=True with explicit origins (no wildcard), seed_admin updates the existing admin password when it changed"
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py", "/app/backend/tests/cleanup_test_data.py"],
+  "success_rate": {"backend": "95%", "frontend": "100%"},
+  "seed_data_creation": "Created and then removed TEST_ prefixed materials, customers, estimates, invoices, bills, reorders and test_* customer users; ran /app/backend/tests/cleanup_test_data.py so demo seed data (2 customers, 3 materials, EST-0001, INV-0001, BILL-0001) is intact. INV-0001 was marked paid during AR testing and restored to unpaid.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin chrisjacker@gmail.com / SignShop2026! (from /app/memory/test_credentials.md); customer accounts are created ad-hoc via register and cleaned up",
+  "context_for_next_testing_agent": "Regression suite: /app/backend/tests/backend_test.py (pytest.ini runs it with xdist; TestDashboard math can flake if other tests create invoices in parallel - re-run with -n 0 to confirm). Cleanup helper: /app/backend/tests/cleanup_test_data.py (deletes TEST_* docs and test_* users). Known open items: invalid-ObjectId 500 (test_invalid_id_handling is the failing test), material cost exposure to customer role, lockout keyed on proxy IP. Frontend flows all verified via Playwright; note the Receivables table always renders one row (the 'Nothing outstanding' empty-state row), so assert on text not row count.",
+  "rca_of_the_issue": "500s: path-param ids are passed straight into bson ObjectId(); a non-hex string raises bson.errors.InvalidId which FastAPI turns into 500 (confirmed in /var/log/supervisor/backend.err.log). Lockout unreliability: identifier = f'{request.client.host}:{email}' and the ingress presents different pod IPs (10.231.129.137/.138 observed), so the failure counter is split and the 5-attempt threshold is not reached in 5 tries. Material cost leak: list_materials depends on get_current_user rather than require_staff and returns the raw document including cost/supplier."
+}

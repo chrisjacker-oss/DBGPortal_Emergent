@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    margin: 0;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, .font-display {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.font-mono, code {
+    font-family: 'IBM Plex Mono', monospace;
+}
+
+.overline {
+    font-family: 'IBM Plex Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+@layer base {
+    :root {
+        --background: 240 6% 97%;
+        --foreground: 0 0% 4%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 4%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 4%;
+        --primary: 0 0% 4%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 240 5% 94%;
+        --secondary-foreground: 0 0% 4%;
+        --muted: 240 5% 94%;
+        --muted-foreground: 240 4% 42%;
+        --accent: 240 5% 94%;
+        --accent-foreground: 0 0% 4%;
+        --destructive: 0 72% 48%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 220 13% 88%;
+        --input: 220 13% 88%;
+        --ring: 0 0% 4%;
+        --radius: 0.125rem;
+    }
+    .dark {
+        --background: 0 0% 6%;
+        --foreground: 0 0% 96%;
+        --card: 0 0% 9%;
+        --card-foreground: 0 0% 96%;
+        --popover: 0 0% 9%;
+        --popover-foreground: 0 0% 96%;
+        --primary: 0 0% 96%;
+        --primary-foreground: 0 0% 6%;
+        --secondary: 0 0% 14%;
+        --secondary-foreground: 0 0% 96%;
+        --muted: 0 0% 14%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 0 0% 14%;
+        --accent-foreground: 0 0% 96%;
+        --destructive: 0 62% 45%;
+        --destructive-foreground: 0 0% 96%;
+        --border: 0 0% 18%;
+        --input: 0 0% 18%;
+        --ring: 0 0% 83%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+::selection {
+    background: #06B6D4;
+    color: #fff;
+}

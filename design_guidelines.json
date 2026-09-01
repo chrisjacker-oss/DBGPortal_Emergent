@@ -1,0 +1,130 @@
+{
+  "theme_strategy": "Light mode preferred, but with dark mode support. For this industrial CRM context, the preferred approach is 'Swiss Brutalist' - a high-contrast layout emphasizing structural lines, pure black and white surfaces, and bright functional color accents.",
+  "archetype": "ARCHETYPE 4: SWISS & HIGH-CONTRAST",
+  "typography": {
+    "headings": {
+      "font": "IBM Plex Sans",
+      "weights": ["400", "600", "700"],
+      "classes": "font-sans tracking-tight leading-none text-foreground"
+    },
+    "body": {
+      "font": "Inter",
+      "weights": ["400", "500"],
+      "classes": "font-sans leading-relaxed text-foreground"
+    },
+    "labels_and_overlines": {
+      "font": "IBM Plex Mono",
+      "classes": "uppercase tracking-[0.2em] text-xs font-bold text-muted-foreground"
+    },
+    "instructions": "BANNED: Inter/Roboto/Open Sans for headings. Use IBM Plex Sans for that technical, print-shop precision feel. Keep line-height tight for headers, loose for body. Maximum fluid size for H1 is text-5xl."
+  },
+  "colors": {
+    "background": "#F7F7F8",
+    "foreground": "#0A0A0A",
+    "card": "#FFFFFF",
+    "card_foreground": "#0A0A0A",
+    "primary": "#0A0A0A",
+    "primary_foreground": "#FFFFFF",
+    "border": "#E5E7EB",
+    "accents_for_data": {
+      "cyan": "#06B6D4",
+      "magenta": "#D946EF",
+      "yellow": "#EAB308"
+    },
+    "status": {
+      "success": "#16A34A",
+      "warning": "#F59E0B",
+      "destructive": "#DC2626"
+    },
+    "instructions": "Color is Function Only. 95% of the UI should be monochrome. Use the 'accents_for_data' selectively for metrics, charts, or tagging to represent the CMYK print industry context. Never use pure #000000 or #808080 without a slight blue/orange tint."
+  },
+  "visual_enhancers": {
+    "surfaces": "Grid Borders (The Technical Look). Expose the skeleton. Use container layout with border-collapse and 1px border-border/40 on the right and bottom of grid items to create a dense dashboard feel.",
+    "shadows": "Replace soft shadows with 1px solid strokes. Tactical Minimalism.",
+    "radius": "Sharp edges. rounded-none or maximum rounded-sm (4px) across all components.",
+    "glassmorphism": "If used (e.g., sticky header), MUST have background opacity (bg-white/70) and backdrop-blur-xl. NEVER use complete transparent background in header or dropdowns."
+  },
+  "grids_and_layouts": {
+    "dashboard_mode": "High Density Grid. Base grid-cols-1 md:grid-cols-3 lg:grid-cols-4. Gap tight (gap-4 or gap-px if using border-collapse).",
+    "estimating_view": "F-pattern layout. Top-left for primary KPI (Amount Due/Estimate Total), top row for KPIs, main body for structured line-item tables.",
+    "spacing": "Generous Spacing inside containers. Containers with borders MUST have internal padding (p-6 or p-8) to prevent text collision. Mobile-first grids always."
+  },
+  "components": [
+    {
+      "name": "Navigation & Sidebar",
+      "component_path": "/app/frontend/src/components/Navigation.jsx",
+      "instructions": "Collapsible left navigation with icon-only shrink states. Ensure the header has a solid or glassmorphism background (never transparent)."
+    },
+    {
+      "name": "Quotes / Estimating Builder",
+      "component_path": "/app/frontend/src/components/EstimatingBuilder.jsx",
+      "instructions": "Use Shadcn Table. Dense layout for line items, inputs nested in cells. Avoid heavy cards."
+    },
+    {
+      "name": "Materials Database / Catalog",
+      "component_path": "/app/frontend/src/components/MaterialsCatalog.jsx",
+      "instructions": "Grid view for materials using the High Density Grid. Display cost/pricing prominently."
+    },
+    {
+      "name": "Invoicing & Financial Dashboards",
+      "component_path": "/app/frontend/src/components/FinancialDashboard.jsx",
+      "instructions": "Use Tables over charts for exact billing. Show top summary KPIs for AP/AR. Provide Xero-compatible CSV export button (distinct CTA)."
+    }
+  ],
+  "motion_and_interactions": {
+    "hover_states": "ALWAYS explicitly set text color on hover (e.g., hover:bg-slate-900 hover:text-white). Darken border color.",
+    "transitions": "Use specific properties (transition: transform 0.2s ease, opacity 0.2s ease). DO NOT use transition: all.",
+    "micro_interactions": "Subtle interactions like 1px border shift or slight lift (-translate-y-px) on card hover."
+  },
+  "accessibility": {
+    "contrast": "Normal text minimum 4.5:1. Large text 3:1. Interactive states must maintain high contrast.",
+    "focus": "Focus states must have HIGHER contrast (e.g., focus:ring-2 focus:ring-primary).",
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute in kebab-case (e.g., data-testid='add-line-item-btn')."
+  },
+  "media_and_icons": {
+    "icon_library": "@phosphor-icons/react",
+    "instructions": "Use Phosphor Icons for a crisp, dense dashboard look. Install using `yarn add @phosphor-icons/react`.",
+    "image_urls": {
+      "login_hero": {
+        "url": "https://images.unsplash.com/photo-1745088913458-2fa27fe87a55?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwyfHxzaWduJTIwcHJpbnQlMjBzaG9wJTIwd2lkZXxlbnwwfHx8fDE3ODgyOTE0MTh8MA&ixlib=rb-4.1.0&q=85",
+        "category": "Authentication/Landing page background",
+        "description": "Sign shop environment for contextual login page."
+      },
+      "material_vinyl_swatches": {
+        "url": "https://images.unsplash.com/photo-1739146051825-0a1e54e6f1c6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwyfHx2aW55bCUyMHJvbGxzJTIwcHJpbnRpbmclMjBtYXRlcmlhbHN8ZW58MHx8fHwxNzg4MjkxNDE4fDA&ixlib=rb-4.1.0&q=85",
+        "category": "Materials Database Placeholder",
+        "description": "Colorful paper/vinyl swatches for material catalog items."
+      },
+      "material_printer": {
+        "url": "https://images.unsplash.com/photo-1693031630146-568e2f72db0e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHx2aW55bCUyMHJvbGxzJTIwcHJpbnRpbmclMjBtYXRlcmlhbHN8ZW58MHx8fHwxNzg4MjkxNDE4fDA&ixlib=rb-4.1.0&q=85",
+        "category": "Materials Database Placeholder",
+        "description": "Wide format printer for equipment or production view placeholders."
+      },
+      "material_rolls": {
+        "url": "https://images.unsplash.com/photo-1676474508989-40ddb421e426?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwzfHx2aW55bCUyMHJvbGxzJTIwcHJpbnRpbmclMjBtYXRlcmlhbHN8ZW58MHx8fHwxNzg4MjkxNDE4fDA&ixlib=rb-4.1.0&q=85",
+        "category": "Materials Database Placeholder",
+        "description": "Printing machinery / rolls."
+      }
+    }
+  },
+  "3d_libraries": {
+    "decision": "Not recommended for this CRM/ERP. Focus on clear 2D data visualization using Recharts or Shadcn chart components.",
+    "instructions": "Data density and clarity take priority over immersion. Avoid heavy 3D canvases."
+  },
+  "universal_guidelines_for_main_agent": [
+    "You are building a Sign Shop CRM/ERP with Estimating, Materials DB, Invoicing, AP/AR, and a Customer Reorder Portal.",
+    "Avoid the 'AI slop' aesthetic. Implement a 'Swiss Brutalist' design: monochrome structures, exposed grid lines, high contrast typography, with CMYK-inspired accent colors for data points.",
+    "CRITICAL: Do NOT use .tsx. Use .js or .jsx files. Provide the guidelines and components for JavaScript React.",
+    "CRITICAL: DO NOT use complete transparent backgrounds in headers, overlays, or dropdowns. Always use bg-background or backdrop-blur.",
+    "DO NOT use generic centered layouts. Left-align dense data, labels, and forms. .App { text-align: center; } is banned.",
+    "DO NOT apply 'transition: all'. Explicitly state transition properties.",
+    "Use sharp, modern button styles (rounded-none or max rounded-sm) matching the industrial theme.",
+    "NEVER use AI assistant emojis (🤖, 💡, 🔮) as icons. Use the Phosphor Icons library exclusively.",
+    "All interactive elements and key informational elements MUST include a `data-testid` attribute (e.g., data-testid='submit-estimate-btn').",
+    "Use pure HTML + Tailwind for structural layouts, but utilize Shadcn UI components (heavily customized for JS) for forms, inputs, dialogs, and tables.",
+    "Use `sonner` for toasts.",
+    "Ensure the Xero export button and Estimates builder are distinct and highly accessible.",
+    "If creating a customer portal vs internal CRM view, use the same design system but adjust the complexity (simpler cards for customers, dense tables for staff)."
+  ],
+  "general_ui_ux_design_guidelines": "Ensure a frictionless F-pattern scanning experience for financial dashboards. Place top-level metrics (Total Receivables, Pending Estimates) at the top left. Use progressive disclosure: show summary cards first, then allow drill-down into detailed line-item tables. Color should exclusively communicate state (Success/Warning/Destructive) or differentiate chart series, not for decoration. Respect spacing: dense does not mean cramped; use adequate padding inside bounded containers."
+}
