@@ -213,6 +213,11 @@ class SettingsInput(BaseModel):
     machine_rate_per_hr: float = 35.0
     machine_sqft_per_hr: float = 150.0
     default_markup: float = 40.0
+    company_name: Optional[str] = "DBG Signs, Inc."
+    company_address: Optional[str] = ""
+    company_phone: Optional[str] = ""
+    company_web: Optional[str] = ""
+    company_email: Optional[str] = ""
 
 
 class StaffInput(BaseModel):
@@ -244,7 +249,9 @@ def clean(doc: dict) -> dict:
     return doc
 
 
-DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0}
+DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0,
+                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
+_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup"}
 
 
 async def get_settings() -> dict:
@@ -252,7 +259,7 @@ async def get_settings() -> dict:
     if not s:
         await db.settings.insert_one({"key": "shop", **DEFAULT_SETTINGS})
         return dict(DEFAULT_SETTINGS)
-    return {k: float(s.get(k, v)) for k, v in DEFAULT_SETTINGS.items()}
+    return {k: (float(s.get(k, v)) if k in _NUMERIC_SETTINGS else (s.get(k, v) if s.get(k, v) is not None else v)) for k, v in DEFAULT_SETTINGS.items()}
 
 
 def material_out(doc: dict) -> dict:
@@ -1137,7 +1144,12 @@ def _money(n) -> str:
     return "${:,.2f}".format(float(n or 0))
 
 
-def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str) -> str:
+def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
+    contact = " &nbsp;·&nbsp; ".join([escape(str(x)) for x in contact_bits if x])
+    contact_html = f'<div style="color:#6B7280;font-size:11px;margin-top:6px">{contact}</div>' if contact else ""
     sub_raw = float(doc.get("subtotal", 0))
     disc_amt = float(doc.get("discount_amount", 0))
     factor = (sub_raw - disc_amt) / sub_raw if sub_raw else 1.0
@@ -1190,8 +1202,9 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str)
         f'<tr><td style="padding:22px 32px 28px">'
         f'<p style="margin:0 0 4px">Questions about this {escape(kind_label.lower())}? Just reply to this email.</p>'
         f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
-        f'<div style="font-weight:bold">DBG Signs, Inc.</div>'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
         f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'{contact_html}'
         f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
         f'</div></td></tr>'
         f'</table></div>{pixel}'
@@ -1206,7 +1219,7 @@ async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
         raise HTTPException(status_code=400, detail="This customer has no email address on file")
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     token = secrets.token_urlsafe(16)
-    html = render_doc_email(kind_label, doc, cname, token)
+    html = render_doc_email(kind_label, doc, cname, token, await get_settings())
     email_id = await send_email(to=to, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
     await db.email_tracking.insert_one({"token": token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
     await collection.update_one({"_id": oid(doc_id)}, {"$set": {
@@ -1249,7 +1262,7 @@ async def track_open(token: str):
 # ---------------------------------------------------------------------------
 # PDF generation
 # ---------------------------------------------------------------------------
-def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_bytes: Optional[bytes] = None) -> bytes:
+def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_bytes: Optional[bytes] = None, company: Optional[dict] = None) -> bytes:
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     W, H = letter
@@ -1257,6 +1270,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     ink = colors.HexColor("#0A0A0A"); cyan = colors.HexColor("#06B6D4")
     grayline = colors.HexColor("#E5E7EB"); soft = colors.HexColor("#6B7280"); rowbg = colors.HexColor("#F7F7F8")
     ax = R  # right edge for amounts
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
     sub_raw = float(doc.get("subtotal", 0))
     disc_amt = float(doc.get("discount_amount", 0))
     factor = (sub_raw - disc_amt) / sub_raw if sub_raw else 1.0
@@ -1267,7 +1282,7 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         c.drawImage(logo, L, H - 150, width=180, height=104,
                     preserveAspectRatio=True, mask="auto", anchor="sw")
     except Exception:
-        c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawString(L, H - 96, "DBG Signs, Inc.")
+        c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawString(L, H - 96, cname)
 
     # Document label + number (top-right)
     c.setFillColor(ink); c.setFont("Helvetica-Bold", 28); c.drawRightString(R, H - 82, kind_label.upper())
@@ -1349,8 +1364,14 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFillColor(soft); c.setFont("Helvetica", 8)
     tline = f"Payment terms: {terms}.  " if terms else ""
     c.drawString(L, fy + 10, f"{tline}Thank you for your business.")
-    c.setFillColor(ink); c.setFont("Helvetica-Bold", 9); c.drawString(L, fy - 5, "DBG Signs, Inc.")
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 9); c.drawString(L, fy - 5, cname)
     c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, fy - 17, "Image Is Everything")
+    cy = fy - 5
+    contact = [co.get("company_address"), co.get("company_phone"),
+               " · ".join([x for x in [co.get("company_web"), co.get("company_email")] if x])]
+    for line in contact:
+        if line:
+            c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawRightString(R, cy, str(line)); cy -= 11
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 
@@ -1363,7 +1384,7 @@ def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Res
 async def _staff_pdf(collection, doc_id: str, label: str) -> Response:
     doc = await get_or_404(collection, doc_id, label)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
-    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes()))
+    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings()))
 
 
 @api_router.get("/invoices/{iid}/pdf")
@@ -1391,7 +1412,7 @@ async def public_pdf(token: str):
         raise HTTPException(status_code=404, detail="Document not found")
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     label = {"invoices": "Invoice", "estimates": "Estimate", "sales_orders": "Sales Order"}.get(rec["collection"], "Document")
-    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes()), disposition="inline")
+    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings()), disposition="inline")
 
 
 # ---------------------------------------------------------------------------

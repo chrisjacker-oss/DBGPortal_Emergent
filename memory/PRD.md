@@ -36,7 +36,8 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - Stripe integration (online invoice payment). Playbook not yet pulled; use env Stripe test key, emergentintegrations.
 
 ## Recently completed
-- **Logo upload** in Settings (stored in MongoDB as base64, served via GET /api/pub/logo) — appears on all quotes, sales orders and invoices (PDF + email); "Use default" reverts.
+- **Company info in Settings** (name, address, phone, web, email) — persisted in shop settings and rendered on quotes, sales orders and invoices (PDF footer + email footer).
+- **Logo upload** in Settings (stored in MongoDB base64, served via GET /api/pub/logo) — appears on all documents; "Use default" reverts.
 - **Per-line-item details** field (specifics) on estimates/SOs/invoices — shown in the builder, PDF (gray sub-line) and email.
 - **Material categories** are now a preset dropdown: Cut Vinyl, Digital Vinyl, Banner, Substrates, Laminates.
 - Modern mailable invoice/estimate/SO redesign (PDF + email) with logo; $/sqft and tier-discount hidden on customer docs (discount applied at line level so totals reconcile); commission on full cost subtotal (material + shop labor + machine).
