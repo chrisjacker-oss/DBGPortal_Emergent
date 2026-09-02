@@ -1553,6 +1553,30 @@ async def unpay_commissions(payload: CommissionPayInput, user: dict = Depends(re
     return {"updated": res.modified_count}
 
 
+@api_router.get("/commissions/paid/pdf")
+async def paid_commissions_pdf(user: dict = Depends(require_staff)):
+    q = {"commission_paid": True}
+    scope_label = ""
+    if user["role"] == "salesman":
+        q["salesman_id"] = user["id"]
+        scope_label = user.get("name") or ""
+    ests = await db.estimates.find(q).sort("commission_paid_at", -1).to_list(5000)
+    rows = []
+    for e in ests:
+        e = await enrich_customer(clean(e))
+        base = float(e.get("commission_base") if e.get("commission_base") is not None else (e.get("subtotal") or 0))
+        rate = float(e.get("commission_rate") or 0)
+        rows.append({
+            "number": e.get("number"), "customer_name": e.get("customer_name"),
+            "salesman_name": e.get("salesman_name") or "Unassigned",
+            "po_number": e.get("commission_po"), "paid_at": e.get("commission_paid_at"),
+            "commission_amount": float(e.get("commission_amount") or round(base * rate / 100.0, 2)),
+        })
+    pdf = build_commissions_pdf(rows, await get_settings(), await get_logo_bytes(), scope_label)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'attachment; filename="paid-commissions.pdf"'})
+
+
 # ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
@@ -2314,6 +2338,62 @@ def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = No
     c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
+
+
+def build_commissions_pdf(rows: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None, scope_label: str = "") -> bytes:
+    co = company or {}
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4"); mag = colors.HexColor("#A21CAF")
+    y = H - 70
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 40, width=150, height=86, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "COMMISSIONS · PAID")
+    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 16, datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    y -= 70
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 24
+    if scope_label:
+        c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "SALESMAN")
+        y -= 14; c.setFillColor(ink); c.setFont("Helvetica-Bold", 13); c.drawString(L, y, scope_label); y -= 24
+    c.setFillColor(ink); c.rect(L, y - 6, R - L, 22, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8)
+    c.drawString(L + 8, y + 2, "ESTIMATE"); c.drawString(L + 92, y + 2, "CUSTOMER")
+    c.drawString(L + 232, y + 2, "SALESMAN"); c.drawString(L + 330, y + 2, "PO #")
+    c.drawString(L + 408, y + 2, "PAID"); c.drawRightString(R - 8, y + 2, "COMMISSION")
+    y -= 28
+    total = 0.0
+    c.setFont("Helvetica", 9)
+    for i, r in enumerate(rows):
+        if i % 2 == 1:
+            c.setFillColor(colors.HexColor("#F3F4F6")); c.rect(L, y - 7, R - L, 22, fill=1, stroke=0)
+        total = round(total + float(r.get("commission_amount") or 0), 2)
+        c.setFillColor(ink); c.setFont("Helvetica", 9)
+        c.drawString(L + 8, y, str(r.get("number") or "")[:12])
+        c.drawString(L + 92, y, str(r.get("customer_name") or "")[:22])
+        c.drawString(L + 232, y, str(r.get("salesman_name") or "")[:16])
+        c.drawString(L + 330, y, str(r.get("po_number") or "")[:14])
+        c.drawString(L + 408, y, str(r.get("paid_at") or "")[:10])
+        c.drawRightString(R - 8, y, _money(r.get("commission_amount", 0)))
+        y -= 22
+        if y < 110:
+            c.showPage(); y = H - 90; c.setFont("Helvetica", 9)
+    if not rows:
+        c.setFillColor(soft); c.drawString(L + 8, y, "No paid commissions on record."); y -= 22
+    c.setStrokeColor(colors.HexColor("#D1D5DB")); c.setLineWidth(1); c.line(R - 260, y + 4, R, y + 4); y -= 18
+    c.setFillColor(ink); c.rect(R - 260, y - 7, 260, 28, fill=1, stroke=0)
+    c.setFillColor(mag); c.rect(R - 260, y - 7, 5, 28, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(R - 244, y + 2, "TOTAL PAID")
+    c.setFont("Helvetica-Bold", 14); c.drawRightString(R - 10, y + 1, _money(total))
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
+    c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
 
 
 def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Response:

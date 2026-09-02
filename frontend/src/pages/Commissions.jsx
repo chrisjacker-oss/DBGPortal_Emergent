@@ -5,7 +5,8 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatCard, StatusBadge } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { CheckCircle, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { downloadFile } from "@/lib/download";
+import { CheckCircle, FilePdf } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 export default function Commissions() {
@@ -13,7 +14,7 @@ export default function Commissions() {
   const isAdmin = user?.role === "admin";
   const [data, setData] = useState({ rows: [], by_salesman: [], total_earned: 0, total_pending: 0, total_paid: 0 });
   const [tab, setTab] = useState("unpaid"); // unpaid | paid
-  const [sel, setSel] = useState({}); // id -> bool
+  const [sel, setSel] = useState({}); // id -> bool (unpaid tab only)
   const [payOpen, setPayOpen] = useState(false);
   const [po, setPo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,11 +23,14 @@ export default function Commissions() {
   useEffect(() => { load(); }, []);
   useEffect(() => { setSel({}); }, [tab]);
 
-  const rows = useMemo(() => data.rows.filter((r) => (tab === "paid" ? r.paid : !r.paid)), [data.rows, tab]);
+  const isPaidTab = tab === "paid";
+  const showChecks = isAdmin && !isPaidTab;
+  const rows = useMemo(() => data.rows.filter((r) => (isPaidTab ? r.paid : !r.paid)), [data.rows, isPaidTab]);
   const selectedIds = Object.keys(sel).filter((k) => sel[k]);
   const allChecked = rows.length > 0 && rows.every((r) => sel[r.id]);
   const toggleAll = () => { const next = {}; if (!allChecked) rows.forEach((r) => (next[r.id] = true)); setSel(next); };
   const toggle = (id) => setSel((s) => ({ ...s, [id]: !s[id] }));
+  const colCount = 3 + (isPaidTab ? 2 : 1) + 3 + (showChecks ? 1 : 0);
 
   const markPaid = async () => {
     if (!po.trim()) { toast.error("Enter a PO number"); return; }
@@ -39,14 +43,9 @@ export default function Commissions() {
     finally { setBusy(false); }
   };
 
-  const moveToUnpaid = async () => {
-    setBusy(true);
-    try {
-      const { data: res } = await api.post("/commissions/unpay", { estimate_ids: selectedIds });
-      toast.success(`Moved ${res.updated} commission(s) back to unpaid`);
-      setSel({}); load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
-    finally { setBusy(false); }
+  const exportPdf = async () => {
+    try { await downloadFile("/commissions/paid/pdf", "paid-commissions.pdf", "application/pdf"); }
+    catch { toast.error("Export failed"); }
   };
 
   const TabBtn = ({ id, label }) => (
@@ -105,26 +104,26 @@ export default function Commissions() {
               <TabBtn id="unpaid" label="Unpaid" />
               <TabBtn id="paid" label="Paid" />
             </div>
-            {isAdmin && selectedIds.length > 0 && (
-              <div className="pb-2">
-                {tab === "unpaid" ? (
-                  <Btn onClick={() => setPayOpen(true)} data-testid="mark-paid-btn"><CheckCircle size={16} weight="bold" /> Mark {selectedIds.length} Paid</Btn>
-                ) : (
-                  <Btn variant="outline" onClick={moveToUnpaid} disabled={busy} data-testid="move-unpaid-btn"><ArrowCounterClockwise size={16} weight="bold" /> Move {selectedIds.length} to Unpaid</Btn>
-                )}
-              </div>
-            )}
+            <div className="pb-2 flex gap-2">
+              {showChecks && selectedIds.length > 0 && (
+                <Btn onClick={() => setPayOpen(true)} data-testid="mark-paid-btn"><CheckCircle size={16} weight="bold" /> Mark {selectedIds.length} Paid</Btn>
+              )}
+              {isPaidTab && (
+                <Btn variant="outline" onClick={exportPdf} data-testid="export-commissions-pdf-btn"><FilePdf size={16} weight="bold" /> Export PDF</Btn>
+              )}
+            </div>
           </div>
 
           <div className="border border-border bg-card">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left overline text-muted-foreground">
-                  {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="comm-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
+                  {showChecks && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="comm-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                   <th className="px-6 py-3 font-mono">Estimate</th>
                   <th className="px-6 py-3 font-mono">Customer</th>
                   <th className="px-6 py-3 font-mono">Salesman</th>
-                  {tab === "paid" ? <th className="px-6 py-3 font-mono">PO #</th> : <th className="px-6 py-3 font-mono">Status</th>}
+                  {isPaidTab ? <th className="px-6 py-3 font-mono">PO #</th> : <th className="px-6 py-3 font-mono">Status</th>}
+                  {isPaidTab && <th className="px-6 py-3 font-mono">Paid Date</th>}
                   <th className="px-6 py-3 font-mono text-right">Sale Base</th>
                   <th className="px-6 py-3 font-mono text-right">Rate</th>
                   <th className="px-6 py-3 font-mono text-right">Commission</th>
@@ -133,19 +132,20 @@ export default function Commissions() {
               <tbody data-testid="commission-rows">
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
-                    {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r.id)} data-testid={`comm-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
+                    {showChecks && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r.id)} data-testid={`comm-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                     <td className="px-6 py-3 font-mono">{r.number}<div className="text-xs text-muted-foreground font-sans">{r.title}</div></td>
                     <td className="px-6 py-3">{r.customer_name}</td>
                     <td className="px-6 py-3">{r.salesman_name}</td>
-                    {tab === "paid"
+                    {isPaidTab
                       ? <td className="px-6 py-3"><span className="font-mono text-xs border border-[#0E7490]/30 bg-[#06B6D4]/10 text-[#0E7490] px-2 py-0.5" data-testid={`comm-po-${r.id}`}>PO {r.po_number || "—"}</span></td>
                       : <td className="px-6 py-3"><StatusBadge status={r.earned ? "approved" : r.status} /></td>}
+                    {isPaidTab && <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`comm-paid-date-${r.id}`}>{(r.paid_at || "").slice(0, 10) || "—"}</td>}
                     <td className="px-6 py-3 text-right font-mono">{currency(r.base)}</td>
                     <td className="px-6 py-3 text-right font-mono">{r.commission_rate}%</td>
                     <td className="px-6 py-3 text-right font-mono font-semibold text-[#A21CAF]">{currency(r.commission_amount)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={isAdmin ? 8 : 7} className="px-6 py-10 text-center text-muted-foreground">{tab === "paid" ? "No paid commissions yet." : "No unpaid commissions."}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={colCount} className="px-6 py-10 text-center text-muted-foreground">{isPaidTab ? "No paid commissions yet." : "No unpaid commissions."}</td></tr>}
               </tbody>
             </table>
           </div>
