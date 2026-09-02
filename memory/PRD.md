@@ -32,11 +32,13 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - MEDIUM: Salesman dashboard shows dead "Record Bill" / "Add Material" quick actions; dashboard "payable" figure not gated to admin.
 - LOW: 1-cent FE/BE rounding mismatch in DocBuilder preview; add DialogDescription for a11y.
 
-## PENDING REQUESTS (requested, NOT implemented this session)
-- Remove $/sqft column from customer-facing estimates/sales orders/invoices.
-- Hide the tier discount on customer-facing documents; show only material cost, subtotal, and sqft used.
-- Modern/professional redesign of the estimate/SO/invoice documents sent to customers (PDF + email).
+## PENDING REQUESTS (requested, NOT implemented)
 - Stripe integration (online invoice payment). Playbook not yet pulled; use env Stripe test key, emergentintegrations.
+
+## Recently completed
+- Modern mailable invoice/estimate/SO redesign (PDF + email) with DBG logo (/app/backend/assets/dbg_logo.jpg, LOGO_URL for email), Bill To / meta / dark table / cyan Amount-Due band / footer.
+- Removed $/sqft and the tier-discount line from customer-facing documents; discount applied at line level so line amounts, subtotal, tax and total reconcile ("actual cost" shown).
+- Confirmed commission is calculated on the full cost subtotal (material + shop labor + machine, pre-tax).
 
 ## Backlog
 - Split server.py into routers; add search indexes; stamp net_terms onto docs at creation (historical PDF accuracy); require due_date for dunning.

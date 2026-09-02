@@ -23,6 +23,8 @@ import httpx
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.lib.utils import ImageReader
+from reportlab.lib import colors
 from bson import ObjectId
 from pymongo import ReturnDocument
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
@@ -1005,6 +1007,8 @@ EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "DBG Signs, Inc.")
 PUBLIC_BASE_URL = os.environ.get("FRONTEND_URL", "")
+LOGO_PATH = ROOT_DIR / "assets" / "dbg_logo.jpg"
+LOGO_URL = "https://static.prod-images.emergentagent.com/jobs/ec6bd2ae-6f93-4a9d-865b-45f84531fa3f/images/1ba95998d22f513a4203664781b3ee2951299feaef457d27f5664136525cb3e9.jpeg"
 
 _SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
 _HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
@@ -1097,39 +1101,61 @@ def _money(n) -> str:
 
 
 def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str) -> str:
+    sub_raw = float(doc.get("subtotal", 0))
+    disc_amt = float(doc.get("discount_amount", 0))
+    factor = (sub_raw - disc_amt) / sub_raw if sub_raw else 1.0
     rows = ""
-    for li in doc.get("line_items", []):
+    for i, li in enumerate(doc.get("line_items", [])):
+        bg = "#F7F7F8" if i % 2 else "#ffffff"
         rows += (
-            f'<tr><td style="padding:6px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}</td>'
-            f'<td align="right" style="padding:6px;border-bottom:1px solid #eee">{li.get("area_sqft", 0)} sqft</td>'
-            f'<td align="right" style="padding:6px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0))}</td></tr>'
+            f'<tr style="background:{bg}">'
+            f'<td style="padding:10px 14px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}</td>'
+            f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{li.get("area_sqft", 0)} sqft</td>'
+            f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0) * factor)}</td></tr>'
         )
     pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />'
-    discount_row = ""
-    if doc.get("discount_amount", 0):
-        discount_row = (
-            f'<tr><td colspan="2" align="right" style="padding:6px;color:#16A34A">'
-            f'Tier discount ({doc.get("discount_rate", 0)}%)</td>'
-            f'<td align="right" style="padding:6px;color:#16A34A">-{_money(doc.get("discount_amount", 0))}</td></tr>'
-        )
+    net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
+    label = "Amount Due" if kind_label == "Invoice" else "Total"
+    due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
     return (
-        f'<table role="presentation" width="100%" style="font-family:Arial,sans-serif;color:#0A0A0A">'
-        f'<tr><td style="padding:24px">'
-        f'<h2 style="margin:0 0 2px">DBG Signs, Inc.</h2>'
-        f'<p style="color:#888;margin:0 0 16px;font-size:12px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</p>'
-        f'<p>Hi {escape(customer_name)},</p>'
-        f'<p>Please find your {escape(kind_label.lower())} <strong>{escape(str(doc.get("number", "")))}</strong> &mdash; {escape(str(doc.get("title", "")))}.</p>'
-        f'<table role="presentation" width="100%" style="border-collapse:collapse;margin:14px 0">'
-        f'<tr style="border-bottom:2px solid #0A0A0A"><th align="left" style="padding:6px">Item</th>'
-        f'<th align="right" style="padding:6px">Area</th><th align="right" style="padding:6px">Amount</th></tr>'
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        # Header
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">{escape(kind_label.upper())}</div>'
+        f'<div style="color:#6B7280;font-size:13px">#{escape(str(doc.get("number", "")))}</div>{due}</td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        # Greeting + bill to
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Bill To</div>'
+        f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
+        f'<p style="margin:16px 0 0">Please find your {escape(kind_label.lower())} for <strong>{escape(str(doc.get("title", "")))}</strong> below.</p>'
+        f'</td></tr>'
+        # Table
+        f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
+        f'<tr style="background:#0A0A0A;color:#fff">'
+        f'<th align="left" style="padding:10px 14px;font-size:11px;letter-spacing:1px">DESCRIPTION</th>'
+        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">SQFT USED</th>'
+        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">AMOUNT</th></tr>'
         f'{rows}'
-        f'{discount_row}'
-        f'<tr><td colspan="2" align="right" style="padding:8px 6px"><strong>Total</strong></td>'
-        f'<td align="right" style="padding:8px 6px"><strong>{_money(doc.get("total", 0))}</strong></td></tr>'
-        f'</table>'
-        f'<p>Questions about this {escape(kind_label.lower())}? Just reply to this email.</p>'
-        f'<p style="font-size:12px;color:#888">Sent by DBG Signs, Inc. We never ask for your password or card details by email.</p>'
-        f'</td></tr></table>{pixel}'
+        f'<tr><td></td><td align="right" style="padding:10px 14px;color:#6B7280">Subtotal</td>'
+        f'<td align="right" style="padding:10px 14px">{_money(net_subtotal)}</td></tr>'
+        f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Tax ({doc.get("tax_rate", 0)}%)</td>'
+        f'<td align="right" style="padding:6px 14px">{_money(doc.get("tax_amount", 0))}</td></tr>'
+        f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
+        f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>'
+        f'</table></td></tr>'
+        # Footer
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px">Questions about this {escape(kind_label.lower())}? Just reply to this email.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">DBG Signs, Inc.</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
+        f'</div></td></tr>'
+        f'</table></div>{pixel}'
     )
 
 
@@ -1188,48 +1214,99 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict]) -> bytes
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     W, H = letter
-    L = 0.9 * inch
-    R = W - 0.9 * inch
-    y = H - 0.9 * inch
-    c.setFont("Helvetica-Bold", 20); c.drawString(L, y, "DBG Signs, Inc.")
-    c.setFont("Helvetica", 8); c.setFillGray(0.5); c.drawString(L, y - 13, "IMAGE IS EVERYTHING"); c.setFillGray(0)
-    c.setFont("Helvetica-Bold", 14); c.drawRightString(R, y, f"{kind_label} {doc.get('number', '')}")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(R, y - 16, f"Date: {str(doc.get('created_at', ''))[:10]}")
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); cyan = colors.HexColor("#06B6D4")
+    grayline = colors.HexColor("#E5E7EB"); soft = colors.HexColor("#6B7280"); rowbg = colors.HexColor("#F7F7F8")
+    ax = R  # right edge for amounts
+    sub_raw = float(doc.get("subtotal", 0))
+    disc_amt = float(doc.get("discount_amount", 0))
+    factor = (sub_raw - disc_amt) / sub_raw if sub_raw else 1.0
+
+    # Logo (top-left)
+    try:
+        c.drawImage(ImageReader(str(LOGO_PATH)), L, H - 150, width=180, height=104,
+                    preserveAspectRatio=True, mask="auto", anchor="sw")
+    except Exception:
+        c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawString(L, H - 96, "DBG Signs, Inc.")
+
+    # Document label + number (top-right)
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 28); c.drawRightString(R, H - 82, kind_label.upper())
+    c.setFillColor(soft); c.setFont("Helvetica", 11); c.drawRightString(R, H - 100, f"#{doc.get('number', '')}")
+
+    # Accent rule
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, H - 162, R, H - 162)
+
+    y = H - 196
+    # Meta (right)
+    meta = [("Date", str(doc.get("created_at", ""))[:10])]
     if doc.get("due_date"):
-        c.drawRightString(R, y - 28, f"Due: {doc.get('due_date')}")
-    y -= 54
+        meta.append(("Due Date", str(doc.get("due_date"))))
+    terms = (customer or {}).get("net_terms")
+    if terms:
+        meta.append(("Terms", str(terms)))
+    my = y
+    for k, v in meta:
+        c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawRightString(R - 96, my, k.upper())
+        c.setFillColor(ink); c.setFont("Helvetica-Bold", 9); c.drawRightString(R, my, str(v)); my -= 15
+
+    # Bill To (left)
+    c.setFillColor(soft); c.setFont("Helvetica-Bold", 8); c.drawString(L, y, "BILL TO")
     name = (customer or {}).get("company") or (customer or {}).get("name") or "Customer"
-    c.setFont("Helvetica-Bold", 10); c.drawString(L, y, "Bill To")
-    c.setFont("Helvetica", 10); c.drawString(L, y - 14, str(name))
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 13); c.drawString(L, y - 18, str(name))
+    yy = y - 33
+    c.setFont("Helvetica", 9); c.setFillColor(soft)
+    if customer and customer.get("company") and customer.get("name"):
+        who = customer["name"] + (f" - {customer['title']}" if customer.get("title") else "")
+        c.drawString(L, yy, str(who)); yy -= 13
     if customer and customer.get("email"):
-        c.drawString(L, y - 28, str(customer["email"]))
-    if customer and customer.get("net_terms"):
-        c.drawRightString(R, y, f"Terms: {customer['net_terms']}")
-    y -= 54
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(L, y, "Description"); c.drawRightString(4.9 * inch, y, "Area sqft")
-    c.drawRightString(6.15 * inch, y, "$/sqft"); c.drawRightString(R, y, "Amount")
-    y -= 5; c.line(L, y, R, y); y -= 15
-    c.setFont("Helvetica", 9)
-    for li in doc.get("line_items", []):
-        c.drawString(L, y, str(li.get("description", ""))[:52])
-        c.drawRightString(4.9 * inch, y, str(li.get("area_sqft", 0)))
-        c.drawRightString(6.15 * inch, y, _money(li.get("price_per_sqft", 0)))
-        c.drawRightString(R, y, _money(li.get("line_total", 0)))
-        y -= 15
-        if y < 1.6 * inch:
-            c.showPage(); y = H - inch; c.setFont("Helvetica", 9)
-    y -= 4; c.line(4.7 * inch, y, R, y); y -= 16
+        c.drawString(L, yy, str(customer["email"])); yy -= 13
+    if customer and customer.get("phone"):
+        c.drawString(L, yy, str(customer["phone"])); yy -= 13
+
+    y = min(yy, my) - 22
+
+    # Table header
+    c.setFillColor(ink); c.rect(L, y - 6, R - L, 24, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
+    c.drawString(L + 10, y + 3, "DESCRIPTION")
+    c.drawRightString(ax - 150, y + 3, "SQFT USED")
+    c.drawRightString(ax - 10, y + 3, "AMOUNT")
+    y -= 30
+
     c.setFont("Helvetica", 10)
-    c.drawRightString(6.15 * inch, y, "Subtotal"); c.drawRightString(R, y, _money(doc.get("subtotal", 0))); y -= 15
-    if doc.get("discount_amount", 0):
-        c.drawRightString(6.15 * inch, y, f"Discount ({doc.get('discount_rate', 0)}%)")
-        c.drawRightString(R, y, "-" + _money(doc.get("discount_amount", 0))); y -= 15
-    c.drawRightString(6.15 * inch, y, f"Tax ({doc.get('tax_rate', 0)}%)")
-    c.drawRightString(R, y, _money(doc.get("tax_amount", 0))); y -= 16
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(6.15 * inch, y, "TOTAL"); c.drawRightString(R, y, _money(doc.get("total", 0)))
+    for i, li in enumerate(doc.get("line_items", [])):
+        rh = 22
+        if i % 2 == 1:
+            c.setFillColor(rowbg); c.rect(L, y - 7, R - L, rh, fill=1, stroke=0)
+        c.setFillColor(ink)
+        c.drawString(L + 10, y, str(li.get("description", ""))[:58])
+        c.drawRightString(ax - 150, y, f"{li.get('area_sqft', 0)}")
+        c.drawRightString(ax - 10, y, _money(li.get("line_total", 0) * factor))
+        y -= rh
+        if y < 170:
+            c.showPage(); y = H - 90; c.setFont("Helvetica", 10)
+
+    # Totals (discount hidden; subtotal shown net of any discount so it reconciles)
+    net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
+    c.setStrokeColor(grayline); c.setLineWidth(1); c.line(ax - 230, y + 2, R, y + 2); y -= 16
+    c.setFont("Helvetica", 10); c.setFillColor(soft); c.drawRightString(ax - 100, y, "Subtotal")
+    c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(net_subtotal)); y -= 16
+    c.setFillColor(soft); c.drawRightString(ax - 100, y, f"Tax ({doc.get('tax_rate', 0)}%)")
+    c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(doc.get("tax_amount", 0))); y -= 26
+    label = "AMOUNT DUE" if kind_label == "Invoice" else "TOTAL"
+    c.setFillColor(ink); c.rect(ax - 230, y - 7, 230, 28, fill=1, stroke=0)
+    c.setFillColor(cyan); c.rect(ax - 230, y - 7, 5, 28, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(ax - 214, y + 2, label)
+    c.setFont("Helvetica-Bold", 14); c.drawRightString(ax - 10, y + 1, _money(doc.get("total", 0)))
+
+    # Footer
+    fy = 88
+    c.setStrokeColor(grayline); c.setLineWidth(1); c.line(L, fy + 24, R, fy + 24)
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    tline = f"Payment terms: {terms}.  " if terms else ""
+    c.drawString(L, fy + 10, f"{tline}Thank you for your business.")
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 9); c.drawString(L, fy - 5, "DBG Signs, Inc.")
+    c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, fy - 17, "Image Is Everything")
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 
