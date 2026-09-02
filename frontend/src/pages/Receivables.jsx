@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -19,9 +20,13 @@ const daysOverdue = (r) => {
 export default function Receivables() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState([]);
+  const [view, setView] = useState(params.get("filter") === "overdue" ? "overdue" : "all");
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { setView(params.get("filter") === "overdue" ? "overdue" : "all"); }, [params]);
+  const setViewParam = (v) => { setView(v); setParams(v === "overdue" ? { filter: "overdue" } : {}); };
 
   const markPaid = async (id) => { await api.patch(`/invoices/${id}/status`, null, { params: { status: "paid" } }); toast.success("Payment recorded"); load(); };
   const sendPastDue = async (id) => {
@@ -41,10 +46,17 @@ export default function Receivables() {
   const collected = rows.filter((r) => r.status === "paid").reduce((s, r) => s + r.total, 0);
   const isOverdue = (r) => r.status !== "paid" && r.due_date && new Date(r.due_date) < new Date();
   const pastDueCount = open.filter((r) => daysOverdue(r) > OVERDUE_DAYS).length;
+  const displayRows = view === "overdue" ? open.filter(isOverdue) : open;
 
   return (
     <div>
       <PageHeader overline="Accounts Receivable" title="Receivables">
+        <div className="flex items-center border border-border" data-testid="ar-view-toggle">
+          <button onClick={() => setViewParam("all")} data-testid="ar-view-all"
+            className={`px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition-colors ${view === "all" ? "bg-foreground text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>All</button>
+          <button onClick={() => setViewParam("overdue")} data-testid="ar-view-overdue"
+            className={`px-3 py-1.5 text-xs font-mono uppercase tracking-wider transition-colors ${view === "overdue" ? "bg-[#DC2626] text-white" : "text-muted-foreground hover:text-foreground"}`}>Overdue</button>
+        </div>
         {isAdmin && (
           <Btn variant="outline" onClick={sendAllPastDue} data-testid="send-all-pastdue-btn" title={`Email all invoices over ${OVERDUE_DAYS} days past due`}>
             <WarningCircle size={16} weight="bold" /> Send Past-Due ({pastDueCount})
@@ -77,7 +89,7 @@ export default function Receivables() {
               </tr>
             </thead>
             <tbody data-testid="receivables-table">
-              {open.map((r) => {
+              {displayRows.map((r) => {
                 const od = daysOverdue(r);
                 const past = od > OVERDUE_DAYS;
                 return (
@@ -98,7 +110,7 @@ export default function Receivables() {
                   </tr>
                 );
               })}
-              {open.length === 0 && <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">Nothing outstanding — all caught up.</td></tr>}
+              {displayRows.length === 0 && <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">{view === "overdue" ? "No overdue invoices — nicely done." : "Nothing outstanding — all caught up."}</td></tr>}
             </tbody>
           </table>
         </div>

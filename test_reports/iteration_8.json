@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 8 verified the new enhancement batch end-to-end. Backend: 10/10 pytest cases pass (/api/commissions/pay per-item PO validation with no partial apply, distinct PO persistence, /commissions/unpay, /commissions/paid/pdf with salesman_name + date_from/date_to, role scoping for salesman, auth required, /invoices & /dashboard shape). Frontend (admin chrisjacker@gmail.com): per-commission PO dialog shows one pay-po-<id> input per selected row; blank PO shows 'Enter a PO number for every commission' toast and marks nothing; two distinct POs persist and render as distinct comm-po-<id> chips on the Paid tab (no checkboxes on Paid tab as designed); paid date filter narrows rows and out-of-range shows the empty message; Export PDF issues GET /api/commissions/paid/pdf?date_from&date_to and downloads paid-commissions.pdf; By-salesman export button issues ?salesman_name=Sam+Salesman and downloads paid-commissions-sam-salesman.pdf. Dashboard drill-downs all work: receivable-link -> /receivables?filter=overdue with red Overdue toggle active and only OVERDUE rows (3 of 9 open), payable-link -> /payables, collected-link -> /receivables, and all five mini-stats navigate correctly. Receivables All/Overdue toggle syncs the URL query param both ways and direct landing on ?filter=overdue starts in Overdue mode. All commissions marked paid during testing were restored via POST /api/commissions/unpay (verified 43 unpaid rows before and after).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Commissions / Receivables tables", "issues": ["Many rows show customer as 'Unknown' and estimates titled 'TEST_Tier Estimate' / 'TEST_Chain Tier1' — leftover records from earlier automated test iterations pollute the demo dataset (43 unpaid commission rows). Cosmetic only, but the demo looks noisy; consider a cleanup of TEST_-prefixed estimates/invoices and orphaned customer references."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_iteration8.py", "/app/test_reports/pytest/iteration8.xml"],
+  "action_items": ["Optional: purge leftover TEST_-prefixed estimates/invoices and rows whose customer resolves to 'Unknown' so demo data reads cleanly."],
+  "critical_code_review_comments": [
+    "server.py pay_commissions() silently skips items with invalid ObjectId (continue) and reports only modified_count — a client sending a bad id gets 200 with a lower 'updated' count and no error. Consider 400 on unknown/invalid ids for parity with the all-or-nothing PO validation.",
+    "Commissions.jsx paid-date filter treats rows with an empty paid_at as always in-range (d falsy short-circuits both comparisons); harmless today since paid rows always have paid_at, but worth an explicit guard.",
+    "server.py is ~2695 lines — over the 700-line guidance; consider splitting routers (commissions, receivables, pdf builders) into modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration8.py"],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "seed_data_creation": "None persisted. Temporarily marked 2 estimates paid with POs TEST-UI-PO-1/TEST-UI-PO-2 and TEST-PO-A1/TEST-PO-B2, then restored all via POST /api/commissions/unpay (verified back to unpaid).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin chrisjacker@gmail.com / SignShop2026! ; salesman sam@dbgsigns.com / Sales2026! (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iteration8.py as commissions regression suite; it self-cleans via /commissions/unpay. Frontend flows verified via Playwright: per-commission PO dialog, paid date filter + PDF, salesman PDF, dashboard drill-down, receivables All/Overdue toggle. Dataset contains many TEST_-prefixed estimates and 'Unknown' customers from prior iterations.",
+  "rca_of_the_issue": "No functional defects found in this iteration."
+}

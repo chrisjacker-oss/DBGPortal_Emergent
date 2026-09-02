@@ -1521,28 +1521,40 @@ async def commissions(user: dict = Depends(require_staff)):
     }
 
 
-class CommissionPayInput(BaseModel):
-    estimate_ids: List[str] = []
+class CommissionPayItem(BaseModel):
+    estimate_id: str
     po_number: str = ""
+
+
+class CommissionPayInput(BaseModel):
+    items: List[CommissionPayItem] = []
+
+
+class CommissionUnpayInput(BaseModel):
+    estimate_ids: List[str] = []
 
 
 @api_router.post("/commissions/pay")
 async def pay_commissions(payload: CommissionPayInput, user: dict = Depends(require_admin)):
-    po = (payload.po_number or "").strip()
-    if not po:
-        raise HTTPException(status_code=400, detail="A PO number is required to mark a commission paid")
-    ids = [oid(i) for i in payload.estimate_ids if ObjectId.is_valid(i)]
-    if not ids:
+    if not payload.items:
         raise HTTPException(status_code=400, detail="Select at least one commission")
-    res = await db.estimates.update_many(
-        {"_id": {"$in": ids}},
-        {"$set": {"commission_paid": True, "commission_po": po, "commission_paid_at": now_iso()}},
-    )
-    return {"updated": res.modified_count, "po_number": po}
+    if any(not (it.po_number or "").strip() for it in payload.items):
+        raise HTTPException(status_code=400, detail="A PO number is required for every selected commission")
+    when = now_iso()
+    updated = 0
+    for it in payload.items:
+        if not ObjectId.is_valid(it.estimate_id):
+            continue
+        res = await db.estimates.update_one(
+            {"_id": oid(it.estimate_id)},
+            {"$set": {"commission_paid": True, "commission_po": it.po_number.strip(), "commission_paid_at": when}},
+        )
+        updated += res.modified_count
+    return {"updated": updated}
 
 
 @api_router.post("/commissions/unpay")
-async def unpay_commissions(payload: CommissionPayInput, user: dict = Depends(require_admin)):
+async def unpay_commissions(payload: CommissionUnpayInput, user: dict = Depends(require_admin)):
     ids = [oid(i) for i in payload.estimate_ids if ObjectId.is_valid(i)]
     if not ids:
         raise HTTPException(status_code=400, detail="Select at least one commission")
@@ -1554,15 +1566,27 @@ async def unpay_commissions(payload: CommissionPayInput, user: dict = Depends(re
 
 
 @api_router.get("/commissions/paid/pdf")
-async def paid_commissions_pdf(user: dict = Depends(require_staff)):
+async def paid_commissions_pdf(salesman_name: Optional[str] = None, date_from: Optional[str] = None,
+                               date_to: Optional[str] = None, user: dict = Depends(require_staff)):
     q = {"commission_paid": True}
     scope_label = ""
     if user["role"] == "salesman":
         q["salesman_id"] = user["id"]
         scope_label = user.get("name") or ""
+    elif salesman_name:
+        if salesman_name == "Unassigned":
+            q["$or"] = [{"salesman_name": None}, {"salesman_name": ""}, {"salesman_name": {"$exists": False}}]
+        else:
+            q["salesman_name"] = salesman_name
+        scope_label = salesman_name
     ests = await db.estimates.find(q).sort("commission_paid_at", -1).to_list(5000)
     rows = []
     for e in ests:
+        pa = (e.get("commission_paid_at") or "")[:10]
+        if date_from and pa and pa < date_from:
+            continue
+        if date_to and pa and pa > date_to:
+            continue
         e = await enrich_customer(clean(e))
         base = float(e.get("commission_base") if e.get("commission_base") is not None else (e.get("subtotal") or 0))
         rate = float(e.get("commission_rate") or 0)
@@ -1572,6 +1596,9 @@ async def paid_commissions_pdf(user: dict = Depends(require_staff)):
             "po_number": e.get("commission_po"), "paid_at": e.get("commission_paid_at"),
             "commission_amount": float(e.get("commission_amount") or round(base * rate / 100.0, 2)),
         })
+    if date_from or date_to:
+        rng = f"{date_from or '…'} → {date_to or '…'}"
+        scope_label = f"{scope_label} · {rng}" if scope_label else rng
     pdf = build_commissions_pdf(rows, await get_settings(), await get_logo_bytes(), scope_label)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'attachment; filename="paid-commissions.pdf"'})

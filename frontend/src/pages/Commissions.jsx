@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatCard, StatusBadge } from "@/components/kit";
-import { Inp } from "@/pages/Customers";
 import { downloadFile } from "@/lib/download";
 import { CheckCircle, FilePdf } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -16,8 +15,10 @@ export default function Commissions() {
   const [tab, setTab] = useState("unpaid"); // unpaid | paid
   const [sel, setSel] = useState({}); // id -> bool (unpaid tab only)
   const [payOpen, setPayOpen] = useState(false);
-  const [po, setPo] = useState("");
+  const [poMap, setPoMap] = useState({}); // id -> PO number
   const [busy, setBusy] = useState(false);
+  const [pFrom, setPFrom] = useState("");
+  const [pTo, setPTo] = useState("");
 
   const load = () => api.get("/commissions").then((r) => setData(r.data));
   useEffect(() => { load(); }, []);
@@ -25,26 +26,50 @@ export default function Commissions() {
 
   const isPaidTab = tab === "paid";
   const showChecks = isAdmin && !isPaidTab;
-  const rows = useMemo(() => data.rows.filter((r) => (isPaidTab ? r.paid : !r.paid)), [data.rows, isPaidTab]);
+  const unpaidRows = useMemo(() => data.rows.filter((r) => !r.paid), [data.rows]);
+  const paidRows = useMemo(() => data.rows.filter((r) => r.paid).filter((r) => {
+    const d = (r.paid_at || "").slice(0, 10);
+    if (pFrom && d && d < pFrom) return false;
+    if (pTo && d && d > pTo) return false;
+    return true;
+  }), [data.rows, pFrom, pTo]);
+  const rows = isPaidTab ? paidRows : unpaidRows;
+
   const selectedIds = Object.keys(sel).filter((k) => sel[k]);
+  const selectedRows = data.rows.filter((r) => sel[r.id]);
   const allChecked = rows.length > 0 && rows.every((r) => sel[r.id]);
   const toggleAll = () => { const next = {}; if (!allChecked) rows.forEach((r) => (next[r.id] = true)); setSel(next); };
   const toggle = (id) => setSel((s) => ({ ...s, [id]: !s[id] }));
   const colCount = 3 + (isPaidTab ? 2 : 1) + 3 + (showChecks ? 1 : 0);
 
+  const openPay = () => { setPoMap({}); setPayOpen(true); };
   const markPaid = async () => {
-    if (!po.trim()) { toast.error("Enter a PO number"); return; }
+    const items = selectedIds.map((id) => ({ estimate_id: id, po_number: (poMap[id] || "").trim() }));
+    if (items.some((it) => !it.po_number)) { toast.error("Enter a PO number for every commission"); return; }
     setBusy(true);
     try {
-      const { data: res } = await api.post("/commissions/pay", { estimate_ids: selectedIds, po_number: po.trim() });
-      toast.success(`Marked ${res.updated} commission(s) paid · PO ${res.po_number}`);
-      setPayOpen(false); setPo(""); setSel({}); load();
+      const { data: res } = await api.post("/commissions/pay", { items });
+      toast.success(`Marked ${res.updated} commission(s) paid`);
+      setPayOpen(false); setPoMap({}); setSel({}); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
     finally { setBusy(false); }
   };
 
+  const rangeQuery = () => {
+    const q = new URLSearchParams();
+    if (pFrom) q.set("date_from", pFrom);
+    if (pTo) q.set("date_to", pTo);
+    return q;
+  };
   const exportPdf = async () => {
-    try { await downloadFile("/commissions/paid/pdf", "paid-commissions.pdf", "application/pdf"); }
+    const q = rangeQuery();
+    try { await downloadFile(`/commissions/paid/pdf?${q.toString()}`, "paid-commissions.pdf", "application/pdf"); }
+    catch { toast.error("Export failed"); }
+  };
+  const exportSalesmanPdf = async (name) => {
+    const q = rangeQuery(); q.set("salesman_name", name);
+    const safe = (name || "salesman").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    try { await downloadFile(`/commissions/paid/pdf?${q.toString()}`, `paid-commissions-${safe}.pdf`, "application/pdf"); }
     catch { toast.error("Export failed"); }
   };
 
@@ -79,6 +104,7 @@ export default function Commissions() {
                     <th className="px-6 py-3 font-mono text-right">Pending</th>
                     <th className="px-6 py-3 font-mono text-right">Paid</th>
                     <th className="px-6 py-3 font-mono text-right">Total</th>
+                    <th className="px-6 py-3 font-mono text-right">Statement</th>
                   </tr>
                 </thead>
                 <tbody data-testid="commission-by-salesman">
@@ -90,6 +116,11 @@ export default function Commissions() {
                       <td className="px-6 py-3 text-right font-mono text-[#B45309]">{currency(s.pending)}</td>
                       <td className="px-6 py-3 text-right font-mono text-[#0E7490]">{currency(s.paid)}</td>
                       <td className="px-6 py-3 text-right font-mono font-semibold">{currency(s.earned + s.pending + s.paid)}</td>
+                      <td className="px-6 py-3 text-right">
+                        <Btn variant="ghost" onClick={() => exportSalesmanPdf(s.salesman_name)} data-testid={`export-salesman-${s.salesman_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`} title={`Export ${s.salesman_name} paid commissions`}>
+                          <FilePdf size={16} />
+                        </Btn>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -99,17 +130,24 @@ export default function Commissions() {
         )}
 
         <div>
-          <div className="flex items-center justify-between border-b border-border mb-3">
+          <div className="flex items-center justify-between border-b border-border mb-3 flex-wrap gap-2">
             <div className="flex gap-1">
               <TabBtn id="unpaid" label="Unpaid" />
               <TabBtn id="paid" label="Paid" />
             </div>
-            <div className="pb-2 flex gap-2">
+            <div className="pb-2 flex items-end gap-2 flex-wrap">
               {showChecks && selectedIds.length > 0 && (
-                <Btn onClick={() => setPayOpen(true)} data-testid="mark-paid-btn"><CheckCircle size={16} weight="bold" /> Mark {selectedIds.length} Paid</Btn>
+                <Btn onClick={openPay} data-testid="mark-paid-btn"><CheckCircle size={16} weight="bold" /> Mark {selectedIds.length} Paid</Btn>
               )}
               {isPaidTab && (
-                <Btn variant="outline" onClick={exportPdf} data-testid="export-commissions-pdf-btn"><FilePdf size={16} weight="bold" /> Export PDF</Btn>
+                <>
+                  <label className="block"><span className="overline text-muted-foreground">From</span>
+                    <input type="date" value={pFrom} onChange={(e) => setPFrom(e.target.value)} data-testid="comm-paid-from" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+                  <label className="block"><span className="overline text-muted-foreground">To</span>
+                    <input type="date" value={pTo} onChange={(e) => setPTo(e.target.value)} data-testid="comm-paid-to" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+                  {(pFrom || pTo) && <Btn variant="outline" onClick={() => { setPFrom(""); setPTo(""); }} data-testid="comm-paid-clear">Clear</Btn>}
+                  <Btn variant="outline" onClick={exportPdf} data-testid="export-commissions-pdf-btn"><FilePdf size={16} weight="bold" /> Export PDF</Btn>
+                </>
               )}
             </div>
           </div>
@@ -145,7 +183,7 @@ export default function Commissions() {
                     <td className="px-6 py-3 text-right font-mono font-semibold text-[#A21CAF]">{currency(r.commission_amount)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={colCount} className="px-6 py-10 text-center text-muted-foreground">{isPaidTab ? "No paid commissions yet." : "No unpaid commissions."}</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={colCount} className="px-6 py-10 text-center text-muted-foreground">{isPaidTab ? "No paid commissions in this range." : "No unpaid commissions."}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -153,15 +191,26 @@ export default function Commissions() {
       </div>
 
       <Dialog open={payOpen} onOpenChange={(o) => !o && !busy && setPayOpen(false)}>
-        <DialogContent className="rounded-none max-w-sm" data-testid="pay-commission-dialog">
+        <DialogContent className="rounded-none max-w-lg max-h-[85vh] overflow-y-auto" data-testid="pay-commission-dialog">
           <DialogHeader>
             <DialogTitle className="font-display">Mark commissions paid</DialogTitle>
-            <DialogDescription className="font-mono text-xs">Enter the PO number to record against the {selectedIds.length} selected commission(s).</DialogDescription>
+            <DialogDescription className="font-mono text-xs">Enter a PO number for each commission. They'll move to the Paid tab.</DialogDescription>
           </DialogHeader>
-          <Inp label="PO number" value={po} onChange={(e) => setPo(e.target.value)} testid="pay-po-input" />
+          <div className="space-y-2">
+            {selectedRows.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 border border-border px-3 py-2" data-testid={`pay-row-${r.id}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-mono text-sm">{r.number} <span className="text-[#A21CAF] font-semibold">{currency(r.commission_amount)}</span></div>
+                  <div className="text-xs text-muted-foreground truncate">{r.customer_name} · {r.salesman_name}</div>
+                </div>
+                <input value={poMap[r.id] || ""} onChange={(e) => setPoMap((m) => ({ ...m, [r.id]: e.target.value }))} placeholder="PO #" data-testid={`pay-po-${r.id}`}
+                  className="w-32 border border-input bg-card px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+            ))}
+          </div>
           <DialogFooter>
             <Btn variant="outline" onClick={() => setPayOpen(false)} disabled={busy}>Cancel</Btn>
-            <Btn onClick={markPaid} disabled={busy || !po.trim()} data-testid="pay-confirm-btn">{busy ? "Saving…" : "Mark Paid"}</Btn>
+            <Btn onClick={markPaid} disabled={busy} data-testid="pay-confirm-btn">{busy ? "Saving…" : "Mark Paid"}</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>
