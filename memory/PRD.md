@@ -36,9 +36,10 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - Stripe integration (online invoice payment). Playbook not yet pulled; use env Stripe test key, emergentintegrations.
 
 ## Recently completed
-- Modern mailable invoice/estimate/SO redesign (PDF + email) with DBG logo (/app/backend/assets/dbg_logo.jpg, LOGO_URL for email), Bill To / meta / dark table / cyan Amount-Due band / footer.
-- Removed $/sqft and the tier-discount line from customer-facing documents; discount applied at line level so line amounts, subtotal, tax and total reconcile ("actual cost" shown).
-- Confirmed commission is calculated on the full cost subtotal (material + shop labor + machine, pre-tax).
+- **Logo upload** in Settings (stored in MongoDB as base64, served via GET /api/pub/logo) — appears on all quotes, sales orders and invoices (PDF + email); "Use default" reverts.
+- **Per-line-item details** field (specifics) on estimates/SOs/invoices — shown in the builder, PDF (gray sub-line) and email.
+- **Material categories** are now a preset dropdown: Cut Vinyl, Digital Vinyl, Banner, Substrates, Laminates.
+- Modern mailable invoice/estimate/SO redesign (PDF + email) with logo; $/sqft and tier-discount hidden on customer docs (discount applied at line level so totals reconcile); commission on full cost subtotal (material + shop labor + machine).
 
 ## Backlog
 - Split server.py into routers; add search indexes; stamp net_terms onto docs at creation (historical PDF accuracy); require due_date for dunning.

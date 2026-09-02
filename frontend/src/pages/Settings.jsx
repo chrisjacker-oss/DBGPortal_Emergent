@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Gear } from "@phosphor-icons/react";
+import { Gear, UploadSimple, Trash } from "@phosphor-icons/react";
+
+const LOGO_URL = `${process.env.REACT_APP_BACKEND_URL}/api/pub/logo`;
 
 export default function Settings() {
   const [form, setForm] = useState(null);
+  const [logoTs, setLogoTs] = useState(Date.now());
+  const fileRef = useRef(null);
 
   useEffect(() => { api.get("/settings").then((r) => setForm(r.data)); }, []);
   if (!form) return null;
@@ -25,13 +29,42 @@ export default function Settings() {
       toast.success("Shop settings saved");
     } catch { toast.error("Save failed"); }
   };
+  const uploadLogo = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      await api.post("/settings/logo", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      setLogoTs(Date.now());
+      toast.success("Logo uploaded — it will appear on all quotes, sales orders and invoices");
+    } catch (err) { toast.error(err.response?.data?.detail || "Upload failed"); }
+  };
+  const resetLogo = async () => {
+    try { await api.delete("/settings/logo"); setLogoTs(Date.now()); toast.success("Reverted to default logo"); }
+    catch { toast.error("Failed"); }
+  };
 
   return (
     <div>
       <PageHeader overline="Configuration" title="Shop Settings">
         <Btn onClick={save} data-testid="save-settings-btn"><Gear size={16} weight="bold" /> Save</Btn>
       </PageHeader>
-      <div className="p-8 max-w-2xl">
+      <div className="p-8 max-w-2xl space-y-6">
+        <div className="border border-border bg-card p-8 space-y-4" data-testid="logo-card">
+          <div className="overline text-muted-foreground">Company logo (shown on all quotes, sales orders & invoices)</div>
+          <div className="flex items-center gap-6">
+            <div className="border border-border bg-secondary/40 h-24 w-48 flex items-center justify-center overflow-hidden">
+              <img src={`${LOGO_URL}?ts=${logoTs}`} alt="Logo" className="max-h-20 max-w-44 object-contain" data-testid="logo-preview" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <input ref={fileRef} type="file" accept="image/*" onChange={uploadLogo} className="hidden" data-testid="logo-file-input" />
+              <Btn variant="outline" onClick={() => fileRef.current?.click()} data-testid="upload-logo-btn"><UploadSimple size={16} weight="bold" /> Upload logo</Btn>
+              <Btn variant="ghost" onClick={resetLogo} data-testid="reset-logo-btn"><Trash size={16} /> Use default</Btn>
+            </div>
+          </div>
+        </div>
+
         <div className="border border-border bg-card p-8 space-y-5">
           <div className="overline text-muted-foreground">Global rates used across all estimates</div>
           <div className="grid grid-cols-2 gap-4">

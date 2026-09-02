@@ -6,7 +6,7 @@ import { Inp } from "@/pages/Customers";
 import { Plus, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, extra_labor_hours: 0 };
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -89,7 +89,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       line_items: form.line_items
         .filter((li) => li.description || li.material_id)
         .map((li) => ({
-          description: li.description, material_id: li.material_id || null,
+          description: li.description, details: li.details || "", material_id: li.material_id || null,
           width_in: Number(li.width_in || 0), height_in: Number(li.height_in || 0),
           quantity: Number(li.quantity || 0), price_per_sqft: Number(li.price_per_sqft || 0),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
@@ -129,7 +129,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <div className="text-right">Line</div><div></div>
             </div>
             {form.line_items.map((li, i) => (
-              <div key={i} className={`grid ${cols} gap-2 px-3 py-2 border-b border-border last:border-0 items-center min-w-[820px]`}>
+              <div key={i} className="border-b border-border last:border-0 min-w-[820px]">
+                <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
                 <input value={li.description} onChange={(e) => setItem(i, "description", e.target.value)} placeholder="Line item" data-testid={`item-desc-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
                 <select value={li.material_id || ""} onChange={(e) => setItem(i, "material_id", e.target.value)} data-testid={`item-mat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
                   <option value="">—</option>
@@ -142,6 +143,10 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
+                </div>
+                <div className="px-3 pb-2 pt-1">
+                  <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="w-full min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
+                </div>
               </div>
             ))}
             <div className="px-3 py-2 min-w-[820px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>

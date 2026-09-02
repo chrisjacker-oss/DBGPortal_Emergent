@@ -27,7 +27,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib import colors
 from bson import ObjectId
 from pymongo import ReturnDocument
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, BeforeValidator, ConfigDict
@@ -136,6 +136,7 @@ class LoginInput(BaseModel):
 
 class LineItem(BaseModel):
     description: str = ""
+    details: Optional[str] = ""
     material_id: Optional[str] = None
     width_in: float = 0.0
     height_in: float = 0.0
@@ -508,6 +509,32 @@ async def read_settings(user: dict = Depends(require_staff)):
 async def write_settings(payload: SettingsInput, user: dict = Depends(require_admin)):
     await db.settings.update_one({"key": "shop"}, {"$set": payload.model_dump()}, upsert=True)
     return await get_settings()
+
+
+@api_router.post("/settings/logo")
+async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(status_code=400, detail="Please upload an image file")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Logo must be under 5MB")
+    await db.settings.update_one({"key": "shop"}, {"$set": {
+        "logo_b64": base64.b64encode(data).decode(), "logo_mime": file.content_type,
+    }}, upsert=True)
+    return {"status": "uploaded", "has_custom_logo": True}
+
+
+@api_router.delete("/settings/logo")
+async def reset_logo(user: dict = Depends(require_admin)):
+    await db.settings.update_one({"key": "shop"}, {"$unset": {"logo_b64": "", "logo_mime": ""}})
+    return {"status": "reset", "has_custom_logo": False}
+
+
+@api_router.get("/pub/logo")
+async def public_logo():
+    s = await db.settings.find_one({"key": "shop"})
+    mime = (s or {}).get("logo_mime") or "image/jpeg"
+    return Response(content=await get_logo_bytes(), media_type=mime, headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------
@@ -1008,7 +1035,17 @@ EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "DBG Signs, Inc.")
 PUBLIC_BASE_URL = os.environ.get("FRONTEND_URL", "")
 LOGO_PATH = ROOT_DIR / "assets" / "dbg_logo.jpg"
-LOGO_URL = "https://static.prod-images.emergentagent.com/jobs/ec6bd2ae-6f93-4a9d-865b-45f84531fa3f/images/1ba95998d22f513a4203664781b3ee2951299feaef457d27f5664136525cb3e9.jpeg"
+LOGO_URL = f"{PUBLIC_BASE_URL}/api/pub/logo"
+
+
+async def get_logo_bytes() -> bytes:
+    s = await db.settings.find_one({"key": "shop"})
+    if s and s.get("logo_b64"):
+        try:
+            return base64.b64decode(s["logo_b64"])
+        except Exception:
+            pass
+    return LOGO_PATH.read_bytes()
 
 _SHORTENERS = ("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "goo.gl", "rebrand.ly")
 _HOSTISH = re.compile(r"\b(?:https?://)?((?:[a-z0-9-]+\.)+[a-z]{2,})", re.I)
@@ -1107,9 +1144,11 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str)
     rows = ""
     for i, li in enumerate(doc.get("line_items", [])):
         bg = "#F7F7F8" if i % 2 else "#ffffff"
+        det = str(li.get("details", "") or "").strip()
+        det_html = f'<div style="color:#9CA3AF;font-size:11px;margin-top:2px">{escape(det)}</div>' if det else ""
         rows += (
             f'<tr style="background:{bg}">'
-            f'<td style="padding:10px 14px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}</td>'
+            f'<td style="padding:10px 14px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}{det_html}</td>'
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{li.get("area_sqft", 0)} sqft</td>'
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0) * factor)}</td></tr>'
         )
@@ -1210,7 +1249,7 @@ async def track_open(token: str):
 # ---------------------------------------------------------------------------
 # PDF generation
 # ---------------------------------------------------------------------------
-def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict]) -> bytes:
+def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_bytes: Optional[bytes] = None) -> bytes:
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     W, H = letter
@@ -1224,7 +1263,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict]) -> bytes
 
     # Logo (top-left)
     try:
-        c.drawImage(ImageReader(str(LOGO_PATH)), L, H - 150, width=180, height=104,
+        logo = ImageReader(io.BytesIO(logo_bytes)) if logo_bytes else ImageReader(str(LOGO_PATH))
+        c.drawImage(logo, L, H - 150, width=180, height=104,
                     preserveAspectRatio=True, mask="auto", anchor="sw")
     except Exception:
         c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawString(L, H - 96, "DBG Signs, Inc.")
@@ -1275,13 +1315,17 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict]) -> bytes
 
     c.setFont("Helvetica", 10)
     for i, li in enumerate(doc.get("line_items", [])):
-        rh = 22
+        det = str(li.get("details", "") or "").strip()
+        rh = 34 if det else 22
         if i % 2 == 1:
-            c.setFillColor(rowbg); c.rect(L, y - 7, R - L, rh, fill=1, stroke=0)
-        c.setFillColor(ink)
+            c.setFillColor(rowbg); c.rect(L, y - (rh - 15), R - L, rh, fill=1, stroke=0)
+        c.setFillColor(ink); c.setFont("Helvetica", 10)
         c.drawString(L + 10, y, str(li.get("description", ""))[:58])
         c.drawRightString(ax - 150, y, f"{li.get('area_sqft', 0)}")
         c.drawRightString(ax - 10, y, _money(li.get("line_total", 0) * factor))
+        if det:
+            c.setFillColor(soft); c.setFont("Helvetica", 8)
+            c.drawString(L + 10, y - 12, det[:95])
         y -= rh
         if y < 170:
             c.showPage(); y = H - 90; c.setFont("Helvetica", 10)
@@ -1319,7 +1363,7 @@ def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Res
 async def _staff_pdf(collection, doc_id: str, label: str) -> Response:
     doc = await get_or_404(collection, doc_id, label)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
-    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None))
+    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes()))
 
 
 @api_router.get("/invoices/{iid}/pdf")
@@ -1347,7 +1391,7 @@ async def public_pdf(token: str):
         raise HTTPException(status_code=404, detail="Document not found")
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     label = {"invoices": "Invoice", "estimates": "Estimate", "sales_orders": "Sales Order"}.get(rec["collection"], "Document")
-    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None), disposition="inline")
+    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes()), disposition="inline")
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,8 @@ import { Inp } from "@/pages/Customers";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const empty = { name: "", category: "", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 40, stock: "", supplier: "" };
+const empty = { name: "", category: "Cut Vinyl", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 40, stock: "", supplier: "" };
+const CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates"];
 
 export default function Materials() {
   const [rows, setRows] = useState([]);
@@ -106,7 +107,12 @@ export default function Materials() {
           <div className="space-y-3">
             <Inp label="Name" value={form.name} onChange={set("name")} testid="mat-name" />
             <div className="grid grid-cols-2 gap-3">
-              <Inp label="Category" value={form.category} onChange={set("category")} testid="mat-category" />
+              <label className="block">
+                <span className="overline text-muted-foreground">Category</span>
+                <select value={form.category} onChange={set("category")} data-testid="mat-category" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                  {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </label>
               <label className="block">
                 <span className="overline text-muted-foreground">Purchase unit</span>
                 <select value={form.unit} onChange={set("unit")} data-testid="mat-unit" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
