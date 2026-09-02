@@ -766,7 +766,7 @@ async def set_so_status(sid: str, status: str, user: dict = Depends(require_staf
 
 
 @api_router.patch("/sales-orders/{sid}/void")
-async def void_sales_order(sid: str, voided: bool, user: dict = Depends(require_staff)):
+async def void_sales_order(sid: str, voided: bool, user: dict = Depends(require_admin)):
     await get_or_404(db.sales_orders, sid, "Sales order")
     await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": {"voided": voided}})
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
@@ -856,7 +856,7 @@ async def set_invoice_status(iid: str, status: str, user: dict = Depends(require
 
 
 @api_router.patch("/invoices/{iid}/void")
-async def void_invoice(iid: str, voided: bool, user: dict = Depends(require_staff)):
+async def void_invoice(iid: str, voided: bool, user: dict = Depends(require_admin)):
     await get_or_404(db.invoices, iid, "Invoice")
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": {"voided": voided}})
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
@@ -876,6 +876,7 @@ async def delete_invoice(iid: str, payload: DeleteConfirm, user: dict = Depends(
 # ---------------------------------------------------------------------------
 class PayIntentInput(BaseModel):
     invoice_id: str
+    amount: Optional[float] = None
 
 
 async def _invoice_for_payment(invoice_id: str, user: dict) -> dict:
@@ -887,15 +888,30 @@ async def _invoice_for_payment(invoice_id: str, user: dict) -> dict:
     return inv
 
 
-async def _mark_invoice_paid(invoice_id: str, payment_intent_id: str) -> None:
-    await db.payment_transactions.update_one(
+async def _apply_payment(payment_intent_id: str) -> None:
+    # Idempotent: only the first flip pending->paid applies the amount to the invoice
+    res = await db.payment_transactions.update_one(
         {"payment_intent_id": payment_intent_id, "payment_status": {"$ne": "paid"}},
         {"$set": {"status": "completed", "payment_status": "paid", "updated_at": now_iso()}},
     )
-    await db.invoices.update_one(
-        {"_id": oid(invoice_id), "status": {"$ne": "paid"}},
-        {"$set": {"status": "paid", "paid_at": now_iso(), "paid_via": "stripe"}},
-    )
+    if res.modified_count != 1:
+        return
+    rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
+    inv = await db.invoices.find_one({"_id": oid(rec["invoice_id"])})
+    if not inv:
+        return
+    total = float(inv.get("total") or 0)
+    paid = round(float(inv.get("amount_paid") or 0) + float(rec.get("amount") or 0), 2)
+    fully = paid >= total - 0.005
+    upd = {"amount_paid": paid, "status": "paid" if fully else "partial"}
+    if fully:
+        upd["paid_at"] = now_iso()
+        upd["paid_via"] = "stripe"
+    await db.invoices.update_one({"_id": inv["_id"]}, {"$set": upd})
+    try:
+        await _send_payment_receipt({**inv, **upd}, float(rec.get("amount") or 0))
+    except Exception as e:  # never let a receipt failure break payment
+        logger.error(f"Payment receipt email failed: {e}")
 
 
 @api_router.post("/payments/create-intent")
@@ -903,11 +919,15 @@ async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(ge
     inv = await _invoice_for_payment(payload.invoice_id, user)
     if inv.get("voided"):
         raise HTTPException(status_code=400, detail="This invoice has been voided.")
-    if inv.get("status") == "paid":
-        raise HTTPException(status_code=400, detail="This invoice is already paid.")
-    amount = float(inv.get("total") or 0)
+    total = float(inv.get("total") or 0)
+    balance = round(total - float(inv.get("amount_paid") or 0), 2)
+    if inv.get("status") == "paid" or balance <= 0:
+        raise HTTPException(status_code=400, detail="This invoice is already paid in full.")
+    amount = round(float(payload.amount), 2) if payload.amount is not None else balance
     if amount <= 0:
-        raise HTTPException(status_code=400, detail="Invoice amount must be greater than zero.")
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero.")
+    if amount > balance + 0.005:
+        raise HTTPException(status_code=400, detail=f"Payment can't exceed the balance due of ${balance:,.2f}.")
     intent = stripe.PaymentIntent.create(
         amount=int(round(amount * 100)),
         currency="usd",
@@ -921,7 +941,8 @@ async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(ge
         "status": "initiated", "payment_status": "pending",
         "created_at": now_iso(), "updated_at": now_iso(),
     })
-    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY, "amount": amount}
+    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
+            "amount": amount, "balance": balance}
 
 
 @api_router.get("/payments/status/{payment_intent_id}")
@@ -933,10 +954,10 @@ async def payment_status(payment_intent_id: str, user: dict = Depends(get_curren
         try:
             pi = stripe.PaymentIntent.retrieve(payment_intent_id)
             if pi.status == "succeeded":
-                await _mark_invoice_paid(rec["invoice_id"], payment_intent_id)
+                await _apply_payment(payment_intent_id)
                 rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
-        except stripe.error.StripeError:
-            pass
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe status retrieve failed for {payment_intent_id}: {e}")
     return {"payment_intent_id": payment_intent_id, "status": rec["status"], "payment_status": rec["payment_status"]}
 
 
@@ -952,7 +973,7 @@ async def stripe_webhook(request: Request):
     if t == "payment_intent.succeeded":
         rec = await db.payment_transactions.find_one({"payment_intent_id": obj["id"]})
         if rec:
-            await _mark_invoice_paid(rec["invoice_id"], obj["id"])
+            await _apply_payment(obj["id"])
     elif t == "payment_intent.payment_failed":
         await db.payment_transactions.update_one(
             {"payment_intent_id": obj["id"]},
@@ -1511,6 +1532,66 @@ async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
         "email_opened_at": None, "email_token": token, "email_id": email_id,
     }})
     return {"status": "sent", "to": to}
+
+
+def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
+    contact = " &nbsp;·&nbsp; ".join([escape(str(x)) for x in contact_bits if x])
+    contact_html = f'<div style="color:#6B7280;font-size:11px;margin-top:6px">{contact}</div>' if contact else ""
+    total = float(inv.get("total") or 0)
+    paid = float(inv.get("amount_paid") or 0)
+    balance = round(total - paid, 2)
+    fully = inv.get("status") == "paid"
+    status_line = "Paid in full — thank you!" if fully else f"Partial payment received. Remaining balance: {_money(balance)}"
+    balance_row = "" if fully else (
+        f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Balance remaining</td>'
+        f'<td align="right" style="padding:6px 14px">{_money(balance)}</td></tr>'
+    )
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">RECEIPT</div>'
+        f'<div style="color:#6B7280;font-size:13px">Invoice #{escape(str(inv.get("number", "")))}</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#16A34A"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Billed To</div>'
+        f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
+        f'<p style="margin:16px 0 0">We\'ve received your card payment. {escape(status_line)}</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
+        f'<tr><td></td><td align="right" style="padding:10px 14px;color:#6B7280">Invoice total</td>'
+        f'<td align="right" style="padding:10px 14px">{_money(total)}</td></tr>'
+        f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Total paid to date</td>'
+        f'<td align="right" style="padding:6px 14px">{_money(paid)}</td></tr>'
+        f'{balance_row}'
+        f'<tr><td></td><td align="right" style="padding:12px 14px;background:#16A34A;color:#fff;font-weight:bold">Payment received</td>'
+        f'<td align="right" style="padding:12px 14px;background:#16A34A;color:#fff;font-weight:bold;font-size:16px">{_money(amount_now)}</td></tr>'
+        f'</table></td></tr>'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px">Questions about this payment? Just reply to this email.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'{contact_html}'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _send_payment_receipt(inv: dict, amount_now: float) -> None:
+    cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
+    to = (cust or {}).get("email")
+    if not to:
+        return
+    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+    html = render_payment_receipt_email(inv, amount_now, cname, await get_settings())
+    await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html)
 
 
 @api_router.post("/estimates/{eid}/send")

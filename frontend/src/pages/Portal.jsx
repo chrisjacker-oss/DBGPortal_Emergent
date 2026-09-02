@@ -31,7 +31,7 @@ export default function Portal() {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const outstanding = data.invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
+  const outstanding = data.invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + (Number(i.total || 0) - Number(i.amount_paid || 0)), 0);
 
   if (error) {
     return (
@@ -82,7 +82,12 @@ export default function Portal() {
                     <td className="px-6 py-3 font-mono">{r.number}</td>
                     <td className="px-6 py-3 font-medium">{r.title}</td>
                     <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
-                    <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                    <td className="px-6 py-3 text-right font-mono">
+                      {currency(r.total)}
+                      {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (
+                        <div className="text-[11px] text-[#F59E0B]" data-testid={`portal-balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
+                      )}
+                    </td>
                     <td className="px-6 py-3 text-right">
                       {r.status !== "paid" && (
                         <Btn variant="ghost" onClick={() => setPayInv(r)} data-testid={`portal-pay-${r.id}`}><CreditCard size={16} /> Pay</Btn>

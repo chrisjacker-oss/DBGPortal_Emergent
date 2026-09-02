@@ -14,9 +14,11 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - Commission: base is now MATERIALS-ONLY at SELLING price × commission_rate (no labor/machine, not at-cost). DocBuilder preview + /api/commissions updated.
 - Settings: default_tax_rate applied/seeded to new estimates/SOs/invoices (editable per doc).
 - Sales Orders can be created directly from the Sales Orders page (POST/PUT /api/sales-orders), not only via estimate approval.
-- Stripe embedded card payments: POST /api/payments/create-intent (card-only), GET /api/payments/status/{id}, POST /api/stripe/webhook. Pay Now on staff Invoices + customer Portal. Keys in backend/.env; frontend REACT_APP_STRIPE_PUBLISHABLE_KEY. Stripe test sandbox.
+- Stripe embedded card payments: POST /api/payments/create-intent (card-only, optional partial `amount`), GET /api/payments/status/{id}, POST /api/stripe/webhook. Pay Now on staff Invoices + customer Portal. Keys in backend/.env; frontend REACT_APP_STRIPE_PUBLISHABLE_KEY. Stripe test sandbox.
+- Partial payments: invoices track amount_paid; status flips unpaid→partial→paid; balance shown on Invoices + Portal; PayNowDialog lets you choose an amount (default full balance). _apply_payment is idempotent (guards double-count across status-poll + webhook).
+- Payment receipts: automatic emailed receipt to the customer when a card payment clears (render_payment_receipt_email via Resend; failures never block payment).
 - Portal accounts admin console (/portal-accounts, admin only): add / suspend (blocks login) / delete customer logins.
-- Void + reactivate for invoices & sales orders (Active/Voided tabs). Voided excluded from dashboard/receivables/portal/payment.
+- Void + reactivate for invoices & sales orders (Active/Voided tabs), ADMIN-ONLY. Voided excluded from dashboard/receivables/portal/payment.
 - Deleting any estimate/SO/invoice requires the admin password (admin-only); reusable AdminDeleteDialog.
 - Logo now shown on login page + console sidebar (served from /api/pub/logo).
 - Dashboard: admin-only Accounts Payable card + Record Bill/Add Material quick actions.

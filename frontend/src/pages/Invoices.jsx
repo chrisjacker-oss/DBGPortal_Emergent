@@ -91,7 +91,12 @@ export default function Invoices() {
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.due_date || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
-                  <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  <td className="px-6 py-3 text-right font-mono">
+                    {currency(r.total)}
+                    {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (
+                      <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
+                    )}
+                  </td>
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
@@ -105,9 +110,9 @@ export default function Invoices() {
                           <Btn variant="ghost" onClick={() => markPaid(r.id)} data-testid={`mark-paid-${r.id}`} title="Mark paid"><CheckCircle size={16} /></Btn>
                         )}
                         <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-invoice-${r.id}`}><PencilSimple size={16} /></Btn>
-                        <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-invoice-${r.id}`} title="Void"><Prohibit size={16} /></Btn>
+                        {isAdmin && <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-invoice-${r.id}`} title="Void"><Prohibit size={16} /></Btn>}
                       </>}
-                      {r.voided && (
+                      {r.voided && isAdmin && (
                         <Btn variant="ghost" onClick={() => setVoid(r.id, false)} data-testid={`reactivate-invoice-${r.id}`} title="Reactivate"><ArrowCounterClockwise size={16} /></Btn>
                       )}
                       {isAdmin && (

@@ -104,9 +104,9 @@ export default function SalesOrders() {
                         {NEXT[r.status] && <Btn variant="ghost" onClick={() => advance(r)} data-testid={`advance-so-${r.id}`}>{NEXT[r.status].replace("_", " ")}</Btn>}
                         {!r.invoice_id && <Btn variant="ghost" onClick={() => convert(r.id)} data-testid={`invoice-so-${r.id}`} title="Convert to invoice"><Receipt size={16} /> Invoice</Btn>}
                         <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-so-${r.id}`}><PencilSimple size={16} /></Btn>
-                        <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-so-${r.id}`} title="Void"><Prohibit size={16} /></Btn>
+                        {isAdmin && <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-so-${r.id}`} title="Void"><Prohibit size={16} /></Btn>}
                       </>}
-                      {r.voided && (
+                      {r.voided && isAdmin && (
                         <Btn variant="ghost" onClick={() => setVoid(r.id, false)} data-testid={`reactivate-so-${r.id}`} title="Reactivate"><ArrowCounterClockwise size={16} /></Btn>
                       )}
                       {isAdmin && (
