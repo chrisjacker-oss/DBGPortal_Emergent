@@ -93,6 +93,7 @@ export default function Team() {
                 <span className="overline text-muted-foreground">Role</span>
                 <select value={form.role} onChange={set("role")} data-testid="user-role" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
                   <option value="salesman">Salesman</option>
+                  <option value="installer">Service / Installer</option>
                   <option value="admin">Admin</option>
                 </select>
               </label>

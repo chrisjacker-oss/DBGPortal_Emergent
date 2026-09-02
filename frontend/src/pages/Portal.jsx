@@ -5,7 +5,8 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatCard, StatusBadge } from "@/components/kit";
 import PayNowDialog from "@/components/PayNowDialog";
 import { Inp } from "@/pages/Customers";
-import { ArrowsClockwise, Receipt, CreditCard, Warning } from "@phosphor-icons/react";
+import { downloadFile } from "@/lib/download";
+import { ArrowsClockwise, Receipt, CreditCard, Warning, FilePdf } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 export default function Portal() {
@@ -56,6 +57,9 @@ export default function Portal() {
       <PageHeader overline={data.customer?.company || data.customer?.name || "Welcome"} title="My Orders">
         {outstanding > 0.005 && (
           <Btn onClick={() => setPayAll({ total: outstanding, count: data.invoices.filter((i) => i.status !== "paid").length })} data-testid="pay-all-btn"><CreditCard size={16} weight="bold" /> Pay all ({currency(outstanding)})</Btn>
+        )}
+        {outstanding > 0.005 && (
+          <Btn variant="outline" onClick={() => downloadFile("/portal/statement/pdf", "statement.pdf", "application/pdf")} data-testid="statement-btn"><FilePdf size={16} weight="bold" /> Statement</Btn>
         )}
         <Btn variant="outline" onClick={openBlank} data-testid="new-reorder-btn"><ArrowsClockwise size={16} weight="bold" /> Request Reorder</Btn>
       </PageHeader>

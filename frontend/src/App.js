@@ -18,6 +18,7 @@ import Team from "@/pages/Team";
 import Settings from "@/pages/Settings";
 import Portal from "@/pages/Portal";
 import PortalAccounts from "@/pages/PortalAccounts";
+import WorkOrders from "@/pages/WorkOrders";
 
 function Loading() {
   return (
@@ -27,12 +28,14 @@ function Loading() {
   );
 }
 
-function Protected({ children, staffOnly, adminOnly }) {
+const HOME = { admin: "/dashboard", salesman: "/estimates", installer: "/work-orders", customer: "/portal" };
+const homeFor = (role) => HOME[role] || "/login";
+
+function Protected({ children, roles }) {
   const { user } = useAuth();
   if (user === null) return <Loading />;
   if (user === false) return <Navigate to="/login" replace />;
-  if (user.role === "customer" && (staffOnly || adminOnly)) return <Navigate to="/portal" replace />;
-  if (adminOnly && user.role !== "admin") return <Navigate to="/dashboard" replace />;
+  if (roles && !roles.includes(user.role)) return <Navigate to={homeFor(user.role)} replace />;
   return children;
 }
 
@@ -40,7 +43,7 @@ function Root() {
   const { user } = useAuth();
   if (user === null) return <Loading />;
   if (user === false) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === "customer" ? "/portal" : "/dashboard"} replace />;
+  return <Navigate to={homeFor(user.role)} replace />;
 }
 
 function App() {
@@ -56,33 +59,34 @@ function App() {
             <Route
               path="/portal"
               element={
-                <Protected>
+                <Protected roles={["customer"]}>
                   <Layout>
                     <Portal />
                   </Layout>
                 </Protected>
               }
             />
-            {[
-              ["/dashboard", <Dashboard />, false],
-              ["/customers", <Customers />, false],
-              ["/portal-accounts", <PortalAccounts />, true],
-              ["/materials", <Materials />, true],
-              ["/estimates", <Estimates />, false],
-              ["/sales-orders", <SalesOrders />, false],
-              ["/invoices", <Invoices />, false],
-              ["/payables", <Payables />, true],
-              ["/receivables", <Receivables />, false],
-              ["/reorders", <Reorders />, true],
-              ["/commissions", <Commissions />, false],
-              ["/team", <Team />, true],
-              ["/settings", <Settings />, true],
-            ].map(([path, el, adminOnly]) => (
+            {(() => { const A = ["admin"], AS = ["admin", "salesman"]; return [
+              ["/dashboard", <Dashboard />, A],
+              ["/customers", <Customers />, AS],
+              ["/work-orders", <WorkOrders />, ["admin", "installer"]],
+              ["/portal-accounts", <PortalAccounts />, A],
+              ["/materials", <Materials />, A],
+              ["/estimates", <Estimates />, AS],
+              ["/sales-orders", <SalesOrders />, AS],
+              ["/invoices", <Invoices />, AS],
+              ["/payables", <Payables />, A],
+              ["/receivables", <Receivables />, A],
+              ["/reorders", <Reorders />, A],
+              ["/commissions", <Commissions />, AS],
+              ["/team", <Team />, A],
+              ["/settings", <Settings />, A],
+            ]; })().map(([path, el, roles]) => (
               <Route
                 key={path}
                 path={path}
                 element={
-                  <Protected staffOnly adminOnly={adminOnly}>
+                  <Protected roles={roles}>
                     <Layout>{el}</Layout>
                   </Protected>
                 }

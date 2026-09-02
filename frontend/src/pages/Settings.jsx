@@ -26,6 +26,8 @@ export default function Settings() {
         machine_sqft_per_hr: Number(form.machine_sqft_per_hr),
         default_markup: Number(form.default_markup),
         default_tax_rate: Number(form.default_tax_rate),
+        card_surcharge_enabled: !!form.card_surcharge_enabled,
+        card_surcharge_pct: Number(form.card_surcharge_pct || 0),
         company_name: form.company_name || "",
         company_address: form.company_address || "",
         company_phone: form.company_phone || "",
@@ -93,6 +95,13 @@ export default function Settings() {
           <Inp label="Default material markup (%)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
           <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />
           <div className="text-xs text-muted-foreground -mt-2">Applied automatically to new quotes, sales orders and invoices (editable per document).</div>
+          <label className="flex items-center gap-2 cursor-pointer select-none pt-2" data-testid="set-surcharge-label">
+            <input type="checkbox" checked={!!form.card_surcharge_enabled} onChange={(e) => setForm({ ...form, card_surcharge_enabled: e.target.checked })} data-testid="set-card-surcharge-enabled" className="h-4 w-4 accent-[#0A0A0A]" />
+            <span className="text-sm">Add a card-processing surcharge to online payments</span>
+          </label>
+          {form.card_surcharge_enabled && (
+            <Inp label="Card surcharge (%)" type="number" value={form.card_surcharge_pct ?? 0} onChange={set("card_surcharge_pct")} testid="set-card-surcharge-pct" />
+          )}
           <div className="border-t border-border pt-4 text-sm text-muted-foreground font-mono">
             Per line: labor hrs = area ÷ {form.shop_sqft_per_hr} sqft/hr, machine hrs = area ÷ {form.machine_sqft_per_hr} sqft/hr. Line = (price/sqft × area) + ({currency(form.shop_rate_per_hr)} × labor hrs) + ({currency(form.machine_rate_per_hr)} × machine hrs)
           </div>

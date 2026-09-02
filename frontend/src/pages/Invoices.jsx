@@ -7,6 +7,7 @@ import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
+import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -19,6 +20,7 @@ export default function Invoices() {
   const [editing, setEditing] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [delInv, setDelInv] = useState(null);
+  const [recInv, setRecInv] = useState(null);
   const [histInv, setHistInv] = useState(null);
   const [histRows, setHistRows] = useState([]);
   const [tab, setTab] = useState("active");
@@ -42,10 +44,6 @@ export default function Invoices() {
     } catch { toast.error("Save failed"); }
   };
 
-  const markPaid = async (id) => {
-    await api.patch(`/invoices/${id}/status`, null, { params: { status: "paid" } });
-    toast.success("Marked paid"); load();
-  };
   const setVoid = async (id, voided) => {
     try {
       await api.patch(`/invoices/${id}/void`, null, { params: { voided } });
@@ -120,7 +118,7 @@ export default function Invoices() {
                           <Btn variant="ghost" onClick={() => setPayInv(r)} data-testid={`pay-invoice-${r.id}`} title="Pay now (card)"><CreditCard size={16} /></Btn>
                         )}
                         {r.status !== "paid" && (
-                          <Btn variant="ghost" onClick={() => markPaid(r.id)} data-testid={`mark-paid-${r.id}`} title="Mark paid"><CheckCircle size={16} /></Btn>
+                          <Btn variant="ghost" onClick={() => setRecInv(r)} data-testid={`mark-paid-${r.id}`} title="Record payment (check / ACH / wire)"><CheckCircle size={16} /></Btn>
                         )}
                         <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-invoice-${r.id}`}><PencilSimple size={16} /></Btn>
                         {isAdmin && <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-invoice-${r.id}`} title="Void"><Prohibit size={16} /></Btn>}
@@ -143,6 +141,7 @@ export default function Invoices() {
 
       <DocBuilder open={open} kind="invoice" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
+      <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
 
       <Dialog open={!!histInv} onOpenChange={(o) => !o && setHistInv(null)}>

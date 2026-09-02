@@ -7,7 +7,7 @@ import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-function CardForm({ amount, onPaid, onClose }) {
+function CardForm({ amount, surcharge, onPaid, onClose }) {
   const stripe = useStripe();
   const elements = useElements();
   const [busy, setBusy] = useState(false);
@@ -31,6 +31,9 @@ function CardForm({ amount, onPaid, onClose }) {
   return (
     <div className="space-y-4">
       <PaymentElement options={{ layout: "tabs" }} />
+      {surcharge > 0 && (
+        <div className="text-xs text-muted-foreground" data-testid="pay-surcharge-note">Includes a {currency(surcharge)} card-processing fee.</div>
+      )}
       <DialogFooter>
         <Btn variant="outline" onClick={onClose} disabled={busy}>Cancel</Btn>
         <Btn onClick={pay} disabled={!stripe || busy} data-testid="pay-submit-btn">
@@ -45,6 +48,7 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
   const [step, setStep] = useState("amount");
   const [amount, setAmount] = useState("");
   const [chargeAmount, setChargeAmount] = useState(0);
+  const [surcharge, setSurcharge] = useState(0);
   const [clientSecret, setClientSecret] = useState(null);
   const [stripePromise, setStripePromise] = useState(null);
   const [error, setError] = useState(null);
@@ -54,12 +58,13 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
   const paidToDate = Number(invoice?.amount_paid || 0);
   const balance = Math.round((total - paidToDate) * 100) / 100;
 
-  const beginCard = (data, amt) => {
+  const beginCard = (data) => {
     const key = data.publishable_key || process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
     if (!key) { setError("Card payments aren't configured yet. Please contact DBG Signs."); return false; }
     setStripePromise(loadStripe(key));
     setClientSecret(data.client_secret);
-    setChargeAmount(amt);
+    setChargeAmount(data.charged ?? data.amount);
+    setSurcharge(data.surcharge || 0);
     setStep("card");
     return true;
   };
@@ -68,7 +73,7 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
     setBusy(true);
     try {
       const { data } = await api.post("/payments/create-intent-all");
-      beginCard(data, data.amount);
+      beginCard(data);
     } catch (e) {
       setError(e.response?.data?.detail || "Unable to start payment. Please try again.");
     }
@@ -96,7 +101,7 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
     setBusy(true);
     try {
       const { data } = await api.post("/payments/create-intent", { invoice_id: invoice.id, amount: amt });
-      beginCard(data, amt);
+      beginCard(data);
     } catch (e) {
       setError(e.response?.data?.detail || "Unable to start payment. Please try again.");
     }
@@ -135,7 +140,7 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
 
         {!error && step === "card" && clientSecret && stripePromise && (
           <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "flat" } }}>
-            <CardForm amount={chargeAmount} onPaid={onPaid} onClose={onClose} />
+            <CardForm amount={chargeAmount} surcharge={surcharge} onPaid={onPaid} onClose={onClose} />
           </Elements>
         )}
       </DialogContent>

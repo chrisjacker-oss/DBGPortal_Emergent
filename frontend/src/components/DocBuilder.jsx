@@ -29,6 +29,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const [customers, setCustomers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [salesmen, setSalesmen] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [settings, setSettings] = useState({ shop_rate_per_hr: 0, shop_sqft_per_hr: 0, machine_rate_per_hr: 0, machine_sqft_per_hr: 0 });
   const [form, setForm] = useState(null);
 
@@ -45,7 +46,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li })) }
           : {
-              customer_id: "", title: "", line_items: [{ ...emptyItem }], tax_rate: 0, notes: "",
+              customer_id: "", contact_id: "", title: "", line_items: [{ ...emptyItem }], tax_rate: 0, notes: "",
               status: statusOptions[0], due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -53,6 +54,15 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial, kind, isAdmin, user]);
+
+  useEffect(() => {
+    if (open && form?.customer_id) {
+      api.get(`/customers/${form.customer_id}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
+    } else {
+      setContacts([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, form?.customer_id]);
 
   if (!form) return null;
 
@@ -96,6 +106,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const submit = () => {
     onSave({
       ...form,
+      contact_id: form.contact_id || null,
       tax_rate: Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
@@ -124,13 +135,21 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         </DialogHeader>
 
         <div className="space-y-4 min-w-0">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Customer</span>
-              <select value={form.customer_id} onChange={(e) => set("customer_id", e.target.value)} data-testid="doc-customer"
+              <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value, contact_id: "" })} data-testid="doc-customer"
                 className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
                 <option value="">Select customer…</option>
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
+              </select>
+            </label>
+            <label className="block min-w-0">
+              <span className="overline text-muted-foreground">Contact (Attn)</span>
+              <select value={form.contact_id || ""} onChange={(e) => set("contact_id", e.target.value)} data-testid="doc-contact" disabled={!form.customer_id}
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50">
+                <option value="">{contacts.length ? "No specific contact" : "No contacts on file"}</option>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.title ? ` — ${c.title}` : ""}</option>)}
               </select>
             </label>
             <Inp label="Title / Job" value={form.title} onChange={(e) => set("title", e.target.value)} testid="doc-title" />

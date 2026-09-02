@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus } from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 
@@ -16,13 +18,43 @@ const empty = { name: "", company: "", email: "", phone: "", address: "", notes:
 const TIER_PCT = { 1: "35%", 2: "25%", 3: "15%" };
 
 export default function Customers() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [contactCust, setContactCust] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [cForm, setCForm] = useState({ name: "", email: "", phone: "", title: "" });
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+
+  const loadContacts = (cid) => api.get(`/customers/${cid}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
+  const openContacts = async (r) => { setContactCust(r); setCForm({ name: "", email: "", phone: "", title: "" }); await loadContacts(r.id); };
+  const addContact = async () => {
+    if (!cForm.name.trim()) { toast.error("Contact name is required"); return; }
+    try { await api.post(`/customers/${contactCust.id}/contacts`, cForm); setCForm({ name: "", email: "", phone: "", title: "" }); loadContacts(contactCust.id); toast.success("Contact added"); }
+    catch { toast.error("Could not add contact"); }
+  };
+  const delContact = async (id) => {
+    if (!window.confirm("Delete this contact? Any portal login for it is removed too.")) return;
+    try { await api.delete(`/contacts/${id}`); loadContacts(contactCust.id); } catch { toast.error("Delete failed"); }
+  };
+  const togglePortal = async (c) => {
+    if (c.has_portal) {
+      if (!window.confirm(`Remove portal login for ${c.name}?`)) return;
+      try { await api.delete(`/contacts/${c.id}/portal`); toast.success("Portal login removed"); loadContacts(contactCust.id); }
+      catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    } else {
+      if (!c.email) { toast.error("Add an email to this contact first"); return; }
+      const pw = window.prompt(`Set a portal password for ${c.name}:`);
+      if (!pw) return;
+      try { await api.post(`/contacts/${c.id}/portal`, { password: pw }); toast.success("Portal login created"); loadContacts(contactCust.id); }
+      catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    }
+  };
 
   const openNew = () => { setForm(empty); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, tier: r.tier ?? "", title: r.title ?? "", net_terms: r.net_terms ?? "Net 15", portal_enabled: !!r.portal_enabled }); setEditing(r.id); setOpen(true); };
@@ -77,6 +109,7 @@ export default function Customers() {
                   <td className="px-6 py-3">{r.portal_enabled ? <span className="text-[#16A34A] text-xs font-mono">● On</span> : <span className="text-muted-foreground text-xs font-mono">Off</span>}</td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-2">
+                      <Btn variant="ghost" onClick={() => openContacts(r)} data-testid={`contacts-customer-${r.id}`} title="Contacts"><UsersThree size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-customer-${r.id}`}><PencilSimple size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-customer-${r.id}`}><Trash size={16} /></Btn>
                     </div>
@@ -131,6 +164,50 @@ export default function Customers() {
           <DialogFooter>
             <Btn variant="outline" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn onClick={save} data-testid="save-customer-btn">Save</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!contactCust} onOpenChange={(o) => !o && setContactCust(null)}>
+        <DialogContent className="rounded-none max-w-lg max-h-[90vh] overflow-y-auto" data-testid="contacts-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Contacts · {contactCust?.company || contactCust?.name}</DialogTitle>
+            <DialogDescription className="font-mono text-xs">People at this company. Pick one as "Attn" on documents; optionally give them a portal login.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2" data-testid="contacts-list">
+            {contacts.length === 0 && <div className="text-sm text-muted-foreground py-2">No contacts yet.</div>}
+            {contacts.map((c) => (
+              <div key={c.id} className="flex items-center justify-between border border-border px-3 py-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-sm">{c.name}{c.title ? <span className="text-muted-foreground font-normal"> — {c.title}</span> : ""}</div>
+                  <div className="text-xs text-muted-foreground font-mono truncate">{c.email || "no email"}{c.phone ? ` · ${c.phone}` : ""}</div>
+                  {c.has_portal && <div className="text-[11px] text-[#16A34A] font-mono">● portal login</div>}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {isAdmin && (
+                    <Btn variant="ghost" onClick={() => togglePortal(c)} data-testid={`toggle-portal-${c.id}`} title={c.has_portal ? "Remove portal login" : "Create portal login"}>
+                      {c.has_portal ? <UserMinus size={16} /> : <Key size={16} />}
+                    </Btn>
+                  )}
+                  <Btn variant="ghost" onClick={() => delContact(c.id)} data-testid={`delete-contact-${c.id}`}><Trash size={16} /></Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border pt-3 space-y-3">
+            <div className="overline text-muted-foreground">Add contact</div>
+            <div className="grid grid-cols-2 gap-3">
+              <Inp label="Name" value={cForm.name} onChange={(e) => setCForm({ ...cForm, name: e.target.value })} testid="new-contact-name" />
+              <Inp label="Title" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} testid="new-contact-title" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Inp label="Email" value={cForm.email} onChange={(e) => setCForm({ ...cForm, email: e.target.value })} testid="new-contact-email" />
+              <Inp label="Phone" value={cForm.phone} onChange={(e) => setCForm({ ...cForm, phone: e.target.value })} testid="new-contact-phone" />
+            </div>
+            <Btn onClick={addContact} data-testid="add-contact-btn"><Plus size={16} weight="bold" /> Add contact</Btn>
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setContactCust(null)}>Done</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>

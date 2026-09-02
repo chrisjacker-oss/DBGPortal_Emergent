@@ -16,6 +16,7 @@ import {
   Percent,
   UsersThree,
   IdentificationBadge,
+  Wrench,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
@@ -25,6 +26,7 @@ const adminLinks = [
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
+  { to: "/work-orders", label: "Work Orders", icon: Wrench },
   { to: "/materials", label: "Materials", icon: Stack },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/portal-accounts", label: "Portal Accounts", icon: IdentificationBadge },
@@ -37,12 +39,15 @@ const adminLinks = [
 ];
 
 const salesmanLinks = [
-  { to: "/dashboard", label: "Dashboard", icon: Gauge },
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/commissions", label: "Commissions", icon: Percent },
+];
+
+const installerLinks = [
+  { to: "/work-orders", label: "Work Orders", icon: Wrench },
 ];
 
 export const Navigation = () => {
@@ -53,6 +58,8 @@ export const Navigation = () => {
     ? [{ to: "/portal", label: "My Orders", icon: ArrowsClockwise }]
     : user?.role === "admin"
     ? adminLinks
+    : user?.role === "installer"
+    ? installerLinks
     : salesmanLinks;
 
   const handleLogout = async () => {

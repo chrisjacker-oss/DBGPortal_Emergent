@@ -124,6 +124,12 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def require_worker(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") not in ("admin", "salesman", "installer"):
+        raise HTTPException(status_code=403, detail="Staff access required")
+    return user
+
+
 async def verify_admin_password(user: dict, password: str) -> None:
     u = await db.users.find_one({"_id": ObjectId(user["id"])})
     if not u or not verify_password(password or "", u.get("password_hash", "")):
@@ -187,6 +193,7 @@ class MaterialInput(BaseModel):
 
 class EstimateInput(BaseModel):
     customer_id: str
+    contact_id: Optional[str] = None
     title: str
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
@@ -199,12 +206,24 @@ class EstimateInput(BaseModel):
 
 class InvoiceInput(BaseModel):
     customer_id: str
+    contact_id: Optional[str] = None
     title: str
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     notes: Optional[str] = None
     due_date: Optional[str] = None
     status: str = "unpaid"  # unpaid, paid, partial, overdue
+
+
+class ContactInput(BaseModel):
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    title: Optional[str] = None
+
+
+class ContactPortalInput(BaseModel):
+    password: str
 
 
 class BillInput(BaseModel):
@@ -229,6 +248,8 @@ class SettingsInput(BaseModel):
     machine_sqft_per_hr: float = 150.0
     default_markup: float = 40.0
     default_tax_rate: float = 0.0
+    card_surcharge_enabled: bool = False
+    card_surcharge_pct: float = 0.0
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
     company_phone: Optional[str] = ""
@@ -240,8 +261,19 @@ class StaffInput(BaseModel):
     email: EmailStr
     password: Optional[str] = None
     name: str
-    role: str = "salesman"  # admin | salesman
+    role: str = "salesman"  # admin | salesman | installer
     commission_rate: float = 0.0
+
+
+class WorkOrderInput(BaseModel):
+    customer_id: Optional[str] = None
+    date: str
+    work_performed: str = ""
+    unit_vin: str = ""
+    equipment_type: str = ""
+    equipment_other: Optional[str] = ""
+    mileage_start: Optional[float] = None
+    mileage_end: Optional[float] = None
 
 
 class DeleteConfirm(BaseModel):
@@ -270,9 +302,9 @@ def clean(doc: dict) -> dict:
 
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0,
-                    "default_tax_rate": 0.0,
+                    "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
-_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate"}
+_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct"}
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials"]
 
@@ -469,13 +501,13 @@ async def refresh(request: Request, response: Response):
 # Customers
 # ---------------------------------------------------------------------------
 @api_router.get("/customers")
-async def list_customers(user: dict = Depends(require_staff)):
+async def list_customers(user: dict = Depends(require_worker)):
     docs = await db.customers.find().sort("created_at", -1).to_list(1000)
     return [clean(d) for d in docs]
 
 
 @api_router.post("/customers")
-async def create_customer(payload: CustomerInput, user: dict = Depends(require_staff)):
+async def create_customer(payload: CustomerInput, user: dict = Depends(require_worker)):
     doc = payload.model_dump()
     doc["created_at"] = now_iso()
     res = await db.customers.insert_one(doc)
@@ -494,6 +526,119 @@ async def delete_customer(cid: str, user: dict = Depends(require_admin)):
     res = await db.customers.delete_one({"_id": oid(cid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Customer not found")
+    await db.contacts.delete_many({"customer_id": cid})
+    return {"message": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Customer contacts (multiple people per company; optional portal logins)
+# ---------------------------------------------------------------------------
+async def _contact_out(d: dict) -> dict:
+    d = clean(d)
+    d["has_portal"] = bool(await db.users.find_one({"contact_id": d["id"]}))
+    return d
+
+
+@api_router.get("/customers/{cid}/contacts")
+async def list_contacts(cid: str, user: dict = Depends(require_worker)):
+    docs = await db.contacts.find({"customer_id": cid}).sort("created_at", 1).to_list(500)
+    return [await _contact_out(d) for d in docs]
+
+
+@api_router.post("/customers/{cid}/contacts")
+async def create_contact(cid: str, payload: ContactInput, user: dict = Depends(require_worker)):
+    await get_or_404(db.customers, cid, "Customer")
+    doc = payload.model_dump()
+    doc["customer_id"] = cid
+    doc["created_at"] = now_iso()
+    res = await db.contacts.insert_one(doc)
+    return await _contact_out(await db.contacts.find_one({"_id": res.inserted_id}))
+
+
+@api_router.put("/contacts/{ctid}")
+async def update_contact(ctid: str, payload: ContactInput, user: dict = Depends(require_staff)):
+    await get_or_404(db.contacts, ctid, "Contact")
+    await db.contacts.update_one({"_id": oid(ctid)}, {"$set": payload.model_dump()})
+    await db.users.update_one({"contact_id": ctid}, {"$set": {"name": payload.name}})
+    return await _contact_out(await db.contacts.find_one({"_id": oid(ctid)}))
+
+
+@api_router.delete("/contacts/{ctid}")
+async def delete_contact(ctid: str, user: dict = Depends(require_staff)):
+    res = await db.contacts.delete_one({"_id": oid(ctid)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    await db.users.delete_many({"contact_id": ctid})
+    return {"message": "deleted"}
+
+
+@api_router.post("/contacts/{ctid}/portal")
+async def enable_contact_portal(ctid: str, payload: ContactPortalInput, user: dict = Depends(require_admin)):
+    ct = await get_or_404(db.contacts, ctid, "Contact")
+    if not ct.get("email"):
+        raise HTTPException(status_code=400, detail="Add an email to this contact first")
+    email = ct["email"].lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="That email already has a login")
+    res = await db.users.insert_one({
+        "email": email, "password_hash": hash_password(payload.password), "name": ct.get("name"),
+        "role": "customer", "suspended": False, "customer_id": ct["customer_id"], "contact_id": ctid,
+        "created_at": now_iso(),
+    })
+    await db.customers.update_one({"_id": oid(ct["customer_id"])}, {"$set": {"portal_enabled": True}})
+    return {"id": str(res.inserted_id), "email": email}
+
+
+@api_router.delete("/contacts/{ctid}/portal")
+async def disable_contact_portal(ctid: str, user: dict = Depends(require_admin)):
+    await db.users.delete_many({"contact_id": ctid})
+    return {"message": "portal disabled"}
+
+
+# ---------------------------------------------------------------------------
+# Work orders (service / installer daily logs)
+# ---------------------------------------------------------------------------
+async def enrich_work_order(d: dict) -> dict:
+    d = clean(d)
+    if d.get("customer_id"):
+        c = await db.customers.find_one({"_id": oid(d["customer_id"])})
+        d["customer_name"] = (c.get("company") or c.get("name")) if c else None
+    return d
+
+
+@api_router.get("/work-orders")
+async def list_work_orders(user: dict = Depends(require_worker)):
+    q = {} if user["role"] == "admin" else {"worker_id": user["id"]}
+    docs = await db.work_orders.find(q).sort("created_at", -1).to_list(2000)
+    return [await enrich_work_order(d) for d in docs]
+
+
+@api_router.post("/work-orders")
+async def create_work_order(payload: WorkOrderInput, user: dict = Depends(require_worker)):
+    doc = payload.model_dump()
+    doc["worker_id"] = user["id"]
+    doc["worker_name"] = user.get("name")
+    doc["number"] = await next_number("WO", "work_orders", db.work_orders)
+    doc["created_at"] = now_iso()
+    res = await db.work_orders.insert_one(doc)
+    return await enrich_work_order(await db.work_orders.find_one({"_id": res.inserted_id}))
+
+
+@api_router.put("/work-orders/{wid}")
+async def update_work_order(wid: str, payload: WorkOrderInput, user: dict = Depends(require_worker)):
+    wo = await get_or_404(db.work_orders, wid, "Work order")
+    if user["role"] != "admin" and wo.get("worker_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only edit your own work orders")
+    await db.work_orders.update_one({"_id": oid(wid)}, {"$set": payload.model_dump()})
+    return await enrich_work_order(await db.work_orders.find_one({"_id": oid(wid)}))
+
+
+@api_router.delete("/work-orders/{wid}")
+async def delete_work_order(wid: str, user: dict = Depends(require_worker)):
+    wo = await get_or_404(db.work_orders, wid, "Work order")
+    if user["role"] != "admin" and wo.get("worker_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only delete your own work orders")
+    await db.work_orders.delete_one({"_id": oid(wid)})
     return {"message": "deleted"}
 
 
@@ -614,6 +759,18 @@ async def public_logo():
 async def enrich_customer(doc: dict) -> dict:
     cust = await db.customers.find_one({"_id": ObjectId(doc["customer_id"])}) if doc.get("customer_id") else None
     doc["customer_name"] = cust.get("company") or cust.get("name") if cust else "Unknown"
+    if doc.get("contact_id") and ObjectId.is_valid(doc["contact_id"]):
+        ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+        doc["contact_name"] = ct.get("name") if ct else None
+        doc["contact_email"] = ct.get("email") if ct else None
+    return doc
+
+
+async def _attach_contact_name(doc: dict) -> dict:
+    if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+        ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+        if ct:
+            doc["contact_name"] = ct.get("name")
     return doc
 
 
@@ -692,6 +849,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         raise HTTPException(status_code=400, detail="Estimate already approved into a sales order")
     doc = {
         "customer_id": est["customer_id"],
+        "contact_id": est.get("contact_id"),
         "title": est["title"],
         "line_items": est.get("line_items", []),
         "tax_rate": est.get("tax_rate", 0),
@@ -791,6 +949,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         raise HTTPException(status_code=400, detail="Sales order already invoiced")
     doc = {
         "customer_id": so["customer_id"],
+        "contact_id": so.get("contact_id"),
         "title": so["title"],
         "line_items": so.get("line_items", []),
         "tax_rate": so.get("tax_rate", 0),
@@ -939,8 +1098,11 @@ async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(ge
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero.")
     if amount > balance + 0.005:
         raise HTTPException(status_code=400, detail=f"Payment can't exceed the balance due of ${balance:,.2f}.")
+    s = await get_settings()
+    surcharge = round(amount * float(s.get("card_surcharge_pct") or 0) / 100.0, 2) if s.get("card_surcharge_enabled") else 0.0
+    charged = round(amount + surcharge, 2)
     intent = stripe.PaymentIntent.create(
-        amount=int(round(amount * 100)),
+        amount=int(round(charged * 100)),
         currency="usd",
         payment_method_types=["card"],
         description=f"Invoice {inv.get('number', '')} - DBG Signs, Inc.",
@@ -948,12 +1110,12 @@ async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(ge
     )
     await db.payment_transactions.insert_one({
         "payment_intent_id": intent.id, "invoice_id": str(inv["_id"]),
-        "invoice_number": inv.get("number"), "amount": amount, "currency": "usd",
-        "status": "initiated", "payment_status": "pending",
+        "invoice_number": inv.get("number"), "amount": amount, "surcharge": surcharge, "charged": charged,
+        "currency": "usd", "status": "initiated", "payment_status": "pending",
         "created_at": now_iso(), "updated_at": now_iso(),
     })
     return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
-            "amount": amount, "balance": balance}
+            "amount": amount, "balance": balance, "surcharge": surcharge, "charged": charged}
 
 
 @api_router.post("/payments/create-intent-all")
@@ -973,18 +1135,22 @@ async def create_payment_intent_all(user: dict = Depends(get_current_user)):
             total = round(total + bal, 2)
     if total <= 0:
         raise HTTPException(status_code=400, detail="You have no outstanding balance.")
+    s = await get_settings()
+    surcharge = round(total * float(s.get("card_surcharge_pct") or 0) / 100.0, 2) if s.get("card_surcharge_enabled") else 0.0
+    charged = round(total + surcharge, 2)
     intent = stripe.PaymentIntent.create(
-        amount=int(round(total * 100)), currency="usd", payment_method_types=["card"],
+        amount=int(round(charged * 100)), currency="usd", payment_method_types=["card"],
         description="Pay all outstanding invoices - DBG Signs, Inc.",
         metadata={"customer_id": cid, "bulk": "true", "invoices": str(len(allocations))},
     )
     await db.payment_transactions.insert_one({
         "payment_intent_id": intent.id, "invoice_id": None, "allocations": allocations,
-        "amount": total, "currency": "usd", "status": "initiated", "payment_status": "pending",
+        "amount": total, "surcharge": surcharge, "charged": charged,
+        "currency": "usd", "status": "initiated", "payment_status": "pending",
         "created_at": now_iso(), "updated_at": now_iso(),
     })
     return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
-            "amount": total, "count": len(allocations)}
+            "amount": total, "count": len(allocations), "surcharge": surcharge, "charged": charged}
 
 
 @api_router.get("/invoices/{iid}/payments")
@@ -994,13 +1160,53 @@ async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
     recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", -1).to_list(2000)
     for rec in recs:
         when = rec.get("updated_at") or rec.get("created_at")
+        method = rec.get("method") or "Card (Stripe)"
+        if rec.get("reference"):
+            method = f"{method} #{rec['reference']}"
         if rec.get("invoice_id") == iid:
-            out.append({"amount": rec.get("amount"), "date": when, "method": "Card (Stripe)"})
+            out.append({"amount": rec.get("amount"), "date": when, "method": method})
         for a in (rec.get("allocations") or []):
             if a.get("invoice_id") == iid:
-                out.append({"amount": a.get("amount"), "date": when, "method": "Card (Stripe)"})
+                out.append({"amount": a.get("amount"), "date": when, "method": method})
     out.sort(key=lambda x: x["date"] or "", reverse=True)
     return out
+
+
+class ManualPaymentInput(BaseModel):
+    amount: Optional[float] = None
+    method: str = "Check"  # Check, ACH, Wire, Cash, Card, Other
+    reference: Optional[str] = None
+    date: Optional[str] = None
+
+
+@api_router.post("/invoices/{iid}/manual-payment")
+async def record_manual_payment(iid: str, payload: ManualPaymentInput, user: dict = Depends(require_staff)):
+    inv = await get_or_404(db.invoices, iid, "Invoice")
+    if inv.get("voided"):
+        raise HTTPException(status_code=400, detail="This invoice has been voided.")
+    total = float(inv.get("total") or 0)
+    balance = round(total - float(inv.get("amount_paid") or 0), 2)
+    if balance <= 0:
+        raise HTTPException(status_code=400, detail="This invoice is already paid in full.")
+    amount = round(float(payload.amount), 2) if payload.amount is not None else balance
+    if amount <= 0 or amount > balance + 0.005:
+        raise HTTPException(status_code=400, detail=f"Payment must be between $0 and the balance of ${balance:,.2f}.")
+    when = payload.date or now_iso()
+    await db.payment_transactions.insert_one({
+        "payment_intent_id": None, "invoice_id": iid, "invoice_number": inv.get("number"),
+        "amount": amount, "method": payload.method, "reference": (payload.reference or "").strip() or None,
+        "manual": True, "recorded_by": user.get("name"), "currency": "usd",
+        "status": "completed", "payment_status": "paid", "created_at": when, "updated_at": when,
+    })
+    new_paid = round(float(inv.get("amount_paid") or 0) + amount, 2)
+    fully = new_paid >= total - 0.005
+    upd = {"amount_paid": new_paid, "status": "paid" if fully else "partial",
+           "last_payment_method": payload.method, "last_payment_reference": (payload.reference or "").strip() or None}
+    if fully:
+        upd["paid_at"] = when
+        upd["paid_via"] = payload.method
+    await db.invoices.update_one({"_id": oid(iid)}, {"$set": upd})
+    return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
 
 
 @api_router.get("/payments/status/{payment_intent_id}")
@@ -1093,14 +1299,14 @@ def user_out(u: dict) -> dict:
 
 @api_router.get("/users")
 async def list_users(user: dict = Depends(require_admin)):
-    docs = await db.users.find({"role": {"$in": ["admin", "salesman"]}}).sort("name", 1).to_list(1000)
+    docs = await db.users.find({"role": {"$in": ["admin", "salesman", "installer"]}}).sort("name", 1).to_list(1000)
     return [user_out(d) for d in docs]
 
 
 @api_router.post("/users")
 async def create_user(payload: StaffInput, user: dict = Depends(require_admin)):
     email = payload.email.lower()
-    if payload.role not in ("admin", "salesman"):
+    if payload.role not in ("admin", "salesman", "installer"):
         raise HTTPException(status_code=400, detail="Invalid role")
     if not payload.password:
         raise HTTPException(status_code=400, detail="Password required")
@@ -1132,7 +1338,7 @@ async def update_user(uid: str, payload: StaffInput, user: dict = Depends(requir
 async def delete_user(uid: str, user: dict = Depends(require_admin)):
     if uid == user["id"]:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
-    res = await db.users.delete_one({"_id": oid(uid), "role": {"$in": ["admin", "salesman"]}})
+    res = await db.users.delete_one({"_id": oid(uid), "role": {"$in": ["admin", "salesman", "installer"]}})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "deleted"}
@@ -1259,7 +1465,7 @@ async def commissions(user: dict = Depends(require_staff)):
 # Dashboard
 # ---------------------------------------------------------------------------
 @api_router.get("/dashboard")
-async def dashboard(user: dict = Depends(require_staff)):
+async def dashboard(user: dict = Depends(require_admin)):
     invoices = await db.invoices.find().to_list(2000)
     bills = await db.bills.find().to_list(2000)
     invoices = [i for i in invoices if not i.get("voided")]
@@ -1345,6 +1551,10 @@ async def export_xero_bills(user: dict = Depends(require_staff)):
 # Customer portal
 # ---------------------------------------------------------------------------
 async def current_customer(user: dict) -> Optional[dict]:
+    if user.get("customer_id") and ObjectId.is_valid(user["customer_id"]):
+        c = await db.customers.find_one({"_id": ObjectId(user["customer_id"])})
+        if c:
+            return c
     cust = await db.customers.find_one({"user_id": user["id"]})
     if not cust:
         cust = await db.customers.find_one({"email": user.get("email")})
@@ -1366,6 +1576,20 @@ async def portal_orders(user: dict = Depends(get_current_user)):
         "invoices": [clean(i) for i in invoices],
         "reorders": [clean(r) for r in reorders],
     }
+
+
+@api_router.get("/portal/statement/pdf")
+async def portal_statement_pdf(user: dict = Depends(get_current_user)):
+    cust = await current_customer(user)
+    if not cust:
+        raise HTTPException(status_code=404, detail="No customer profile linked to your account")
+    if cust.get("portal_enabled") is False:
+        raise HTTPException(status_code=403, detail="Portal access is not enabled for your account.")
+    cid = str(cust["_id"])
+    invoices = await db.invoices.find({"customer_id": cid, "voided": {"$ne": True}, "status": {"$ne": "paid"}}).sort("created_at", 1).to_list(1000)
+    pdf = build_statement_pdf(clean(cust), [clean(i) for i in invoices], await get_settings(), await get_logo_bytes())
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="statement.pdf"'})
 
 
 @api_router.post("/portal/reorder")
@@ -1547,6 +1771,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
     label = "Amount Due" if kind_label == "Invoice" else "Total"
     due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
+    attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -1561,6 +1786,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td style="padding:20px 32px 0">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Bill To</div>'
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
+        f'{attn_html}'
         f'<p style="margin:16px 0 0">Please find your {escape(kind_label.lower())} for <strong>{escape(str(doc.get("title", "")))}</strong> below.</p>'
         f'</td></tr>'
         # Table
@@ -1592,10 +1818,15 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
 
 async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
     doc = await get_or_404(collection, doc_id, kind_label)
+    await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     to = (cust or {}).get("email")
+    if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+        ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+        if ct and ct.get("email"):
+            to = ct["email"]
     if not to:
-        raise HTTPException(status_code=400, detail="This customer has no email address on file")
+        raise HTTPException(status_code=400, detail="No email on file for this customer or the selected contact")
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     token = secrets.token_urlsafe(16)
     html = render_doc_email(kind_label, doc, cname, token, await get_settings())
@@ -1749,6 +1980,10 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFillColor(ink); c.setFont("Helvetica-Bold", 13); c.drawString(L, y - 18, str(name))
     yy = y - 33
     c.setFont("Helvetica", 9); c.setFillColor(soft)
+    if doc.get("contact_name"):
+        c.setFont("Helvetica-Bold", 9); c.setFillColor(ink)
+        c.drawString(L, yy, f'Attn: {doc["contact_name"]}'); yy -= 13
+        c.setFont("Helvetica", 9); c.setFillColor(soft)
     if customer and customer.get("company") and customer.get("name"):
         who = customer["name"] + (f" - {customer['title']}" if customer.get("title") else "")
         c.drawString(L, yy, str(who)); yy -= 13
@@ -1817,6 +2052,59 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     return buf.getvalue()
 
 
+def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    co = company or {}
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4")
+    y = H - 70
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 40, width=150, height=86, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "STATEMENT")
+    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 16, datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    y -= 70
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 26
+    c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "ACCOUNT")
+    y -= 14; c.setFillColor(ink); c.setFont("Helvetica-Bold", 13)
+    c.drawString(L, y, str(cust.get("company") or cust.get("name") or "Customer")); y -= 30
+    c.setFillColor(ink); c.rect(L, y - 6, R - L, 24, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
+    c.drawString(L + 10, y + 3, "INVOICE"); c.drawString(L + 150, y + 3, "DATE")
+    c.drawRightString(R - 140, y + 3, "TOTAL"); c.drawRightString(R - 10, y + 3, "BALANCE")
+    y -= 30
+    total_bal = 0.0
+    c.setFont("Helvetica", 10)
+    for i, inv in enumerate(invoices):
+        bal = round(float(inv.get("total") or 0) - float(inv.get("amount_paid") or 0), 2)
+        total_bal = round(total_bal + bal, 2)
+        if i % 2 == 1:
+            c.setFillColor(colors.HexColor("#F3F4F6")); c.rect(L, y - 7, R - L, 22, fill=1, stroke=0)
+        c.setFillColor(ink); c.setFont("Helvetica", 10)
+        c.drawString(L + 10, y, str(inv.get("number", "")))
+        c.drawString(L + 150, y, str(inv.get("due_date") or str(inv.get("created_at", ""))[:10]))
+        c.drawRightString(R - 140, y, _money(inv.get("total", 0)))
+        c.drawRightString(R - 10, y, _money(bal))
+        y -= 22
+        if y < 120:
+            c.showPage(); y = H - 90; c.setFont("Helvetica", 10)
+    if not invoices:
+        c.setFillColor(soft); c.drawString(L + 10, y, "No open invoices — your account is all paid up. Thank you!"); y -= 22
+    c.setStrokeColor(colors.HexColor("#D1D5DB")); c.setLineWidth(1); c.line(R - 260, y + 4, R, y + 4); y -= 18
+    c.setFillColor(ink); c.rect(R - 260, y - 7, 260, 28, fill=1, stroke=0)
+    c.setFillColor(cyan); c.rect(R - 260, y - 7, 5, 28, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(R - 244, y + 2, "TOTAL DUE")
+    c.setFont("Helvetica-Bold", 14); c.drawRightString(R - 10, y + 1, _money(total_bal))
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
+    c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
+
 def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Response:
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'{disposition}; filename="{doc.get("number", "document")}.pdf"'})
@@ -1824,6 +2112,7 @@ def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Res
 
 async def _staff_pdf(collection, doc_id: str, label: str) -> Response:
     doc = await get_or_404(collection, doc_id, label)
+    await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings()))
 
@@ -1851,6 +2140,7 @@ async def public_pdf(token: str):
     doc = await db[rec["collection"]].find_one({"_id": ObjectId(rec["doc_id"])})
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     label = {"invoices": "Invoice", "estimates": "Estimate", "sales_orders": "Sales Order"}.get(rec["collection"], "Document")
     return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings()), disposition="inline")
@@ -1908,7 +2198,7 @@ async def _send_past_due(inv: dict) -> dict:
 
 
 @api_router.get("/receivables/overdue")
-async def overdue_receivables(days: int = 45, user: dict = Depends(require_staff)):
+async def overdue_receivables(days: int = 45, user: dict = Depends(require_admin)):
     invoices = await db.invoices.find({"status": {"$ne": "paid"}, "voided": {"$ne": True}}).sort("created_at", 1).to_list(2000)
     out = []
     for inv in invoices:
