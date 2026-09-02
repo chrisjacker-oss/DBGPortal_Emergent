@@ -3,16 +3,21 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatCard, StatusBadge } from "@/components/kit";
+import PayNowDialog from "@/components/PayNowDialog";
 import { Inp } from "@/pages/Customers";
-import { ArrowsClockwise, Receipt } from "@phosphor-icons/react";
+import { ArrowsClockwise, Receipt, CreditCard, Warning } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 export default function Portal() {
   const [data, setData] = useState({ invoices: [], reorders: [], customer: null });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", notes: "", source_invoice_id: "" });
+  const [payInv, setPayInv] = useState(null);
+  const [error, setError] = useState(null);
 
-  const load = () => api.get("/portal/orders").then((r) => setData(r.data));
+  const load = () => api.get("/portal/orders")
+    .then((r) => { setData(r.data); setError(null); })
+    .catch((e) => setError(e.response?.data?.detail || "We couldn't load your orders. Please contact DBG Signs."));
   useEffect(() => { load(); }, []);
 
   const reorderFrom = (inv) => { setForm({ title: inv.title, notes: "", source_invoice_id: inv.id }); setOpen(true); };
@@ -27,6 +32,23 @@ export default function Portal() {
   };
 
   const outstanding = data.invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + i.total, 0);
+
+  if (error) {
+    return (
+      <div>
+        <PageHeader overline="Welcome" title="My Orders" />
+        <div className="p-8">
+          <div className="border border-border bg-card p-10 max-w-lg flex items-start gap-4" data-testid="portal-error">
+            <Warning size={28} weight="bold" className="text-[#F59E0B] shrink-0" />
+            <div>
+              <div className="font-display font-semibold text-lg">Access unavailable</div>
+              <p className="text-sm text-muted-foreground mt-2">{error}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -51,7 +73,7 @@ export default function Portal() {
                   <th className="px-6 py-3 font-mono">Job</th>
                   <th className="px-6 py-3 font-mono">Status</th>
                   <th className="px-6 py-3 font-mono text-right">Total</th>
-                  <th className="px-6 py-3 font-mono text-right">Reorder</th>
+                  <th className="px-6 py-3 font-mono text-right">Actions</th>
                 </tr>
               </thead>
               <tbody data-testid="portal-invoices-table">
@@ -62,6 +84,9 @@ export default function Portal() {
                     <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                     <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                     <td className="px-6 py-3 text-right">
+                      {r.status !== "paid" && (
+                        <Btn variant="ghost" onClick={() => setPayInv(r)} data-testid={`portal-pay-${r.id}`}><CreditCard size={16} /> Pay</Btn>
+                      )}
                       <Btn variant="ghost" onClick={() => reorderFrom(r)} data-testid={`reorder-${r.id}`}><ArrowsClockwise size={16} /> Reorder</Btn>
                     </td>
                   </tr>
@@ -104,6 +129,7 @@ export default function Portal() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
     </div>
   );
 }

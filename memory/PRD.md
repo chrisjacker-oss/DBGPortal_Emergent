@@ -7,7 +7,20 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - Auth: email + password (JWT httpOnly cookies). Separate logins: staff console `/login` (admin + salesman), customer portal `/portal-login`.
 - Roles: admin (full control), salesman (limited: estimates, sales orders, invoices, customers, own commissions), customer (portal only).
 - Xero: CSV export (invoices incl. negative tier-discount row, bills).
-- Payments: manual paid/unpaid (Stripe requested, NOT yet integrated).
+- Payments: manual paid/unpaid AND Stripe embedded card ("Pay Now") — auto-marks invoice paid on success.
+
+## Recent changes (2026-06)
+- Material categories: added built-in "Marketing Materials"; admin-managed custom categories (GET/POST/DELETE /api/material-categories; Materials page "Categories" dialog).
+- Commission: base is now MATERIALS-ONLY at SELLING price × commission_rate (no labor/machine, not at-cost). DocBuilder preview + /api/commissions updated.
+- Settings: default_tax_rate applied/seeded to new estimates/SOs/invoices (editable per doc).
+- Sales Orders can be created directly from the Sales Orders page (POST/PUT /api/sales-orders), not only via estimate approval.
+- Stripe embedded card payments: POST /api/payments/create-intent (card-only), GET /api/payments/status/{id}, POST /api/stripe/webhook. Pay Now on staff Invoices + customer Portal. Keys in backend/.env; frontend REACT_APP_STRIPE_PUBLISHABLE_KEY. Stripe test sandbox.
+- Portal accounts admin console (/portal-accounts, admin only): add / suspend (blocks login) / delete customer logins.
+- Void + reactivate for invoices & sales orders (Active/Voided tabs). Voided excluded from dashboard/receivables/portal/payment.
+- Deleting any estimate/SO/invoice requires the admin password (admin-only); reusable AdminDeleteDialog.
+- Logo now shown on login page + console sidebar (served from /api/pub/logo).
+- Dashboard: admin-only Accounts Payable card + Record Bill/Add Material quick actions.
+- Customer Portal: friendly "Access unavailable" panel when portal disabled/suspended (no blank page).
 
 ## Accounts (see /app/memory/test_credentials.md)
 - admin: sales@dbgsigns.com / 10297099 ; chrisjacker@gmail.com / SignShop2026!

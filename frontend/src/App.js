@@ -17,6 +17,7 @@ import Commissions from "@/pages/Commissions";
 import Team from "@/pages/Team";
 import Settings from "@/pages/Settings";
 import Portal from "@/pages/Portal";
+import PortalAccounts from "@/pages/PortalAccounts";
 
 function Loading() {
   return (
@@ -65,6 +66,7 @@ function App() {
             {[
               ["/dashboard", <Dashboard />, false],
               ["/customers", <Customers />, false],
+              ["/portal-accounts", <PortalAccounts />, true],
               ["/materials", <Materials />, true],
               ["/estimates", <Estimates />, false],
               ["/sales-orders", <SalesOrders />, false],

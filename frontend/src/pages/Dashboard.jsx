@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { currency } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { StatCard, Btn } from "@/components/kit";
 import {
@@ -16,6 +17,8 @@ import {
 export default function Dashboard() {
   const [d, setD] = useState(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   useEffect(() => {
     api.get("/dashboard").then((r) => setD(r.data)).catch(() => {});
@@ -25,9 +28,9 @@ export default function Dashboard() {
     <div>
       <PageHeader overline="Shop overview" title="Dashboard" />
       <div className="p-8 space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-px bg-border border border-border">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-px bg-border border border-border`}>
           <StatCard testid="stat-receivable" label="Outstanding Receivable" value={currency(d?.receivable)} accent="#F59E0B" sub="Unpaid customer invoices" />
-          <StatCard testid="stat-payable" label="Accounts Payable" value={currency(d?.payable)} accent="#DC2626" sub="Bills owed to vendors" />
+          {isAdmin && <StatCard testid="stat-payable" label="Accounts Payable" value={currency(d?.payable)} accent="#DC2626" sub="Bills owed to vendors" />}
           <StatCard testid="stat-collected" label="Collected (paid)" value={currency(d?.collected)} accent="#16A34A" sub="Invoices marked paid" />
           <StatCard testid="stat-netcash" label="Net Cash Position" value={currency(d?.net_cash)} accent="#06B6D4" sub="Collected − bills paid" />
         </div>
@@ -44,9 +47,9 @@ export default function Dashboard() {
           <div className="overline text-muted-foreground mb-3">Quick actions</div>
           <div className="flex flex-wrap gap-3">
             <Btn onClick={() => navigate("/estimates")} data-testid="qa-estimate"><FileText size={16} weight="bold" /> New Estimate</Btn>
-            <Btn variant="outline" onClick={() => navigate("/invoices")}><ArrowCircleDown size={16} weight="bold" /> New Invoice</Btn>
-            <Btn variant="outline" onClick={() => navigate("/payables")}><ArrowCircleUp size={16} weight="bold" /> Record Bill</Btn>
-            <Btn variant="outline" onClick={() => navigate("/materials")}><Stack size={16} weight="bold" /> Add Material</Btn>
+            <Btn variant="outline" onClick={() => navigate("/invoices")} data-testid="qa-invoice"><ArrowCircleDown size={16} weight="bold" /> New Invoice</Btn>
+            {isAdmin && <Btn variant="outline" onClick={() => navigate("/payables")} data-testid="qa-bill"><ArrowCircleUp size={16} weight="bold" /> Record Bill</Btn>}
+            {isAdmin && <Btn variant="outline" onClick={() => navigate("/materials")} data-testid="qa-material"><Stack size={16} weight="bold" /> Add Material</Btn>}
           </div>
         </div>
       </div>

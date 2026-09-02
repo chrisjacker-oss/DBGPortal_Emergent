@@ -15,7 +15,16 @@ const areaOf = (li) => {
 
 export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const { user } = useAuth();
-  const isEstimate = kind !== "invoice";
+  const isInvoice = kind === "invoice";
+  const isSalesOrder = kind === "sales-order";
+  const isEstimate = kind === "estimate" || (!isInvoice && !isSalesOrder);
+  const hasCommission = isEstimate || isSalesOrder;
+  const label = isInvoice ? "Invoice" : isSalesOrder ? "Sales Order" : "Estimate";
+  const statusOptions = isInvoice
+    ? ["unpaid", "partial", "paid", "overdue"]
+    : isSalesOrder
+    ? ["open", "in_production", "fulfilled"]
+    : ["draft", "sent", "approved", "rejected"];
   const isAdmin = user?.role === "admin";
   const [customers, setCustomers] = useState([]);
   const [materials, setMaterials] = useState([]);
@@ -27,18 +36,22 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     if (open) {
       api.get("/customers").then((r) => setCustomers(r.data));
       api.get("/materials").then((r) => setMaterials(r.data));
-      api.get("/settings").then((r) => setSettings(r.data));
+      api.get("/settings").then((r) => {
+        setSettings(r.data);
+        if (!initial) setForm((f) => (f ? { ...f, tax_rate: r.data.default_tax_rate ?? 0 } : f));
+      });
       if (isAdmin) api.get("/users").then((r) => setSalesmen(r.data.filter((u) => u.role === "salesman"))).catch(() => {});
       setForm(
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li })) }
           : {
               customer_id: "", title: "", line_items: [{ ...emptyItem }], tax_rate: 0, notes: "",
-              status: kind === "invoice" ? "unpaid" : "draft", due_date: "",
+              status: statusOptions[0], due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
       );
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial, kind, isAdmin, user]);
 
   if (!form) return null;
@@ -74,10 +87,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const taxable = subtotal - discount;
   const tax = taxable * (Number(form.tax_rate || 0) / 100);
   const total = taxable + tax;
-  const commission = subtotal * (Number(form.commission_rate || 0) / 100);
   const totMaterial = form.line_items.reduce((s, li) => s + breakdown(li).material, 0);
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
+  const commissionBase = totMaterial;
+  const commission = commissionBase * (Number(form.commission_rate || 0) / 100);
 
   const submit = () => {
     onSave({
@@ -103,7 +117,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="rounded-none max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
-          <DialogTitle className="font-display">{initial ? "Edit" : "New"} {kind === "invoice" ? "Invoice" : "Estimate"}</DialogTitle>
+          <DialogTitle className="font-display">{initial ? "Edit" : "New"} {label}</DialogTitle>
           <DialogDescription className="font-mono text-xs">
             Shop {currency(settings.shop_rate_per_hr)}/hr @ {settings.shop_sqft_per_hr} sqft/hr · Machine {currency(settings.machine_rate_per_hr)}/hr @ {settings.machine_sqft_per_hr} sqft/hr · hours auto-derived from area
           </DialogDescription>
@@ -155,17 +169,17 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <Inp label="Tax rate (%)" type="number" value={form.tax_rate} onChange={(e) => set("tax_rate", e.target.value)} testid="doc-tax" />
-              {kind === "invoice" && <Inp label="Due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />}
+              {isInvoice && <Inp label="Due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />}
               <label className="block">
                 <span className="overline text-muted-foreground">Status</span>
                 <select value={form.status} onChange={(e) => set("status", e.target.value)} data-testid="doc-status" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
-                  {(kind === "invoice" ? ["unpaid", "partial", "paid", "overdue"] : ["draft", "sent", "approved", "rejected"]).map((s) => <option key={s} value={s}>{s}</option>)}
+                  {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </label>
 
-              {isEstimate && (
+              {hasCommission && (
                 <div className="border border-border p-3 space-y-3" data-testid="commission-block">
-                  <div className="overline text-[#A21CAF]">Sales commission (on total cost)</div>
+                  <div className="overline text-[#A21CAF]">Sales commission (materials only)</div>
                   {isAdmin ? (
                     <label className="block">
                       <span className="overline text-muted-foreground">Salesman</span>
@@ -180,7 +194,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   )}
                   <Inp label="Commission rate (%)" type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} testid="doc-commission-rate" />
                   <div className="border-t border-border pt-2 text-sm font-mono flex justify-between" data-testid="commission-preview">
-                    <span>{currency(subtotal)} × {Number(form.commission_rate || 0)}%</span>
+                    <span>{currency(commissionBase)} × {Number(form.commission_rate || 0)}%</span>
                     <span className="text-[#A21CAF] font-semibold">{currency(commission)}</span>
                   </div>
                 </div>
@@ -200,9 +214,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               )}
               <Row label={`Tax (${form.tax_rate || 0}%)`} value={tax} muted />
               <div className="border-t border-border mt-2 pt-2"><Row label="Total" value={total} bold /></div>
-              {isEstimate && Number(form.commission_rate || 0) > 0 && (
+              {hasCommission && Number(form.commission_rate || 0) > 0 && (
                 <div className="mt-3 pt-3 border-t border-dashed border-border text-xs font-mono text-muted-foreground space-y-1">
-                  <div className="flex justify-between"><span>Commission base (all cost)</span><span>{currency(subtotal)}</span></div>
+                  <div className="flex justify-between"><span>Commission base (materials)</span><span>{currency(commissionBase)}</span></div>
                   <div className="flex justify-between"><span>Rate</span><span>{Number(form.commission_rate)}%</span></div>
                   <div className="flex justify-between text-[#A21CAF]"><span>Commission</span><span>{currency(commission)}</span></div>
                   <div className="flex justify-between text-foreground"><span>Net after commission</span><span>{currency(total - commission)}</span></div>

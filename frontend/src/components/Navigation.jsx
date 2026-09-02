@@ -1,6 +1,8 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { SearchBar } from "@/components/SearchBar";
+
+const LOGO_URL = `${process.env.REACT_APP_BACKEND_URL}/api/pub/logo`;
 import {
   Gauge,
   Users,
@@ -13,6 +15,7 @@ import {
   ArrowCircleDown,
   Percent,
   UsersThree,
+  IdentificationBadge,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
@@ -24,6 +27,7 @@ const adminLinks = [
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/materials", label: "Materials", icon: Stack },
   { to: "/customers", label: "Customers", icon: Users },
+  { to: "/portal-accounts", label: "Portal Accounts", icon: IdentificationBadge },
   { to: "/receivables", label: "Receivable", icon: ArrowCircleDown },
   { to: "/payables", label: "Payable", icon: ArrowCircleUp },
   { to: "/commissions", label: "Commissions", icon: Percent },
@@ -64,15 +68,8 @@ export const Navigation = () => {
   return (
     <aside className="w-60 shrink-0 border-r border-border bg-card flex flex-col h-screen sticky top-0" data-testid="sidebar">
       <div className="px-6 py-6 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="h-7 w-7 bg-foreground flex items-center justify-center">
-            <span className="text-primary-foreground font-mono font-bold text-[10px]">DBG</span>
-          </div>
-          <div>
-            <div className="font-display font-bold tracking-tight leading-none text-[15px]">DBG SIGNS</div>
-            <div className="overline text-muted-foreground mt-1">Image Is Everything</div>
-          </div>
-        </div>
+        <img src={LOGO_URL} alt="DBG Signs, Inc." className="h-10 w-auto max-w-[180px] object-contain" data-testid="sidebar-logo" />
+        <div className="overline text-muted-foreground mt-2">Image Is Everything</div>
       </div>
 
       {!isCustomer && (

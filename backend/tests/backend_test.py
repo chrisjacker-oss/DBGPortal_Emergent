@@ -212,7 +212,10 @@ class TestEstimateCommission:
         assert e["line_items"][0]["machine_cost"] == pytest.approx(3.73, abs=0.02)
         assert e["subtotal"] == pytest.approx(49.07, abs=0.03)
         assert e["commission_rate"] == 10.0
-        assert e["commission_amount"] == pytest.approx(round(e["subtotal"] * 0.10, 2), abs=0.01)
+        # iteration 6: commission base = materials-only at selling price
+        mats = sum(li["material_cost"] for li in e["line_items"])
+        assert e["commission_base"] == pytest.approx(mats, abs=0.01)
+        assert e["commission_amount"] == pytest.approx(round(mats * 0.10, 2), abs=0.01)
         assert e["salesman_name"] == "Sam Salesman"
         assert e["salesman_id"]
 
@@ -228,11 +231,13 @@ class TestEstimateCommission:
         self.created.append(("admin", e["id"]))
         assert e["salesman_name"] == sam["name"]
         assert e["commission_rate"] == 5.0
-        assert e["commission_amount"] == pytest.approx(round(e["subtotal"] * 0.05, 2), abs=0.01)
+        mats = sum(li["material_cost"] for li in e["line_items"])
+        assert e["commission_base"] == pytest.approx(mats, abs=0.01)
+        assert e["commission_amount"] == pytest.approx(round(mats * 0.05, 2), abs=0.01)
         # tax computed on subtotal, commission on pre-tax subtotal
         assert e["tax_amount"] == pytest.approx(round(e["subtotal"] * 0.0825, 2), abs=0.01)
 
-    def test_commission_carried_through_pipeline(self, admin, customer_id):
+    def test_commission_carried_through_pipeline(self, admin, admin_creds, customer_id):
         r = admin.post(f"{API}/estimates",
                        json={"customer_id": customer_id, "title": "TEST_Pipeline",
                              "line_items": [LINE], "tax_rate": 10, "commission_rate": 7}, timeout=30)
@@ -258,9 +263,10 @@ class TestEstimateCommission:
         pr = admin.patch(f"{API}/invoices/{inv['id']}/status?status=paid", timeout=30)
         assert pr.status_code == 200 and pr.json()["status"] == "paid"
         # cleanup
-        assert admin.delete(f"{API}/invoices/{inv['id']}", timeout=30).status_code == 200
-        assert admin.delete(f"{API}/sales-orders/{so['id']}", timeout=30).status_code == 200
-        assert admin.delete(f"{API}/estimates/{eid}", timeout=30).status_code == 200
+        pw = {"password": admin_creds["password"]}
+        assert admin.delete(f"{API}/invoices/{inv['id']}", json=pw, timeout=30).status_code == 200
+        assert admin.delete(f"{API}/sales-orders/{so['id']}", json=pw, timeout=30).status_code == 200
+        assert admin.delete(f"{API}/estimates/{eid}", json=pw, timeout=30).status_code == 200
 
     def test_commissions_report_roles(self, admin, salesman):
         a = admin.get(f"{API}/commissions", timeout=30)
@@ -275,9 +281,9 @@ class TestEstimateCommission:
         assert round(ad["total_earned"] + ad["total_pending"], 2) == round(
             sum(r["commission_amount"] for r in ad["rows"]), 2)
 
-    def test_cleanup_created_estimates(self, admin):
+    def test_cleanup_created_estimates(self, admin, admin_creds):
         for _, eid in self.created:
-            r = admin.delete(f"{API}/estimates/{eid}", timeout=30)
+            r = admin.delete(f"{API}/estimates/{eid}", json={"password": admin_creds["password"]}, timeout=30)
             assert r.status_code in (200, 404)
 
 
@@ -326,7 +332,7 @@ class TestUsersCRUD:
 # Module: error handling 404 / 400
 # --------------------------------------------------------------------------
 class TestErrorHandling:
-    def test_404_on_unknown_ids(self, admin):
+    def test_404_on_unknown_ids(self, admin, admin_creds):
         mat = {"name": "TEST_x", "unit": "roll", "buying_cost": 1, "conversion_factor": 1, "markup": 0}
         cases = [
             ("put", f"/materials/{UNKNOWN_ID}", mat),
@@ -341,11 +347,11 @@ class TestErrorHandling:
             ("post", f"/estimates/{UNKNOWN_ID}/approve", None),
             ("post", f"/sales-orders/{UNKNOWN_ID}/convert", None),
             ("delete", f"/materials/{UNKNOWN_ID}", None),
-            ("delete", f"/estimates/{UNKNOWN_ID}", None),
-            ("delete", f"/invoices/{UNKNOWN_ID}", None),
+            ("delete", f"/estimates/{UNKNOWN_ID}", {"password": admin_creds["password"]}),
+            ("delete", f"/invoices/{UNKNOWN_ID}", {"password": admin_creds["password"]}),
             ("delete", f"/bills/{UNKNOWN_ID}", None),
             ("delete", f"/customers/{UNKNOWN_ID}", None),
-            ("delete", f"/sales-orders/{UNKNOWN_ID}", None),
+            ("delete", f"/sales-orders/{UNKNOWN_ID}", {"password": admin_creds["password"]}),
         ]
         failures = []
         for method, path, body in cases:
@@ -355,8 +361,8 @@ class TestErrorHandling:
                 failures.append(f"{method.upper()} {path} -> {r.status_code} {r.text[:120]}")
         assert not failures, failures
 
-    def test_malformed_id_returns_404(self, admin):
-        r = admin.delete(f"{API}/estimates/not-an-objectid", timeout=30)
+    def test_malformed_id_returns_404(self, admin, admin_creds):
+        r = admin.delete(f"{API}/estimates/not-an-objectid", json={"password": admin_creds["password"]}, timeout=30)
         assert r.status_code == 404
 
     def test_invalid_status_400(self, admin):
@@ -419,7 +425,7 @@ class TestMiscModules:
         assert admin.delete(f"{API}/bills/{b['id']}", timeout=30).status_code == 200
         assert admin.delete(f"{API}/bills/{b['id']}", timeout=30).status_code == 404
 
-    def test_unique_numbering(self, admin, customer_id):
+    def test_unique_numbering(self, admin, admin_creds, customer_id):
         ids, numbers = [], []
         for i in range(3):
             r = admin.post(f"{API}/estimates", json={"customer_id": customer_id,
@@ -429,4 +435,4 @@ class TestMiscModules:
             numbers.append(r.json()["number"])
         assert len(set(numbers)) == 3, numbers
         for i in ids:
-            admin.delete(f"{API}/estimates/{i}", timeout=30)
+            admin.delete(f"{API}/estimates/{i}", json={"password": admin_creds["password"]}, timeout=30)

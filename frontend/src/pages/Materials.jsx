@@ -1,27 +1,45 @@
 import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, Tag } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const empty = { name: "", category: "Cut Vinyl", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 40, stock: "", supplier: "" };
-const CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates"];
 
 export default function Materials() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
   const [defaultMarkup, setDefaultMarkup] = useState(40);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [cats, setCats] = useState({ presets: [], custom: [], all: [] });
+  const [catOpen, setCatOpen] = useState(false);
+  const [newCat, setNewCat] = useState("");
 
   const load = () => api.get("/materials").then((r) => setRows(r.data));
+  const loadCats = () => api.get("/material-categories").then((r) => setCats(r.data)).catch(() => {});
   useEffect(() => {
     load();
+    loadCats();
     api.get("/settings").then((r) => setDefaultMarkup(r.data.default_markup)).catch(() => {});
   }, []);
+
+  const addCat = async () => {
+    const name = newCat.trim();
+    if (!name) return;
+    try { await api.post("/material-categories", { name }); setNewCat(""); toast.success("Category added"); loadCats(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+  const removeCat = async (id) => {
+    try { await api.delete(`/material-categories/${id}`); toast.success("Category removed"); loadCats(); }
+    catch { toast.error("Failed"); }
+  };
 
   const openNew = () => { setForm({ ...empty, markup: defaultMarkup }); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, stock: r.stock ?? "", category: r.category ?? "", supplier: r.supplier ?? "" }); setEditing(r.id); setOpen(true); };
@@ -51,6 +69,7 @@ export default function Materials() {
   return (
     <div>
       <PageHeader overline="Inventory · Costing" title="Materials">
+        {isAdmin && <Btn variant="outline" onClick={() => setCatOpen(true)} data-testid="manage-categories-btn"><Tag size={16} weight="bold" /> Categories</Btn>}
         <Btn onClick={openNew} data-testid="add-material-btn"><Plus size={16} weight="bold" /> Add Material</Btn>
       </PageHeader>
 
@@ -110,7 +129,7 @@ export default function Materials() {
               <label className="block">
                 <span className="overline text-muted-foreground">Category</span>
                 <select value={form.category} onChange={set("category")} data-testid="mat-category" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
-                  {CATEGORIES.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                  {cats.all.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </label>
               <label className="block">
@@ -137,6 +156,42 @@ export default function Materials() {
           <DialogFooter>
             <Btn variant="outline" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn onClick={save} data-testid="save-material-btn">Save</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={catOpen} onOpenChange={setCatOpen}>
+        <DialogContent className="rounded-none max-w-md" data-testid="categories-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Material Categories</DialogTitle>
+            <DialogDescription className="font-mono text-xs">Built-in categories plus your own custom ones.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <div className="overline text-muted-foreground mb-2">Built-in</div>
+              <div className="flex flex-wrap gap-2">
+                {cats.presets.map((c) => <span key={c} className="border border-border px-2 py-1 text-xs font-mono">{c}</span>)}
+              </div>
+            </div>
+            <div>
+              <div className="overline text-muted-foreground mb-2">Custom</div>
+              {cats.custom.length === 0 && <div className="text-sm text-muted-foreground">No custom categories yet.</div>}
+              <div className="space-y-1" data-testid="custom-categories-list">
+                {cats.custom.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between border border-border px-3 py-2">
+                    <span className="text-sm font-medium">{c.name}</span>
+                    <Btn variant="ghost" onClick={() => removeCat(c.id)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-end gap-2 border-t border-border pt-4">
+              <div className="flex-1"><Inp label="New category" value={newCat} onChange={(e) => setNewCat(e.target.value)} testid="new-category-input" /></div>
+              <Btn onClick={addCat} data-testid="add-category-btn"><Plus size={16} weight="bold" /> Add</Btn>
+            </div>
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setCatOpen(false)}>Done</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>

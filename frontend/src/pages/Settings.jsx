@@ -25,6 +25,7 @@ export default function Settings() {
         machine_rate_per_hr: Number(form.machine_rate_per_hr),
         machine_sqft_per_hr: Number(form.machine_sqft_per_hr),
         default_markup: Number(form.default_markup),
+        default_tax_rate: Number(form.default_tax_rate),
         company_name: form.company_name || "",
         company_address: form.company_address || "",
         company_phone: form.company_phone || "",
@@ -90,6 +91,8 @@ export default function Settings() {
             <Inp label="Machine throughput (sqft/hr)" type="number" value={form.machine_sqft_per_hr} onChange={set("machine_sqft_per_hr")} testid="set-machine-sqft" />
           </div>
           <Inp label="Default material markup (%)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
+          <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />
+          <div className="text-xs text-muted-foreground -mt-2">Applied automatically to new quotes, sales orders and invoices (editable per document).</div>
           <div className="border-t border-border pt-4 text-sm text-muted-foreground font-mono">
             Per line: labor hrs = area ÷ {form.shop_sqft_per_hr} sqft/hr, machine hrs = area ÷ {form.machine_sqft_per_hr} sqft/hr. Line = (price/sqft × area) + ({currency(form.shop_rate_per_hr)} × labor hrs) + ({currency(form.machine_rate_per_hr)} × machine hrs)
           </div>

@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple } from "@phosphor-icons/react";
 
 export default function Estimates() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [delEst, setDelEst] = useState(null);
 
   const load = () => api.get("/estimates").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -37,9 +42,11 @@ export default function Estimates() {
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
   };
-  const remove = async (id) => {
-    if (!window.confirm("Delete estimate?")) return;
-    await api.delete(`/estimates/${id}`); toast.success("Deleted"); load();
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(`/estimates/${delEst.id}`, { data: { password } });
+      toast.success("Estimate deleted"); setDelEst(null); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   return (
@@ -82,7 +89,9 @@ export default function Estimates() {
                         <Btn variant="ghost" onClick={() => approve(r.id)} data-testid={`approve-estimate-${r.id}`} title="Approve → Sales Order"><CheckCircle size={16} /> Approve</Btn>
                       )}
                       <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-estimate-${r.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-estimate-${r.id}`}><Trash size={16} /></Btn>
+                      {isAdmin && (
+                        <Btn variant="ghost" onClick={() => setDelEst(r)} data-testid={`delete-estimate-${r.id}`} title="Delete"><Trash size={16} /></Btn>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -94,6 +103,7 @@ export default function Estimates() {
       </div>
 
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
+      <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

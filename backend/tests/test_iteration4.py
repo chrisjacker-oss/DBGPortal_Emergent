@@ -39,6 +39,10 @@ def _creds(section_regex):
     return {"email": m.group(1), "password": m.group(2)}
 
 
+def _admin_password():
+    return _creds(r"Admin \(DBG\).*?Email:\s*(\S+).*?Password:\s*(\S+)")["password"]
+
+
 def _login(creds):
     s = requests.Session()
     r = s.post(f"{API}/auth/login", json=creds, timeout=30)
@@ -67,7 +71,7 @@ def trash():
 def cleanup(admin, trash):
     yield
     for path, _id in reversed(trash):
-        admin.delete(f"{API}/{path}/{_id}", timeout=30)
+        admin.delete(f"{API}/{path}/{_id}", json={"password": _admin_password()}, timeout=30)
     admin.put(f"{API}/settings", json=DEFAULTS, timeout=30)
 
 
@@ -113,11 +117,16 @@ class TestIteration4:
                "machine_sqft_per_hr": 250.0, "default_markup": 45.0}
         r = admin.put(f"{API}/settings", json=new, timeout=30)
         assert r.status_code == 200, r.text
-        assert r.json() == new
+        body = r.json()
+        for k, v in new.items():
+            assert body[k] == v, f"{k}={body.get(k)}"
         g = admin.get(f"{API}/settings", timeout=30).json()
-        assert g == new, g
+        for k, v in new.items():
+            assert g[k] == v, g
         # restore
-        assert admin.put(f"{API}/settings", json=DEFAULTS, timeout=30).json() == DEFAULTS
+        restored = admin.put(f"{API}/settings", json=DEFAULTS, timeout=30).json()
+        for k, v in DEFAULTS.items():
+            assert restored[k] == v, restored
 
     def test_settings_read_allowed_for_salesman_write_forbidden(self, salesman):
         assert salesman.get(f"{API}/settings", timeout=30).status_code == 200
@@ -179,14 +188,17 @@ class TestIteration4:
         assert got["line_items"][0]["line_total"] == est["line_items"][0]["line_total"]
 
     # -------------------- commission --------------------
-    def test_commission_on_full_cost_subtotal(self, salesman, admin, trash):
+    def test_commission_on_materials_selling_price(self, salesman, admin, trash):
         cid = _mk_customer(admin, trash, "TEST_Comm")
         est = _mk_estimate(salesman, trash, cid, line_items=[{
             "description": "TEST_c", "width_in": 48, "height_in": 24,
             "quantity": 2, "price_per_sqft": 10.0, "extra_labor_hours": 1}], tax_rate=8.0)
         assert est["commission_rate"] == 10.0, est
         assert est["salesman_name"], est
-        assert est["commission_amount"] == pytest.approx(round(est["subtotal"] * 0.10, 2), abs=0.01)
+        # iteration 6: commission base = materials only, at selling price
+        mats = sum(li["material_cost"] for li in est["line_items"])
+        assert est["commission_base"] == pytest.approx(mats, abs=0.01)
+        assert est["commission_amount"] == pytest.approx(round(mats * 0.10, 2), abs=0.01)
         # commission is pre-tax: not based on total
         assert est["tax_amount"] > 0
         assert est["commission_amount"] != pytest.approx(round(est["total"] * 0.10, 2), abs=0.001)

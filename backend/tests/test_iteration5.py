@@ -132,14 +132,16 @@ class TestTierDiscount:
         if tier == 1:
             assert (e["discount_amount"], e["tax_amount"], e["total"]) == (93.33, 17.33, 190.66)
 
-    def test_commission_on_pre_discount_subtotal(self, sales):
-        # salesman-created estimate for a tier-1 customer: commission base = subtotal (pre-discount)
+    def test_commission_on_materials_pre_discount(self, sales):
+        # iteration 6: commission base = materials-only at selling price (pre-discount, pre-tax)
         adm = login(ADMIN)
         c = mk_customer(adm, 1)
         e = mk_estimate(sales, c["id"], title="TEST_Commission Tier1")
         assert e["discount_rate"] == 35.0
         assert e["commission_rate"] == 10.0
-        assert e["commission_amount"] == round(e["subtotal"] * 0.10, 2) == 26.67
+        mats = round(sum(li["material_cost"] for li in e["line_items"]), 2)
+        assert e["commission_base"] == mats
+        assert e["commission_amount"] == round(mats * 0.10, 2)
 
     def test_discount_carries_est_so_inv(self, admin):
         c = mk_customer(admin, 1)

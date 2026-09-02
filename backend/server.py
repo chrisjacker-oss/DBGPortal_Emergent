@@ -20,6 +20,7 @@ from typing import List, Optional, Annotated
 import bcrypt
 import jwt
 import httpx
+import stripe
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -38,6 +39,10 @@ from pydantic import BaseModel, Field, EmailStr, BeforeValidator, ConfigDict
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
+
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or "sk_test_emergent"
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -93,6 +98,8 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("suspended"):
+            raise HTTPException(status_code=403, detail="Your portal access has been suspended. Please contact DBG Signs.")
         user["id"] = str(user["_id"])
         user.pop("_id", None)
         user.pop("password_hash", None)
@@ -113,6 +120,12 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def verify_admin_password(user: dict, password: str) -> None:
+    u = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not u or not verify_password(password or "", u.get("password_hash", "")):
+        raise HTTPException(status_code=403, detail="Incorrect admin password")
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +226,7 @@ class SettingsInput(BaseModel):
     machine_rate_per_hr: float = 35.0
     machine_sqft_per_hr: float = 150.0
     default_markup: float = 40.0
+    default_tax_rate: float = 0.0
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
     company_phone: Optional[str] = ""
@@ -226,6 +240,10 @@ class StaffInput(BaseModel):
     name: str
     role: str = "salesman"  # admin | salesman
     commission_rate: float = 0.0
+
+
+class DeleteConfirm(BaseModel):
+    password: str
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +268,11 @@ def clean(doc: dict) -> dict:
 
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0,
+                    "default_tax_rate": 0.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
-_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup"}
+_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate"}
+
+PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials"]
 
 
 async def get_settings() -> dict:
@@ -404,6 +425,8 @@ async def login(payload: LoginInput, response: Response, request: Request):
         )
         raise HTTPException(status_code=401, detail="Invalid email or password")
     await db.login_attempts.delete_one({"identifier": identifier})
+    if user.get("suspended"):
+        raise HTTPException(status_code=403, detail="Your portal access has been suspended. Please contact DBG Signs.")
     uid = str(user["_id"])
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
     return {"id": uid, "email": email, "name": user.get("name"), "role": user.get("role")}
@@ -505,6 +528,45 @@ async def delete_material(mid: str, user: dict = Depends(require_admin)):
 
 
 # ---------------------------------------------------------------------------
+# Material categories (presets + admin-managed custom)
+# ---------------------------------------------------------------------------
+class CategoryInput(BaseModel):
+    name: str
+
+
+@api_router.get("/material-categories")
+async def list_categories(user: dict = Depends(require_staff)):
+    custom = await db.material_categories.find().sort("name", 1).to_list(500)
+    return {
+        "presets": PRESET_CATEGORIES,
+        "custom": [{"id": str(c["_id"]), "name": c["name"]} for c in custom],
+        "all": PRESET_CATEGORIES + [c["name"] for c in custom],
+    }
+
+
+@api_router.post("/material-categories")
+async def create_category(payload: CategoryInput, user: dict = Depends(require_admin)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name is required")
+    existing_lower = {c.lower() for c in PRESET_CATEGORIES}
+    async for c in db.material_categories.find():
+        existing_lower.add(c["name"].lower())
+    if name.lower() in existing_lower:
+        raise HTTPException(status_code=400, detail="That category already exists")
+    res = await db.material_categories.insert_one({"name": name, "created_at": now_iso()})
+    return {"id": str(res.inserted_id), "name": name}
+
+
+@api_router.delete("/material-categories/{cid}")
+async def delete_category(cid: str, user: dict = Depends(require_admin)):
+    res = await db.material_categories.delete_one({"_id": oid(cid)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return {"message": "deleted"}
+
+
+# ---------------------------------------------------------------------------
 # Shop settings (global rates) - admin only
 # ---------------------------------------------------------------------------
 @api_router.get("/settings")
@@ -572,8 +634,14 @@ async def apply_commission(doc: dict, user: dict) -> dict:
         su = await db.users.find_one({"_id": oid(doc["salesman_id"])})
         if su:
             rate = float(su.get("commission_rate") or 0)
+    # Commission base = material selling price only (materials, at customer price)
+    base = 0.0
+    for li in doc.get("line_items", []):
+        base += float(li.get("material_cost") or 0)
+    base = round(base, 2)
     doc["commission_rate"] = rate
-    doc["commission_amount"] = round(float(doc.get("subtotal") or 0) * rate / 100.0, 2)
+    doc["commission_base"] = base
+    doc["commission_amount"] = round(base * rate / 100.0, 2)
     return doc
 
 
@@ -607,7 +675,8 @@ async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends
 
 
 @api_router.delete("/estimates/{eid}")
-async def delete_estimate(eid: str, user: dict = Depends(require_staff)):
+async def delete_estimate(eid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.estimates.delete_one({"_id": oid(eid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Estimate not found")
@@ -654,6 +723,39 @@ async def list_sales_orders(user: dict = Depends(require_staff)):
     return [await enrich_customer(clean(d)) for d in docs]
 
 
+_SO_STATUSES = ("open", "in_production", "fulfilled")
+
+
+@api_router.post("/sales-orders")
+async def create_sales_order(payload: EstimateInput, user: dict = Depends(require_staff)):
+    disc = await customer_discount(payload.customer_id)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    doc = payload.model_dump()
+    doc.update(totals)
+    await apply_commission(doc, user)
+    doc["status"] = payload.status if payload.status in _SO_STATUSES else "open"
+    doc["number"] = await next_number("SO", "sales_orders", db.sales_orders)
+    doc["created_at"] = now_iso()
+    res = await db.sales_orders.insert_one(doc)
+    return await enrich_customer(clean(await db.sales_orders.find_one({"_id": res.inserted_id})))
+
+
+@api_router.put("/sales-orders/{sid}")
+async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
+    existing = await get_or_404(db.sales_orders, sid, "Sales order")
+    disc = await customer_discount(payload.customer_id)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    doc = payload.model_dump()
+    doc.update(totals)
+    await apply_commission(doc, user)
+    doc["status"] = payload.status if payload.status in _SO_STATUSES else existing.get("status", "open")
+    for k in ("estimate_id", "from_estimate", "invoice_id"):
+        if existing.get(k):
+            doc[k] = existing[k]
+    await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": doc})
+    return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
+
+
 @api_router.patch("/sales-orders/{sid}/status")
 async def set_so_status(sid: str, status: str, user: dict = Depends(require_staff)):
     if status not in ("open", "in_production", "fulfilled"):
@@ -663,8 +765,16 @@ async def set_so_status(sid: str, status: str, user: dict = Depends(require_staf
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
 
 
+@api_router.patch("/sales-orders/{sid}/void")
+async def void_sales_order(sid: str, voided: bool, user: dict = Depends(require_staff)):
+    await get_or_404(db.sales_orders, sid, "Sales order")
+    await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": {"voided": voided}})
+    return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
+
+
 @api_router.delete("/sales-orders/{sid}")
-async def delete_sales_order(sid: str, user: dict = Depends(require_staff)):
+async def delete_sales_order(sid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     so = await get_or_404(db.sales_orders, sid, "Sales order")
     if so.get("estimate_id"):
         await db.estimates.update_one({"_id": oid(so["estimate_id"])}, {"$set": {"status": "sent"}, "$unset": {"sales_order_id": ""}})
@@ -745,12 +855,110 @@ async def set_invoice_status(iid: str, status: str, user: dict = Depends(require
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
 
 
+@api_router.patch("/invoices/{iid}/void")
+async def void_invoice(iid: str, voided: bool, user: dict = Depends(require_staff)):
+    await get_or_404(db.invoices, iid, "Invoice")
+    await db.invoices.update_one({"_id": oid(iid)}, {"$set": {"voided": voided}})
+    return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
+
+
 @api_router.delete("/invoices/{iid}")
-async def delete_invoice(iid: str, user: dict = Depends(require_admin)):
+async def delete_invoice(iid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.invoices.delete_one({"_id": oid(iid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return {"message": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# Stripe payments (embedded card / PaymentIntent)
+# ---------------------------------------------------------------------------
+class PayIntentInput(BaseModel):
+    invoice_id: str
+
+
+async def _invoice_for_payment(invoice_id: str, user: dict) -> dict:
+    inv = await get_or_404(db.invoices, invoice_id, "Invoice")
+    if user.get("role") == "customer":
+        cust = await current_customer(user)
+        if not cust or str(cust["_id"]) != inv.get("customer_id"):
+            raise HTTPException(status_code=403, detail="You are not allowed to pay this invoice.")
+    return inv
+
+
+async def _mark_invoice_paid(invoice_id: str, payment_intent_id: str) -> None:
+    await db.payment_transactions.update_one(
+        {"payment_intent_id": payment_intent_id, "payment_status": {"$ne": "paid"}},
+        {"$set": {"status": "completed", "payment_status": "paid", "updated_at": now_iso()}},
+    )
+    await db.invoices.update_one(
+        {"_id": oid(invoice_id), "status": {"$ne": "paid"}},
+        {"$set": {"status": "paid", "paid_at": now_iso(), "paid_via": "stripe"}},
+    )
+
+
+@api_router.post("/payments/create-intent")
+async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(get_current_user)):
+    inv = await _invoice_for_payment(payload.invoice_id, user)
+    if inv.get("voided"):
+        raise HTTPException(status_code=400, detail="This invoice has been voided.")
+    if inv.get("status") == "paid":
+        raise HTTPException(status_code=400, detail="This invoice is already paid.")
+    amount = float(inv.get("total") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Invoice amount must be greater than zero.")
+    intent = stripe.PaymentIntent.create(
+        amount=int(round(amount * 100)),
+        currency="usd",
+        payment_method_types=["card"],
+        description=f"Invoice {inv.get('number', '')} - DBG Signs, Inc.",
+        metadata={"invoice_id": str(inv["_id"]), "invoice_number": inv.get("number", "")},
+    )
+    await db.payment_transactions.insert_one({
+        "payment_intent_id": intent.id, "invoice_id": str(inv["_id"]),
+        "invoice_number": inv.get("number"), "amount": amount, "currency": "usd",
+        "status": "initiated", "payment_status": "pending",
+        "created_at": now_iso(), "updated_at": now_iso(),
+    })
+    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY, "amount": amount}
+
+
+@api_router.get("/payments/status/{payment_intent_id}")
+async def payment_status(payment_intent_id: str, user: dict = Depends(get_current_user)):
+    rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if rec.get("payment_status") != "paid":
+        try:
+            pi = stripe.PaymentIntent.retrieve(payment_intent_id)
+            if pi.status == "succeeded":
+                await _mark_invoice_paid(rec["invoice_id"], payment_intent_id)
+                rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
+        except stripe.error.StripeError:
+            pass
+    return {"payment_intent_id": payment_intent_id, "status": rec["status"], "payment_status": rec["payment_status"]}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except (ValueError, stripe.error.SignatureVerificationError):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    obj, t = event["data"]["object"], event["type"]
+    if t == "payment_intent.succeeded":
+        rec = await db.payment_transactions.find_one({"payment_intent_id": obj["id"]})
+        if rec:
+            await _mark_invoice_paid(rec["invoice_id"], obj["id"])
+    elif t == "payment_intent.payment_failed":
+        await db.payment_transactions.update_one(
+            {"payment_intent_id": obj["id"]},
+            {"$set": {"status": "failed", "payment_status": "failed", "updated_at": now_iso()}},
+        )
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -851,6 +1059,81 @@ async def delete_user(uid: str, user: dict = Depends(require_admin)):
     return {"message": "deleted"}
 
 
+# ---------------------------------------------------------------------------
+# Customer portal accounts (admin: add / suspend / delete)
+# ---------------------------------------------------------------------------
+class PortalAccountInput(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    tier: Optional[int] = None
+    net_terms: Optional[str] = "Net 15"
+
+
+async def _portal_account_out(u: dict) -> dict:
+    uid = str(u["_id"])
+    cust = await db.customers.find_one({"user_id": uid}) or await db.customers.find_one({"email": u.get("email")})
+    return {
+        "id": uid, "name": u.get("name"), "email": u.get("email"),
+        "company": u.get("company"), "phone": u.get("phone"),
+        "suspended": bool(u.get("suspended")), "created_at": u.get("created_at"),
+        "customer_id": str(cust["_id"]) if cust else None,
+        "portal_enabled": bool(cust.get("portal_enabled")) if cust else False,
+        "tier": (cust or {}).get("tier"), "net_terms": (cust or {}).get("net_terms"),
+    }
+
+
+@api_router.get("/portal-accounts")
+async def list_portal_accounts(user: dict = Depends(require_admin)):
+    docs = await db.users.find({"role": "customer"}).sort("created_at", -1).to_list(2000)
+    return [await _portal_account_out(d) for d in docs]
+
+
+@api_router.post("/portal-accounts")
+async def create_portal_account(payload: PortalAccountInput, user: dict = Depends(require_admin)):
+    email = payload.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    ures = await db.users.insert_one({
+        "email": email, "password_hash": hash_password(payload.password),
+        "name": payload.name, "company": payload.company, "phone": payload.phone,
+        "role": "customer", "suspended": False, "created_at": now_iso(),
+    })
+    uid = str(ures.inserted_id)
+    existing = await db.customers.find_one({"email": email})
+    if existing:
+        await db.customers.update_one({"_id": existing["_id"]}, {"$set": {"user_id": uid, "portal_enabled": True}})
+    else:
+        await db.customers.insert_one({
+            "name": payload.name, "company": payload.company, "email": email, "phone": payload.phone,
+            "address": None, "notes": None, "user_id": uid, "portal_enabled": True,
+            "tier": payload.tier, "net_terms": payload.net_terms or "Net 15", "created_at": now_iso(),
+        })
+    return await _portal_account_out(await db.users.find_one({"_id": ures.inserted_id}))
+
+
+@api_router.patch("/portal-accounts/{uid}/status")
+async def set_portal_account_status(uid: str, suspended: bool, user: dict = Depends(require_admin)):
+    u = await db.users.find_one({"_id": oid(uid), "role": "customer"})
+    if not u:
+        raise HTTPException(status_code=404, detail="Portal account not found")
+    await db.users.update_one({"_id": u["_id"]}, {"$set": {"suspended": suspended}})
+    await db.customers.update_one({"user_id": uid}, {"$set": {"portal_enabled": not suspended}})
+    return await _portal_account_out(await db.users.find_one({"_id": u["_id"]}))
+
+
+@api_router.delete("/portal-accounts/{uid}")
+async def delete_portal_account(uid: str, user: dict = Depends(require_admin)):
+    res = await db.users.delete_one({"_id": oid(uid), "role": "customer"})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Portal account not found")
+    # keep the business/customer record, just disable portal + unlink login
+    await db.customers.update_one({"user_id": uid}, {"$set": {"portal_enabled": False}, "$unset": {"user_id": ""}})
+    return {"message": "deleted"}
+
+
 @api_router.get("/commissions")
 async def commissions(user: dict = Depends(require_staff)):
     q = {}
@@ -863,7 +1146,7 @@ async def commissions(user: dict = Depends(require_staff)):
     total_earned = 0.0
     for e in ests:
         e = await enrich_customer(clean(e))
-        base = float(e.get("subtotal") or 0)
+        base = float(e.get("commission_base") if e.get("commission_base") is not None else (e.get("subtotal") or 0))
         rate = float(e.get("commission_rate") or 0)
         amt = float(e.get("commission_amount") or round(base * rate / 100.0, 2))
         earned = e.get("status") == "approved" or bool(e.get("sales_order_id"))
@@ -900,6 +1183,7 @@ async def commissions(user: dict = Depends(require_staff)):
 async def dashboard(user: dict = Depends(require_staff)):
     invoices = await db.invoices.find().to_list(2000)
     bills = await db.bills.find().to_list(2000)
+    invoices = [i for i in invoices if not i.get("voided")]
     receivable = sum(i.get("total", 0) for i in invoices if i.get("status") != "paid")
     collected = sum(i.get("total", 0) for i in invoices if i.get("status") == "paid")
     payable = sum(b.get("amount", 0) for b in bills if b.get("status") != "paid")
@@ -996,7 +1280,7 @@ async def portal_orders(user: dict = Depends(get_current_user)):
     if cust.get("portal_enabled") is False:
         raise HTTPException(status_code=403, detail="Portal access is not enabled for your account. Please contact DBG Signs.")
     cid = str(cust["_id"])
-    invoices = await db.invoices.find({"customer_id": cid}).sort("created_at", -1).to_list(500)
+    invoices = await db.invoices.find({"customer_id": cid, "voided": {"$ne": True}}).sort("created_at", -1).to_list(500)
     reorders = await db.reorders.find({"customer_id": cid}).sort("created_at", -1).to_list(500)
     return {
         "customer": clean(cust),
@@ -1468,7 +1752,7 @@ async def _send_past_due(inv: dict) -> dict:
 
 @api_router.get("/receivables/overdue")
 async def overdue_receivables(days: int = 45, user: dict = Depends(require_staff)):
-    invoices = await db.invoices.find({"status": {"$ne": "paid"}}).sort("created_at", 1).to_list(2000)
+    invoices = await db.invoices.find({"status": {"$ne": "paid"}, "voided": {"$ne": True}}).sort("created_at", 1).to_list(2000)
     out = []
     for inv in invoices:
         inv = await enrich_customer(clean(inv))

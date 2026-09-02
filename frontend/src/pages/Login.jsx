@@ -7,6 +7,8 @@ import { toast } from "sonner";
 const HERO =
   "https://images.unsplash.com/photo-1631660975301-b2b65e80c98a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1ODR8MHwxfHNlYXJjaHwzfHxEYWxsYXMlMjBUZXhhcyUyMHNreWxpbmV8ZW58MHx8fHwxNzg4MjkyNzg1fDA&ixlib=rb-4.1.0&q=85";
 
+const LOGO_URL = `${process.env.REACT_APP_BACKEND_URL}/api/pub/logo`;
+
 export default function Login({ variant = "staff" }) {
   const isCustomer = variant === "customer";
   const { login, register } = useAuth();
@@ -36,11 +38,8 @@ export default function Login({ variant = "staff" }) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       <div className="flex flex-col justify-center px-8 sm:px-16 py-12 max-w-xl w-full mx-auto">
-        <div className="flex items-center gap-2 mb-12">
-          <div className="h-8 w-8 bg-foreground flex items-center justify-center">
-            <span className="text-primary-foreground font-mono font-bold text-xs">DBG</span>
-          </div>
-          <div className="font-display font-bold tracking-tight text-lg">DBG Signs, Inc.</div>
+        <div className="flex items-center gap-3 mb-12">
+          <img src={LOGO_URL} alt="DBG Signs, Inc." className="h-12 w-auto max-w-[220px] object-contain" data-testid="login-logo" />
         </div>
 
         <div className="overline text-muted-foreground" data-testid="login-variant-label">
