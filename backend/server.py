@@ -535,6 +535,53 @@ async def create_customer(payload: CustomerInput, user: dict = Depends(require_w
     return clean(await db.customers.find_one({"_id": res.inserted_id}))
 
 
+class CustomerImportInput(BaseModel):
+    csv: str
+
+
+@api_router.post("/customers/import")
+async def import_customers(payload: CustomerImportInput, user: dict = Depends(require_worker)):
+    import csv as _csv
+    text = (payload.csv or "").lstrip("\ufeff")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="The CSV file is empty")
+    try:
+        reader = _csv.DictReader(io.StringIO(text))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not parse the CSV file")
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV has no header row")
+    created, skipped, errors = 0, 0, []
+    valid_terms = {"COD", "50/50", "Net 10", "Net 15", "Net 30", "Net 45", "Net 60"}
+    for i, raw in enumerate(reader, start=2):
+        r = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items() if k is not None}
+        name = r.get("name") or r.get("contact") or r.get("contact name") or ""
+        company = r.get("company") or r.get("company name") or ""
+        if not name and not company:
+            skipped += 1
+            errors.append(f"Row {i}: missing both name and company")
+            continue
+        name = name or company
+        tier_raw = r.get("tier") or ""
+        tier = int(tier_raw) if tier_raw.isdigit() and int(tier_raw) in (1, 2, 3) else None
+        terms = r.get("net_terms") or r.get("terms") or "Net 15"
+        if terms not in valid_terms:
+            terms = "Net 15"
+        email = (r.get("email") or "").lower() or None
+        if email and await db.customers.find_one({"email": email}):
+            skipped += 1
+            errors.append(f"Row {i}: a customer with email {email} already exists")
+            continue
+        await db.customers.insert_one({
+            "name": name, "company": company or None, "email": email,
+            "phone": r.get("phone") or None, "address": r.get("address") or None,
+            "notes": r.get("notes") or None, "title": r.get("title") or None,
+            "tier": tier, "net_terms": terms, "portal_enabled": False, "created_at": now_iso(),
+        })
+        created += 1
+    return {"created": created, "skipped": skipped, "errors": errors[:25]}
+
+
 @api_router.put("/customers/{cid}")
 async def update_customer(cid: str, payload: CustomerInput, user: dict = Depends(require_staff)):
     await get_or_404(db.customers, cid, "Customer")

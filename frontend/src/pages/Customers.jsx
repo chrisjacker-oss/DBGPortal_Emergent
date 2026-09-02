@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple } from "@phosphor-icons/react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,9 @@ export default function Customers() {
   const [contacts, setContacts] = useState([]);
   const [cForm, setCForm] = useState({ name: "", email: "", phone: "", title: "" });
   const [del, setDel] = useState(null); // { url, label, after }
+  const [importOpen, setImportOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -76,9 +79,34 @@ export default function Customers() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
+  const openImport = () => { setImportResult(null); setImportOpen(true); };
+  const downloadTemplate = () => {
+    const csv = "name,company,email,phone,address,title,tier,net_terms,notes\n" +
+      "John Doe,Acme Signs,john@acme.com,555-123-4567,\"123 Main St, Dallas TX\",Owner,1,Net 15,VIP account\n";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "customer-import-template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImporting(true); setImportResult(null);
+    try {
+      const text = await file.text();
+      const { data } = await api.post("/customers/import", { csv: text });
+      setImportResult(data);
+      if (data.created > 0) { toast.success(`Imported ${data.created} customer(s)`); load(); }
+      else toast.message("No new customers were imported");
+    } catch (err) { toast.error(err.response?.data?.detail || "Import failed"); }
+    finally { setImporting(false); }
+  };
+
   return (
     <div>
       <PageHeader overline="CRM" title="Customers">
+        <Btn variant="outline" onClick={openImport} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
         <Btn onClick={openNew} data-testid="add-customer-btn"><Plus size={16} weight="bold" /> New Customer</Btn>
       </PageHeader>
 
@@ -211,6 +239,39 @@ export default function Customers() {
       </Dialog>
 
       <AdminDeleteDialog open={!!del} label={del?.label || "record"} onClose={() => setDel(null)} onConfirm={confirmDelete} />
+
+      <Dialog open={importOpen} onOpenChange={(o) => !o && !importing && setImportOpen(false)}>
+        <DialogContent className="rounded-none max-w-lg" data-testid="import-customers-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Import customers from CSV</DialogTitle>
+            <DialogDescription className="font-mono text-xs">Columns: name, company, email, phone, address, title, tier (1–3), net_terms, notes. Rows with a duplicate email are skipped.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <button onClick={downloadTemplate} data-testid="download-template-btn" className="inline-flex items-center gap-2 text-sm text-[#0E7490] hover:underline">
+              <DownloadSimple size={16} /> Download CSV template
+            </button>
+            <label className="block border-2 border-dashed border-input px-4 py-8 text-center cursor-pointer hover:bg-secondary/40 transition-colors">
+              <UploadSimple size={28} className="mx-auto mb-2 text-muted-foreground" />
+              <div className="text-sm font-medium">{importing ? "Importing…" : "Choose a .csv file to upload"}</div>
+              <div className="text-xs text-muted-foreground mt-1">Your customer list will be added to the CRM</div>
+              <input type="file" accept=".csv,text/csv" onChange={handleFile} disabled={importing} data-testid="import-file-input" className="hidden" />
+            </label>
+            {importResult && (
+              <div className="border border-border bg-secondary/30 px-4 py-3 text-sm" data-testid="import-result">
+                <div><b>{importResult.created}</b> added · <b>{importResult.skipped}</b> skipped</div>
+                {importResult.errors?.length > 0 && (
+                  <ul className="mt-2 text-xs text-muted-foreground list-disc pl-5 max-h-32 overflow-y-auto">
+                    {importResult.errors.map((er, i) => <li key={i}>{er}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setImportOpen(false)} disabled={importing} data-testid="import-close-btn">Done</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
