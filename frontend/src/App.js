@@ -14,6 +14,7 @@ import Payables from "@/pages/Payables";
 import Receivables from "@/pages/Receivables";
 import Reorders from "@/pages/Reorders";
 import Commissions from "@/pages/Commissions";
+import PurchaseOrders from "@/pages/PurchaseOrders";
 import Team from "@/pages/Team";
 import Settings from "@/pages/Settings";
 import Portal from "@/pages/Portal";
@@ -81,6 +82,7 @@ function App() {
               ["/receivables", <Receivables />, A],
               ["/reorders", <Reorders />, A],
               ["/commissions", <Commissions />, AS],
+              ["/purchase-orders", <PurchaseOrders />, A],
               ["/team", <Team />, A],
               ["/settings", <Settings />, A],
             ]; })().map(([path, el, roles]) => (

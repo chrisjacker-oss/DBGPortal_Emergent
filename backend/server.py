@@ -410,6 +410,22 @@ async def next_number(prefix: str, key: str, collection) -> str:
     return f"{prefix}-{r['seq']:04d}"
 
 
+async def next_po_number() -> str:
+    if not await db.counters.find_one({"_id": "PO"}):
+        base = 1599  # so the first PO is PO-1600
+        cursor = db.purchase_orders.find({"number": {"$regex": "^PO-"}}, {"number": 1})
+        async for d in cursor:
+            try:
+                base = max(base, int(str(d["number"]).split("-")[1]))
+            except (IndexError, ValueError):
+                pass
+        await db.counters.insert_one({"_id": "PO", "seq": base})
+    r = await db.counters.find_one_and_update(
+        {"_id": "PO"}, {"$inc": {"seq": 1}}, return_document=ReturnDocument.AFTER
+    )
+    return f"PO-{r['seq']:04d}"
+
+
 async def get_or_404(collection, id_str: str, name: str = "Resource") -> dict:
     doc = await collection.find_one({"_id": oid(id_str)})
     if not doc:
@@ -1154,6 +1170,54 @@ async def invoice_lineage(iid: str, user: dict = Depends(require_staff)):
                 out["estimate"] = {"number": est.get("number"), "id": str(est["_id"]),
                                    "status": est.get("status"), "created_at": est.get("created_at")}
     return out
+
+
+@api_router.post("/invoices/{iid}/commission-po")
+async def generate_commission_po(iid: str, user: dict = Depends(require_admin)):
+    inv = await get_or_404(db.invoices, iid, "Invoice")
+    amount = float(inv.get("commission_amount") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="This invoice has no commission to generate a PO for")
+    existing = await db.purchase_orders.find_one({"invoice_id": iid})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"A PO already exists for this invoice ({existing.get('number')})")
+    inv = await enrich_customer(clean(inv))
+    number = await next_po_number()
+    doc = {
+        "number": number, "invoice_id": iid, "invoice_number": inv.get("number"),
+        "salesman_id": inv.get("salesman_id"), "salesman_name": inv.get("salesman_name") or "Unassigned",
+        "customer_name": inv.get("customer_name"), "commission_amount": round(amount, 2),
+        "commission_rate": float(inv.get("commission_rate") or 0),
+        "created_at": now_iso(), "created_by": user.get("name"),
+    }
+    res = await db.purchase_orders.insert_one(doc)
+    return clean(await db.purchase_orders.find_one({"_id": res.inserted_id}))
+
+
+@api_router.get("/purchase-orders")
+async def list_purchase_orders(user: dict = Depends(require_admin)):
+    docs = await db.purchase_orders.find().sort("created_at", -1).to_list(2000)
+    return [clean(d) for d in docs]
+
+
+@api_router.get("/purchase-orders/{pid}/pdf")
+async def purchase_order_pdf(pid: str, inline: bool = False, user: dict = Depends(require_admin)):
+    po = await get_or_404(db.purchase_orders, pid, "Purchase order")
+    pdf = build_po_pdf(clean(po), await get_settings(), await get_logo_bytes())
+    disp = "inline" if inline else "attachment"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'{disp}; filename="{po.get("number")}.pdf"', "Cache-Control": "no-store"})
+
+
+@api_router.delete("/purchase-orders/{pid}")
+async def delete_purchase_order(pid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    res = await db.purchase_orders.delete_one({"_id": oid(pid)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    return {"message": "deleted"}
+
+
 
 
 @api_router.patch("/invoices/{iid}/status")
@@ -2580,6 +2644,56 @@ def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = No
     c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
+
+
+def build_po_pdf(po: dict, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    co = company or {}
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4"); mag = colors.HexColor("#A21CAF")
+    y = H - 70
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 40, width=150, height=86, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "PURCHASE ORDER")
+    c.setFillColor(mag); c.setFont("Helvetica-Bold", 13); c.drawRightString(R, y - 18, str(po.get("number") or ""))
+    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 33, (po.get("created_at") or "")[:10])
+    y -= 78
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 26
+    c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "PAY TO")
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 13); c.drawString(L, y - 15, str(po.get("salesman_name") or "Unassigned"))
+    c.setFillColor(soft); c.setFont("Helvetica", 9); c.drawString(L, y - 30, "Sales commission")
+    c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawRightString(R, y, "REFERENCE")
+    c.setFillColor(ink); c.setFont("Helvetica", 10)
+    c.drawRightString(R, y - 15, f"Invoice {po.get('invoice_number') or ''}")
+    c.drawRightString(R, y - 29, str(po.get("customer_name") or ""))
+    y -= 60
+    c.setFillColor(ink); c.rect(L, y - 6, R - L, 22, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8)
+    c.drawString(L + 8, y + 2, "DESCRIPTION"); c.drawRightString(R - 8, y + 2, "AMOUNT")
+    y -= 30
+    amt = float(po.get("commission_amount") or 0)
+    rate = float(po.get("commission_rate") or 0)
+    desc = f"Sales commission ({rate}%) for Invoice {po.get('invoice_number') or ''}"
+    c.setFillColor(ink); c.setFont("Helvetica", 10)
+    c.drawString(L + 8, y, desc[:70]); c.drawRightString(R - 8, y, _money(amt))
+    y -= 8
+    c.setStrokeColor(colors.HexColor("#D1D5DB")); c.setLineWidth(1); c.line(L, y, R, y); y -= 24
+    c.setFillColor(ink); c.rect(R - 260, y - 7, 260, 30, fill=1, stroke=0)
+    c.setFillColor(mag); c.rect(R - 260, y - 7, 5, 30, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(R - 244, y + 4, "TOTAL DUE")
+    c.setFont("Helvetica-Bold", 15); c.drawRightString(R - 10, y + 2, _money(amt))
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
+    if po.get("created_by"):
+        c.drawString(L, 66, f"Issued by {po.get('created_by')}")
+    c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
 
 
 def build_commissions_pdf(rows: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None, scope_label: str = "") -> bytes:

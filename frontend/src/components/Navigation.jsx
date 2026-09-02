@@ -33,6 +33,7 @@ const adminLinks = [
   { to: "/receivables", label: "Receivable", icon: ArrowCircleDown },
   { to: "/payables", label: "Payable", icon: ArrowCircleUp },
   { to: "/commissions", label: "Commissions", icon: Percent },
+  { to: "/purchase-orders", label: "Purchase Orders", icon: Receipt },
   { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
   { to: "/team", label: "Team", icon: UsersThree },
   { to: "/settings", label: "Settings", icon: Gear },

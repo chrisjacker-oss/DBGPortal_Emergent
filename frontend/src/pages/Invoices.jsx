@@ -10,7 +10,7 @@ import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import { downloadCsv, downloadFile } from "@/lib/download";
-import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function Invoices() {
@@ -31,6 +31,10 @@ export default function Invoices() {
   const [internalDraft, setInternalDraft] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [tab, setTab] = useState("active");
+  const [sortKey, setSortKey] = useState("");
+  const [pFrom, setPFrom] = useState("");
+  const [pTo, setPTo] = useState("");
+  useEffect(() => { setSortKey(""); setPFrom(""); setPTo(""); }, [tab]);
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -61,6 +65,13 @@ export default function Invoices() {
 
   const paidOf = (inv) => (inv?.status === "paid" ? Number(inv?.total || 0) : Number(inv?.amount_paid || 0));
   const viewPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+  const genCommissionPO = async () => {
+    try {
+      const { data } = await api.post(`/invoices/${detailInv.id}/commission-po`);
+      toast.success(`Created ${data.number} for ${data.salesman_name}`);
+      window.open(`${process.env.REACT_APP_BACKEND_URL}/api/purchase-orders/${data.id}/pdf?inline=1`, "_blank");
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not generate PO"); }
+  };
   const printInvoice = () => {
     const inv = detailInv; if (!inv) return;
     const paid = paidOf(inv);
@@ -149,6 +160,19 @@ export default function Invoices() {
 
   const visible = rows.filter((r) => (tab === "voided" ? r.voided : tab === "paid" ? (!r.voided && r.status === "paid") : (!r.voided && r.status !== "paid")));
   const isPaid = tab === "paid";
+  const filtered = isPaid ? visible.filter((r) => {
+    const d = (r.paid_at || "").slice(0, 10);
+    if (pFrom && d && d < pFrom) return false;
+    if (pTo && d && d > pTo) return false;
+    if ((pFrom || pTo) && !d) return false;
+    return true;
+  }) : visible;
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortKey === "customer") return (a.customer_name || "").localeCompare(b.customer_name || "");
+    if (sortKey === "paid_desc") return (b.paid_at || "").localeCompare(a.paid_at || "");
+    if (sortKey === "paid_asc") return (a.paid_at || "").localeCompare(b.paid_at || "");
+    return 0;
+  });
 
   return (
     <div>
@@ -160,10 +184,32 @@ export default function Invoices() {
       </PageHeader>
 
       <div className="p-8">
-        <div className="flex gap-2 mb-4" data-testid="invoice-tabs">
-          <Btn variant={tab === "active" ? "solid" : "outline"} onClick={() => setTab("active")} data-testid="tab-active">Active</Btn>
-          <Btn variant={tab === "paid" ? "solid" : "outline"} onClick={() => setTab("paid")} data-testid="tab-paid">Paid</Btn>
-          <Btn variant={tab === "voided" ? "solid" : "outline"} onClick={() => setTab("voided")} data-testid="tab-voided">Voided</Btn>
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div className="flex gap-2" data-testid="invoice-tabs">
+            <Btn variant={tab === "active" ? "solid" : "outline"} onClick={() => setTab("active")} data-testid="tab-active">Active</Btn>
+            <Btn variant={tab === "paid" ? "solid" : "outline"} onClick={() => setTab("paid")} data-testid="tab-paid">Paid</Btn>
+            <Btn variant={tab === "voided" ? "solid" : "outline"} onClick={() => setTab("voided")} data-testid="tab-voided">Voided</Btn>
+          </div>
+          <div className="flex items-end gap-3 ml-auto flex-wrap">
+            <label className="block">
+              <span className="overline text-muted-foreground">Sort by</span>
+              <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} data-testid="invoice-sort" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="">Newest first</option>
+                <option value="customer">Customer (A–Z)</option>
+                {isPaid && <option value="paid_desc">Paid date (newest)</option>}
+                {isPaid && <option value="paid_asc">Paid date (oldest)</option>}
+              </select>
+            </label>
+            {isPaid && (
+              <>
+                <label className="block"><span className="overline text-muted-foreground">Paid from</span>
+                  <input type="date" value={pFrom} onChange={(e) => setPFrom(e.target.value)} data-testid="inv-paid-from" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+                <label className="block"><span className="overline text-muted-foreground">Paid to</span>
+                  <input type="date" value={pTo} onChange={(e) => setPTo(e.target.value)} data-testid="inv-paid-to" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+                {(pFrom || pTo) && <Btn variant="outline" onClick={() => { setPFrom(""); setPTo(""); }} data-testid="inv-paid-clear">Clear</Btn>}
+              </>
+            )}
+          </div>
         </div>
         <div className="border border-border bg-card">
           <table className="w-full text-sm">
@@ -182,7 +228,7 @@ export default function Invoices() {
               </tr>
             </thead>
             <tbody data-testid="invoices-table">
-              {visible.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   <td className="px-6 py-3 font-mono">
                     <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
@@ -227,7 +273,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={isPaid ? 11 : 8} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={isPaid ? 11 : 8} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -340,7 +386,10 @@ export default function Invoices() {
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
+                {isAdmin && Number(detailInv.commission_amount || 0) > 0 && (
+                  <Btn variant="outline" onClick={genCommissionPO} data-testid="generate-po-btn"><Receipt size={16} weight="bold" /> Generate Commission PO</Btn>
+                )}
                 <Btn variant="outline" onClick={() => downloadFile(`/invoices/${detailInv.id}/pdf`, `${detailInv.number}.pdf`, "application/pdf")} data-testid="detail-download-pdf"><FilePdf size={16} weight="bold" /> Download PDF</Btn>
                 <Btn onClick={printInvoice} data-testid="detail-print-btn"><Printer size={16} weight="bold" /> Print / Save as PDF</Btn>
               </div>
