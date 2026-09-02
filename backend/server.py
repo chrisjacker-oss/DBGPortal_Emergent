@@ -267,6 +267,7 @@ class StaffInput(BaseModel):
 
 class WorkOrderInput(BaseModel):
     customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
     date: str
     work_performed: str = ""
     unit_vin: str = ""
@@ -600,6 +601,8 @@ async def disable_contact_portal(ctid: str, user: dict = Depends(require_admin))
 # ---------------------------------------------------------------------------
 async def enrich_work_order(d: dict) -> dict:
     d = clean(d)
+    if d.get("customer_name"):
+        return d
     if d.get("customer_id"):
         c = await db.customers.find_one({"_id": oid(d["customer_id"])})
         d["customer_name"] = (c.get("company") or c.get("name")) if c else None

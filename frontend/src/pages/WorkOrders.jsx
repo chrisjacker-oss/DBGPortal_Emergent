@@ -5,39 +5,42 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Plus, PencilSimple, Trash, Wrench, UserPlus } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, Wrench } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const EQUIPMENT = ["Trailer", "Box Truck", "Vehicle", "Tractor", "Outside Sign", "Other"];
+const CUSTOMERS = ["J.B. Hunt", "Duval", "Hotline", "Target Trailer", "JetEx", "Deep Blue Commercial", "Avid", "Milestone", "AER", "DSV"];
 const today = () => new Date().toISOString().slice(0, 10);
-const empty = () => ({ customer_id: "", date: today(), work_performed: "", unit_vin: "", equipment_type: "Trailer", equipment_other: "", mileage_start: "", mileage_end: "" });
+const empty = () => ({ customer_name: "", date: today(), work_performed: "", unit_vin: "", equipment_type: "Trailer", equipment_other: "", mileage_start: "", mileage_end: "" });
 
 export default function WorkOrders() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty());
-  const [custOpen, setCustOpen] = useState(false);
-  const [newCust, setNewCust] = useState({ name: "", company: "", phone: "" });
+  const [custOther, setCustOther] = useState(false);
 
   const load = () => api.get("/work-orders").then((r) => setRows(r.data));
-  const loadCustomers = () => api.get("/customers").then((r) => setCustomers(r.data)).catch(() => {});
-  useEffect(() => { load(); loadCustomers(); }, []);
+  useEffect(() => { load(); }, []);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-  const openNew = () => { setForm(empty()); setEditing(null); setOpen(true); };
+  const openNew = () => { setForm(empty()); setCustOther(false); setEditing(null); setOpen(true); };
   const openEdit = (r) => {
     setForm({ ...empty(), ...r, mileage_start: r.mileage_start ?? "", mileage_end: r.mileage_end ?? "" });
+    setCustOther(!!r.customer_name && !CUSTOMERS.includes(r.customer_name));
     setEditing(r.id); setOpen(true);
+  };
+  const onCustomerSelect = (v) => {
+    if (v === "Other") { setCustOther(true); setForm({ ...form, customer_name: "" }); }
+    else { setCustOther(false); setForm({ ...form, customer_name: v }); }
   };
 
   const save = async () => {
     if (!form.work_performed.trim()) { toast.error("Please describe the work performed"); return; }
     const payload = {
-      customer_id: form.customer_id || null, date: form.date, work_performed: form.work_performed,
+      customer_name: form.customer_name || null, date: form.date, work_performed: form.work_performed,
       unit_vin: form.unit_vin, equipment_type: form.equipment_type,
       equipment_other: form.equipment_type === "Other" ? form.equipment_other : "",
       mileage_start: form.mileage_start === "" ? null : Number(form.mileage_start),
@@ -54,17 +57,6 @@ export default function WorkOrders() {
     if (!window.confirm(`Delete work order ${r.number}?`)) return;
     try { await api.delete(`/work-orders/${r.id}`); toast.success("Deleted"); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
-  };
-
-  const addCustomer = async () => {
-    if (!newCust.name.trim()) { toast.error("Customer name is required"); return; }
-    try {
-      const { data } = await api.post("/customers", { ...newCust, net_terms: "Net 15", portal_enabled: false });
-      toast.success("Customer added");
-      await loadCustomers();
-      setForm((f) => ({ ...f, customer_id: data.id }));
-      setNewCust({ name: "", company: "", phone: "" }); setCustOpen(false);
-    } catch { toast.error("Could not add customer"); }
   };
 
   const miles = (r) => (r.mileage_start != null && r.mileage_end != null ? Math.max(0, r.mileage_end - r.mileage_start) : null);
@@ -125,13 +117,14 @@ export default function WorkOrders() {
           <div className="space-y-3">
             <div>
               <span className="overline text-muted-foreground">Customer</span>
-              <div className="flex gap-2 mt-1">
-                <select value={form.customer_id} onChange={set("customer_id")} data-testid="wo-customer" className="flex-1 border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
-                  <option value="">— Select customer —</option>
-                  {customers.map((c) => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
-                </select>
-                <Btn variant="outline" onClick={() => setCustOpen(true)} data-testid="wo-add-customer-btn"><UserPlus size={16} /></Btn>
-              </div>
+              <select value={custOther ? "Other" : form.customer_name} onChange={(e) => onCustomerSelect(e.target.value)} data-testid="wo-customer" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="">— Select customer —</option>
+                {CUSTOMERS.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value="Other">Other…</option>
+              </select>
+              {custOther && (
+                <input value={form.customer_name} onChange={set("customer_name")} data-testid="wo-customer-other" placeholder="Enter customer name" className="mt-2 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+              )}
             </div>
             <Inp label="Date" type="date" value={form.date} onChange={set("date")} testid="wo-date" />
             <label className="block">
@@ -158,24 +151,6 @@ export default function WorkOrders() {
           <DialogFooter>
             <Btn variant="outline" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn onClick={save} data-testid="save-work-order-btn">Save</Btn>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={custOpen} onOpenChange={setCustOpen}>
-        <DialogContent className="rounded-none max-w-md" data-testid="wo-new-customer-dialog">
-          <DialogHeader>
-            <DialogTitle className="font-display">Add Customer</DialogTitle>
-            <DialogDescription className="font-mono text-xs">Quickly add a customer for this work order.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Inp label="Name" value={newCust.name} onChange={(e) => setNewCust({ ...newCust, name: e.target.value })} testid="wo-cust-name" />
-            <Inp label="Company" value={newCust.company} onChange={(e) => setNewCust({ ...newCust, company: e.target.value })} testid="wo-cust-company" />
-            <Inp label="Phone" value={newCust.phone} onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })} testid="wo-cust-phone" />
-          </div>
-          <DialogFooter>
-            <Btn variant="outline" onClick={() => setCustOpen(false)}>Cancel</Btn>
-            <Btn onClick={addCustomer} data-testid="wo-save-customer-btn">Add customer</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>
