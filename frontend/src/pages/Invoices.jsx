@@ -9,7 +9,7 @@ import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import { downloadCsv, downloadFile } from "@/lib/download";
-import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function Invoices() {
@@ -25,6 +25,9 @@ export default function Invoices() {
   const [histRows, setHistRows] = useState([]);
   const [detailInv, setDetailInv] = useState(null);
   const [detailPays, setDetailPays] = useState([]);
+  const [lineage, setLineage] = useState(null);
+  const [internalDraft, setInternalDraft] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
   const [tab, setTab] = useState("active");
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
@@ -38,9 +41,20 @@ export default function Invoices() {
   };
 
   const openDetail = async (r) => {
-    setDetailInv(r); setDetailPays([]);
-    try { const { data } = await api.get(`/invoices/${r.id}/payments`); setDetailPays(data); }
-    catch { /* payments are best-effort */ }
+    setDetailInv(r); setDetailPays([]); setLineage(null); setInternalDraft(r.internal_notes || "");
+    api.get(`/invoices/${r.id}/payments`).then(({ data }) => setDetailPays(data)).catch(() => {});
+    api.get(`/invoices/${r.id}/lineage`).then(({ data }) => setLineage(data)).catch(() => {});
+  };
+
+  const saveInternalNotes = async () => {
+    setSavingNote(true);
+    try {
+      const { data } = await api.patch(`/invoices/${detailInv.id}/internal-notes`, { notes: internalDraft });
+      setDetailInv(data);
+      setRows((rs) => rs.map((x) => (x.id === data.id ? { ...x, internal_notes: data.internal_notes } : x)));
+      toast.success("Internal note saved");
+    } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
+    finally { setSavingNote(false); }
   };
 
   const paidOf = (inv) => (inv?.status === "paid" ? Number(inv?.total || 0) : Number(inv?.amount_paid || 0));
@@ -251,6 +265,7 @@ export default function Invoices() {
           </DialogHeader>
           {detailInv && (
             <div className="space-y-5 text-sm">
+              <StageTracker lineage={lineage} inv={detailInv} paidOf={paidOf} />
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Field label="Issued" value={(detailInv.created_at || "").slice(0, 10) || "—"} />
                 <Field label="Due" value={detailInv.due_date || "—"} />
@@ -310,6 +325,18 @@ export default function Invoices() {
                 <Btn variant="outline" onClick={() => downloadFile(`/invoices/${detailInv.id}/pdf`, `${detailInv.number}.pdf`, "application/pdf")} data-testid="detail-download-pdf"><FilePdf size={16} weight="bold" /> Download PDF</Btn>
                 <Btn onClick={printInvoice} data-testid="detail-print-btn"><Printer size={16} weight="bold" /> Print / Save as PDF</Btn>
               </div>
+
+              {isAdmin && (
+                <div className="border border-[#A21CAF]/30 bg-[#A21CAF]/5 p-3">
+                  <div className="overline text-[#A21CAF] mb-2 flex items-center gap-1.5"><LockKey size={13} weight="bold" /> Internal note · admin only (never shown to the customer)</div>
+                  <textarea value={internalDraft} onChange={(e) => setInternalDraft(e.target.value)} data-testid="internal-notes-input" rows={2}
+                    placeholder="Private notes for staff — e.g. discount reason, follow-up, special instructions…"
+                    className="w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+                  <div className="flex justify-end mt-2">
+                    <Btn variant="outline" onClick={saveInternalNotes} disabled={savingNote} data-testid="save-internal-notes-btn">{savingNote ? "Saving…" : "Save note"}</Btn>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -323,6 +350,37 @@ function Field({ label, value }) {
     <div>
       <div className="overline text-muted-foreground">{label}</div>
       <div className="font-mono">{value}</div>
+    </div>
+  );
+}
+
+function StageTracker({ lineage, inv, paidOf }) {
+  const d = (s) => (s ? String(s).slice(0, 10) : "");
+  const paid = inv?.status === "paid";
+  const steps = [
+    { key: "estimate", label: "Estimate", num: lineage?.estimate?.number, date: d(lineage?.estimate?.created_at), done: !!lineage?.estimate },
+    { key: "sales_order", label: "Sales Order", num: lineage?.sales_order?.number, date: d(lineage?.sales_order?.created_at), done: !!lineage?.sales_order },
+    { key: "invoice", label: "Invoice", num: inv?.number, date: d(inv?.created_at), done: true },
+    { key: "paid", label: "Paid", num: paid ? "Settled" : "Awaiting", date: d(inv?.paid_at), done: paid },
+  ];
+  return (
+    <div className="border border-border bg-secondary/30 p-4" data-testid="invoice-stage-tracker">
+      <div className="overline text-muted-foreground mb-3">Workflow</div>
+      <div className="flex items-center">
+        {steps.map((s, i) => (
+          <div key={s.key} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center text-center" data-testid={`stage-${s.key}`}>
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 ${s.done ? "bg-[#0E7490] border-[#0E7490] text-white" : "bg-card border-border text-muted-foreground"}`}>
+                {s.done ? <CheckCircle size={18} weight="fill" /> : <span className="text-xs font-mono">{i + 1}</span>}
+              </div>
+              <div className="mt-1.5 text-xs font-mono font-semibold">{s.label}</div>
+              <div className={`text-[11px] font-mono ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.num || "—"}</div>
+              {s.date && <div className="text-[10px] text-muted-foreground font-mono">{s.date}</div>}
+            </div>
+            {i < steps.length - 1 && <div className={`h-0.5 flex-1 mx-2 -mt-8 ${steps[i + 1].done ? "bg-[#0E7490]" : "bg-border"}`} />}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

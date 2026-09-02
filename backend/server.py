@@ -1091,6 +1091,39 @@ async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(r
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
 
 
+class InternalNotesInput(BaseModel):
+    notes: Optional[str] = None
+
+
+@api_router.patch("/invoices/{iid}/internal-notes")
+async def set_invoice_internal_notes(iid: str, payload: InternalNotesInput, user: dict = Depends(require_admin)):
+    await get_or_404(db.invoices, iid, "Invoice")
+    await db.invoices.update_one({"_id": oid(iid)}, {"$set": {"internal_notes": (payload.notes or "").strip() or None}})
+    return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
+
+
+@api_router.get("/invoices/{iid}/lineage")
+async def invoice_lineage(iid: str, user: dict = Depends(require_staff)):
+    inv = await get_or_404(db.invoices, iid, "Invoice")
+    out = {
+        "invoice": {"number": inv.get("number"), "id": iid, "status": inv.get("status"),
+                    "created_at": inv.get("created_at"), "paid_at": inv.get("paid_at")},
+        "sales_order": None, "estimate": None,
+    }
+    so = None
+    if inv.get("sales_order_id") and ObjectId.is_valid(inv["sales_order_id"]):
+        so = await db.sales_orders.find_one({"_id": oid(inv["sales_order_id"])})
+    if so:
+        out["sales_order"] = {"number": so.get("number"), "id": str(so["_id"]),
+                              "status": so.get("status"), "created_at": so.get("created_at")}
+        if so.get("estimate_id") and ObjectId.is_valid(so["estimate_id"]):
+            est = await db.estimates.find_one({"_id": oid(so["estimate_id"])})
+            if est:
+                out["estimate"] = {"number": est.get("number"), "id": str(est["_id"]),
+                                   "status": est.get("status"), "created_at": est.get("created_at")}
+    return out
+
+
 @api_router.patch("/invoices/{iid}/status")
 async def set_invoice_status(iid: str, status: str, user: dict = Depends(require_staff)):
     if status not in ("unpaid", "partial", "paid", "overdue"):
@@ -1866,7 +1899,7 @@ async def portal_orders(user: dict = Depends(get_current_user)):
     reorders = await db.reorders.find({"customer_id": cid}).sort("created_at", -1).to_list(500)
     return {
         "customer": clean(cust),
-        "invoices": [clean(i) for i in invoices],
+        "invoices": [{k: v for k, v in clean(i).items() if k != "internal_notes"} for i in invoices],
         "reorders": [clean(r) for r in reorders],
     }
 
