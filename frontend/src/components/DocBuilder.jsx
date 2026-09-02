@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
+import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { Plus, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, extra_labor_hours: 0 };
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -28,6 +29,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const isAdmin = user?.role === "admin";
   const [customers, setCustomers] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [salesmen, setSalesmen] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [settings, setSettings] = useState({ shop_rate_per_hr: 0, shop_sqft_per_hr: 0, machine_rate_per_hr: 0, machine_sqft_per_hr: 0 });
@@ -37,6 +39,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     if (open) {
       api.get("/customers").then((r) => setCustomers(r.data));
       api.get("/materials").then((r) => setMaterials(r.data));
+      api.get("/material-categories").then((r) => setCategories(r.data.all || [])).catch(() => {});
       api.get("/settings").then((r) => {
         setSettings(r.data);
         if (!initial) setForm((f) => (f ? { ...f, tax_rate: r.data.default_tax_rate ?? 0 } : f));
@@ -67,17 +70,34 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   if (!form) return null;
 
   const set = (k, v) => setForm({ ...form, [k]: v });
+  const catOfMaterial = (mid) => materials.find((m) => m.id === mid)?.category || "";
   const setItem = (i, k, v) => {
     const items = [...form.line_items];
     items[i] = { ...items[i], [k]: v };
     if (k === "material_id") {
       const m = materials.find((x) => x.id === v);
-      if (m) { items[i].price_per_sqft = m.price_per_sqft; if (!items[i].description) items[i].description = m.name; }
+      if (m) { items[i].price_per_sqft = m.price_per_sqft; items[i].description = m.name; items[i].category = m.category || items[i].category; }
+      else { items[i].price_per_sqft = 0; items[i].description = ""; }
+    }
+    if (k === "category") {
+      const m = materials.find((x) => x.id === items[i].material_id);
+      if (!m || m.category !== v) { items[i].material_id = ""; items[i].price_per_sqft = 0; items[i].description = ""; }
     }
     setForm({ ...form, line_items: items });
   };
   const addItem = () => setForm({ ...form, line_items: [...form.line_items, { ...emptyItem }] });
   const rmItem = (i) => setForm({ ...form, line_items: form.line_items.filter((_, x) => x !== i) });
+  const createCategoryFor = async (i) => {
+    const name = window.prompt("New category name:");
+    if (!name || !name.trim()) return;
+    try {
+      const { data } = await api.post("/material-categories", { name: name.trim() });
+      const { data: cd } = await api.get("/material-categories");
+      setCategories(cd.all || []);
+      setItem(i, "category", data.name);
+      toast.success("Category added");
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not add category"); }
+  };
 
   const breakdown = (li) => {
     const area = areaOf(li);
@@ -122,7 +142,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     });
   };
 
-  const cols = "grid-cols-[1.7fr_1.4fr_0.6fr_0.6fr_0.6fr_0.8fr_0.8fr_1fr_0.3fr]";
+  const cols = "grid-cols-[1.2fr_1.5fr_0.6fr_0.6fr_0.6fr_0.7fr_0.7fr_1fr_0.3fr]";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -157,22 +177,30 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">
             <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[820px]`}>
-              <div>Description</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
-              <div className="text-right">Qty</div><div className="text-right">$/sqft</div><div className="text-right">Extra hrs</div>
-              <div className="text-right">Line</div><div></div>
+              <div>Category</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
+              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Extra hrs</div>
+              <div className="text-right">Cost</div><div></div>
             </div>
-            {form.line_items.map((li, i) => (
+            {form.line_items.map((li, i) => {
+              const cat = li.category || catOfMaterial(li.material_id);
+              const catOptions = categories.includes(cat) || !cat ? categories : [cat, ...categories];
+              const matOptions = materials.filter((m) => !cat || m.category === cat);
+              return (
               <div key={i} className="border-b border-border last:border-0 min-w-[820px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
-                <input value={li.description} onChange={(e) => setItem(i, "description", e.target.value)} placeholder="Line item" data-testid={`item-desc-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
+                <select value={cat} onChange={(e) => e.target.value === "__new__" ? createCategoryFor(i) : setItem(i, "category", e.target.value)} data-testid={`item-cat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
+                  <option value="">All categories</option>
+                  {catOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {isAdmin && <option value="__new__">+ Create category…</option>}
+                </select>
                 <select value={li.material_id || ""} onChange={(e) => setItem(i, "material_id", e.target.value)} data-testid={`item-mat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
-                  <option value="">—</option>
-                  {materials.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  <option value="">— select material —</option>
+                  {matOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
                 <Cell value={li.width_in} onChange={(v) => setItem(i, "width_in", v)} testid={`item-w-${i}`} />
                 <Cell value={li.height_in} onChange={(v) => setItem(i, "height_in", v)} testid={`item-h-${i}`} />
                 <Cell value={li.quantity} onChange={(v) => setItem(i, "quantity", v)} testid={`item-qty-${i}`} />
-                <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
+                <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
@@ -181,7 +209,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="w-full min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
               </div>
-            ))}
+              );
+            })}
             <div className="px-3 py-2 min-w-[820px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>
           </div>
 

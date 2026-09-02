@@ -7,6 +7,7 @@ import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { Plus, PencilSimple, Trash, Tag } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const empty = { name: "", category: "Cut Vinyl", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 40, stock: "", supplier: "" };
 
@@ -21,6 +22,7 @@ export default function Materials() {
   const [cats, setCats] = useState({ presets: [], custom: [], all: [] });
   const [catOpen, setCatOpen] = useState(false);
   const [newCat, setNewCat] = useState("");
+  const [del, setDel] = useState(null); // { url, label, after }
 
   const load = () => api.get("/materials").then((r) => setRows(r.data));
   const loadCats = () => api.get("/material-categories").then((r) => setCats(r.data)).catch(() => {});
@@ -36,10 +38,7 @@ export default function Materials() {
     try { await api.post("/material-categories", { name }); setNewCat(""); toast.success("Category added"); loadCats(); }
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
-  const removeCat = async (id) => {
-    try { await api.delete(`/material-categories/${id}`); toast.success("Category removed"); loadCats(); }
-    catch { toast.error("Failed"); }
-  };
+  const removeCat = (c) => setDel({ url: `/material-categories/${c.id}`, label: `category "${c.name}"`, after: loadCats });
 
   const openNew = () => { setForm({ ...empty, markup: defaultMarkup }); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, stock: r.stock ?? "", category: r.category ?? "", supplier: r.supplier ?? "" }); setEditing(r.id); setOpen(true); };
@@ -62,7 +61,13 @@ export default function Materials() {
       toast.success("Material saved"); setOpen(false); load();
     } catch { toast.error("Save failed"); }
   };
-  const remove = async (id) => { if (!window.confirm("Delete material?")) return; await api.delete(`/materials/${id}`); toast.success("Deleted"); load(); };
+  const remove = (m) => setDel({ url: `/materials/${m.id}`, label: `material "${m.name}"`, after: load });
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(del.url, { data: { password } });
+      toast.success("Deleted"); const after = del.after; setDel(null); after && after(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
 
   const marginPct = (m) => (m.price_per_sqft > 0 ? Math.round(((m.price_per_sqft - m.cost_per_sqft) / m.price_per_sqft) * 100) : 0);
 
@@ -106,7 +111,7 @@ export default function Materials() {
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">
                       <Btn variant="ghost" onClick={() => openEdit(m)} data-testid={`edit-material-${m.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(m.id)} data-testid={`delete-material-${m.id}`}><Trash size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => remove(m)} data-testid={`delete-material-${m.id}`}><Trash size={16} /></Btn>
                     </div>
                   </td>
                 </tr>
@@ -180,7 +185,7 @@ export default function Materials() {
                 {cats.custom.map((c) => (
                   <div key={c.id} className="flex items-center justify-between border border-border px-3 py-2">
                     <span className="text-sm font-medium">{c.name}</span>
-                    <Btn variant="ghost" onClick={() => removeCat(c.id)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
+                    <Btn variant="ghost" onClick={() => removeCat(c)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
                   </div>
                 ))}
               </div>
@@ -195,6 +200,8 @@ export default function Materials() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!del} label={del?.label || "record"} onClose={() => setDel(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { UserPlus, Trash, Prohibit, CheckCircle } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const empty = { name: "", email: "", password: "", company: "", phone: "", tier: "", net_terms: "Net 15" };
 
@@ -13,6 +14,7 @@ export default function PortalAccounts() {
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
+  const [delRow, setDelRow] = useState(null);
 
   const load = () => api.get("/portal-accounts").then((r) => setRows(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -38,10 +40,11 @@ export default function PortalAccounts() {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const remove = async (r) => {
-    if (!window.confirm(`Delete portal login for ${r.email}? Their order history stays on file.`)) return;
-    try { await api.delete(`/portal-accounts/${r.id}`); toast.success("Portal account deleted"); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(`/portal-accounts/${delRow.id}`, { data: { password } });
+      toast.success("Portal account deleted"); setDelRow(null); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   return (
@@ -78,7 +81,7 @@ export default function PortalAccounts() {
                       <Btn variant="ghost" onClick={() => toggleSuspend(r)} data-testid={`suspend-${r.id}`} title={r.suspended ? "Reactivate" : "Suspend"}>
                         {r.suspended ? <CheckCircle size={16} /> : <Prohibit size={16} />}
                       </Btn>
-                      <Btn variant="ghost" onClick={() => remove(r)} data-testid={`delete-portal-account-${r.id}`} title="Delete"><Trash size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => setDelRow(r)} data-testid={`delete-portal-account-${r.id}`} title="Delete"><Trash size={16} /></Btn>
                     </div>
                   </td>
                 </tr>
@@ -129,6 +132,8 @@ export default function PortalAccounts() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!delRow} label={`portal login for ${delRow?.email || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

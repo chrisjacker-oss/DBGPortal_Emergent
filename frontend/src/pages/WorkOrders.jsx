@@ -5,8 +5,10 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Plus, PencilSimple, Trash, Wrench } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, Wrench, FilePdf } from "@phosphor-icons/react";
+import { downloadFile } from "@/lib/download";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const EQUIPMENT = ["Trailer", "Box Truck", "Vehicle", "Tractor", "Outside Sign", "Other"];
 const CUSTOMERS = ["J.B. Hunt", "Duval", "Hotline", "Target Trailer", "JetEx", "Deep Blue Commercial", "Avid", "Milestone", "AER", "DSV"];
@@ -21,9 +23,20 @@ export default function WorkOrders() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty());
   const [custOther, setCustOther] = useState(false);
+  const [fFrom, setFFrom] = useState("");
+  const [fTo, setFTo] = useState("");
+  const [fCust, setFCust] = useState("");
+  const [delRow, setDelRow] = useState(null);
 
   const load = () => api.get("/work-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+
+  const custOptions = Array.from(new Set(rows.map((r) => r.customer_name).filter(Boolean))).sort();
+  const visible = rows.filter((r) =>
+    (!fFrom || (r.date || "") >= fFrom) &&
+    (!fTo || (r.date || "") <= fTo) &&
+    (!fCust || r.customer_name === fCust)
+  );
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const openNew = () => { setForm(empty()); setCustOther(false); setEditing(null); setOpen(true); };
@@ -53,10 +66,11 @@ export default function WorkOrders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
 
-  const remove = async (r) => {
-    if (!window.confirm(`Delete work order ${r.number}?`)) return;
-    try { await api.delete(`/work-orders/${r.id}`); toast.success("Deleted"); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(`/work-orders/${delRow.id}`, { data: { password } });
+      toast.success("Work order deleted"); setDelRow(null); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   const miles = (r) => (r.mileage_start != null && r.mileage_end != null ? Math.max(0, r.mileage_end - r.mileage_start) : null);
@@ -68,6 +82,19 @@ export default function WorkOrders() {
       </PageHeader>
 
       <div className="p-8">
+        <div className="flex flex-wrap items-end gap-3 mb-4" data-testid="wo-filters">
+          <label className="block"><span className="overline text-muted-foreground">From</span>
+            <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} data-testid="wo-filter-from" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+          <label className="block"><span className="overline text-muted-foreground">To</span>
+            <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} data-testid="wo-filter-to" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+          <label className="block"><span className="overline text-muted-foreground">Customer</span>
+            <select value={fCust} onChange={(e) => setFCust(e.target.value)} data-testid="wo-filter-customer" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+              <option value="">All customers</option>
+              {custOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select></label>
+          {(fFrom || fTo || fCust) && <Btn variant="outline" onClick={() => { setFFrom(""); setFTo(""); setFCust(""); }} data-testid="wo-filter-clear">Clear</Btn>}
+          <div className="ml-auto text-sm text-muted-foreground font-mono self-center">{visible.length} of {rows.length}</div>
+        </div>
         <div className="border border-border bg-card overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
@@ -84,7 +111,7 @@ export default function WorkOrders() {
               </tr>
             </thead>
             <tbody data-testid="work-orders-table">
-              {rows.map((r) => (
+              {visible.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50 align-top">
                   <td className="px-5 py-3 font-mono">{r.number}</td>
                   <td className="px-5 py-3 font-mono text-muted-foreground">{r.date}</td>
@@ -96,13 +123,14 @@ export default function WorkOrders() {
                   <td className="px-5 py-3 text-right font-mono">{miles(r) != null ? miles(r) : "—"}</td>
                   <td className="px-5 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => downloadFile(`/work-orders/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf")} data-testid={`pdf-work-order-${r.id}`} title="Print / download PDF"><FilePdf size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-work-order-${r.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(r)} data-testid={`delete-work-order-${r.id}`}><Trash size={16} /></Btn>
+                      {isAdmin && <Btn variant="ghost" onClick={() => setDelRow(r)} data-testid={`delete-work-order-${r.id}`}><Trash size={16} /></Btn>}
                     </div>
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={isAdmin ? 9 : 8} className="px-6 py-12 text-center text-muted-foreground"><Wrench size={22} className="mx-auto mb-2 opacity-50" />No work orders logged yet.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={isAdmin ? 9 : 8} className="px-6 py-12 text-center text-muted-foreground"><Wrench size={22} className="mx-auto mb-2 opacity-50" />No work orders match.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -154,6 +182,8 @@ export default function WorkOrders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!delRow} label={`work order ${delRow?.number || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

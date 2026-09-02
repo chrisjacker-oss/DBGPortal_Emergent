@@ -281,6 +281,11 @@ class DeleteConfirm(BaseModel):
     password: str
 
 
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # ---------------------------------------------------------------------------
 # Utils
 # ---------------------------------------------------------------------------
@@ -464,7 +469,22 @@ async def login(payload: LoginInput, response: Response, request: Request):
         raise HTTPException(status_code=403, detail="Your portal access has been suspended. Please contact DBG Signs.")
     uid = str(user["_id"])
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
-    return {"id": uid, "email": email, "name": user.get("name"), "role": user.get("role")}
+    return {"id": uid, "email": email, "name": user.get("name"), "role": user.get("role"),
+            "must_change_password": bool(user.get("must_change_password"))}
+
+
+@api_router.post("/auth/change-password")
+async def change_password(payload: ChangePasswordInput, user: dict = Depends(get_current_user)):
+    u = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not u or not verify_password(payload.current_password or "", u.get("password_hash", "")):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+    if len(payload.new_password or "") < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    if verify_password(payload.new_password, u.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="New password must be different from the current one")
+    await db.users.update_one({"_id": u["_id"]}, {"$set": {"password_hash": hash_password(payload.new_password)},
+                                                  "$unset": {"must_change_password": ""}})
+    return {"message": "Password updated"}
 
 
 @api_router.post("/auth/logout")
@@ -523,7 +543,8 @@ async def update_customer(cid: str, payload: CustomerInput, user: dict = Depends
 
 
 @api_router.delete("/customers/{cid}")
-async def delete_customer(cid: str, user: dict = Depends(require_admin)):
+async def delete_customer(cid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.customers.delete_one({"_id": oid(cid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -565,7 +586,8 @@ async def update_contact(ctid: str, payload: ContactInput, user: dict = Depends(
 
 
 @api_router.delete("/contacts/{ctid}")
-async def delete_contact(ctid: str, user: dict = Depends(require_staff)):
+async def delete_contact(ctid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.contacts.delete_one({"_id": oid(ctid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -591,7 +613,8 @@ async def enable_contact_portal(ctid: str, payload: ContactPortalInput, user: di
 
 
 @api_router.delete("/contacts/{ctid}/portal")
-async def disable_contact_portal(ctid: str, user: dict = Depends(require_admin)):
+async def disable_contact_portal(ctid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     await db.users.delete_many({"contact_id": ctid})
     return {"message": "portal disabled"}
 
@@ -637,12 +660,21 @@ async def update_work_order(wid: str, payload: WorkOrderInput, user: dict = Depe
 
 
 @api_router.delete("/work-orders/{wid}")
-async def delete_work_order(wid: str, user: dict = Depends(require_worker)):
-    wo = await get_or_404(db.work_orders, wid, "Work order")
-    if user["role"] != "admin" and wo.get("worker_id") != user["id"]:
-        raise HTTPException(status_code=403, detail="You can only delete your own work orders")
+async def delete_work_order(wid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    await get_or_404(db.work_orders, wid, "Work order")
     await db.work_orders.delete_one({"_id": oid(wid)})
     return {"message": "deleted"}
+
+
+@api_router.get("/work-orders/{wid}/pdf")
+async def work_order_pdf(wid: str, user: dict = Depends(require_worker)):
+    wo = await get_or_404(db.work_orders, wid, "Work order")
+    if user["role"] != "admin" and wo.get("worker_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="You can only view your own work orders")
+    pdf = build_work_order_pdf(clean(wo), await get_settings(), await get_logo_bytes())
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{wo.get("number", "work-order")}.pdf"'})
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +702,8 @@ async def update_material(mid: str, payload: MaterialInput, user: dict = Depends
 
 
 @api_router.delete("/materials/{mid}")
-async def delete_material(mid: str, user: dict = Depends(require_admin)):
+async def delete_material(mid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.materials.delete_one({"_id": oid(mid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Material not found")
@@ -709,7 +742,8 @@ async def create_category(payload: CategoryInput, user: dict = Depends(require_a
 
 
 @api_router.delete("/material-categories/{cid}")
-async def delete_category(cid: str, user: dict = Depends(require_admin)):
+async def delete_category(cid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.material_categories.delete_one({"_id": oid(cid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -1209,7 +1243,12 @@ async def record_manual_payment(iid: str, payload: ManualPaymentInput, user: dic
         upd["paid_at"] = when
         upd["paid_via"] = payload.method
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": upd})
-    return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
+    fresh = await db.invoices.find_one({"_id": oid(iid)})
+    try:
+        await _send_payment_receipt(fresh, amount)
+    except Exception as e:
+        logger.error(f"Manual payment receipt email failed: {e}")
+    return await enrich_customer(clean(fresh))
 
 
 @api_router.get("/payments/status/{payment_intent_id}")
@@ -1284,7 +1323,8 @@ async def set_bill_status(bid: str, status: str, user: dict = Depends(require_ad
 
 
 @api_router.delete("/bills/{bid}")
-async def delete_bill(bid: str, user: dict = Depends(require_admin)):
+async def delete_bill(bid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.bills.delete_one({"_id": oid(bid)})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Bill not found")
@@ -1321,9 +1361,14 @@ async def create_user(payload: StaffInput, user: dict = Depends(require_admin)):
         "name": payload.name,
         "role": payload.role,
         "commission_rate": float(payload.commission_rate or 0),
+        "must_change_password": True,
         "created_at": now_iso(),
     }
     res = await db.users.insert_one(doc)
+    try:
+        await _send_welcome_email(name=payload.name, email=email, temp_password=payload.password, role=payload.role)
+    except Exception as e:  # never block account creation on email failure
+        logger.error(f"Welcome email failed for {email}: {e}")
     return user_out(await db.users.find_one({"_id": res.inserted_id}))
 
 
@@ -1333,12 +1378,15 @@ async def update_user(uid: str, payload: StaffInput, user: dict = Depends(requir
     update = {"name": payload.name, "role": payload.role, "commission_rate": float(payload.commission_rate or 0)}
     if payload.password:
         update["password_hash"] = hash_password(payload.password)
+        if uid != user["id"]:
+            update["must_change_password"] = True
     await db.users.update_one({"_id": oid(uid)}, {"$set": update})
     return user_out(await db.users.find_one({"_id": oid(uid)}))
 
 
 @api_router.delete("/users/{uid}")
-async def delete_user(uid: str, user: dict = Depends(require_admin)):
+async def delete_user(uid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     if uid == user["id"]:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
     res = await db.users.delete_one({"_id": oid(uid), "role": {"$in": ["admin", "salesman", "installer"]}})
@@ -1413,7 +1461,8 @@ async def set_portal_account_status(uid: str, suspended: bool, user: dict = Depe
 
 
 @api_router.delete("/portal-accounts/{uid}")
-async def delete_portal_account(uid: str, user: dict = Depends(require_admin)):
+async def delete_portal_account(uid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
     res = await db.users.delete_one({"_id": oid(uid), "role": "customer"})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Portal account not found")
@@ -1432,22 +1481,28 @@ async def commissions(user: dict = Depends(require_staff)):
     by_salesman = {}
     total_pending = 0.0
     total_earned = 0.0
+    total_paid = 0.0
     for e in ests:
         e = await enrich_customer(clean(e))
         base = float(e.get("commission_base") if e.get("commission_base") is not None else (e.get("subtotal") or 0))
         rate = float(e.get("commission_rate") or 0)
         amt = float(e.get("commission_amount") or round(base * rate / 100.0, 2))
         earned = e.get("status") == "approved" or bool(e.get("sales_order_id"))
+        paid = bool(e.get("commission_paid"))
         name = e.get("salesman_name") or "Unassigned"
         rows.append({
             "id": e["id"], "number": e.get("number"), "title": e.get("title"),
             "customer_name": e.get("customer_name"), "salesman_name": name,
             "status": e.get("status"), "base": round(base, 2), "commission_rate": rate,
             "commission_amount": round(amt, 2), "earned": earned,
+            "paid": paid, "po_number": e.get("commission_po"), "paid_at": e.get("commission_paid_at"),
         })
-        agg = by_salesman.setdefault(name, {"salesman_name": name, "earned": 0.0, "pending": 0.0, "count": 0})
+        agg = by_salesman.setdefault(name, {"salesman_name": name, "earned": 0.0, "pending": 0.0, "paid": 0.0, "count": 0})
         agg["count"] += 1
-        if earned:
+        if paid:
+            agg["paid"] += amt
+            total_paid += amt
+        elif earned:
             agg["earned"] += amt
             total_earned += amt
         else:
@@ -1456,12 +1511,46 @@ async def commissions(user: dict = Depends(require_staff)):
     for a in by_salesman.values():
         a["earned"] = round(a["earned"], 2)
         a["pending"] = round(a["pending"], 2)
+        a["paid"] = round(a["paid"], 2)
     return {
         "rows": rows,
-        "by_salesman": sorted(by_salesman.values(), key=lambda x: x["earned"] + x["pending"], reverse=True),
+        "by_salesman": sorted(by_salesman.values(), key=lambda x: x["earned"] + x["pending"] + x["paid"], reverse=True),
         "total_earned": round(total_earned, 2),
         "total_pending": round(total_pending, 2),
+        "total_paid": round(total_paid, 2),
     }
+
+
+class CommissionPayInput(BaseModel):
+    estimate_ids: List[str] = []
+    po_number: str = ""
+
+
+@api_router.post("/commissions/pay")
+async def pay_commissions(payload: CommissionPayInput, user: dict = Depends(require_admin)):
+    po = (payload.po_number or "").strip()
+    if not po:
+        raise HTTPException(status_code=400, detail="A PO number is required to mark a commission paid")
+    ids = [oid(i) for i in payload.estimate_ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="Select at least one commission")
+    res = await db.estimates.update_many(
+        {"_id": {"$in": ids}},
+        {"$set": {"commission_paid": True, "commission_po": po, "commission_paid_at": now_iso()}},
+    )
+    return {"updated": res.modified_count, "po_number": po}
+
+
+@api_router.post("/commissions/unpay")
+async def unpay_commissions(payload: CommissionPayInput, user: dict = Depends(require_admin)):
+    ids = [oid(i) for i in payload.estimate_ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="Select at least one commission")
+    res = await db.estimates.update_many(
+        {"_id": {"$in": ids}},
+        {"$unset": {"commission_paid": "", "commission_po": "", "commission_paid_at": ""}},
+    )
+    return {"updated": res.modified_count}
 
 
 # ---------------------------------------------------------------------------
@@ -1869,7 +1958,7 @@ def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: st
         f'<tr><td style="padding:20px 32px 0">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Billed To</div>'
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
-        f'<p style="margin:16px 0 0">We\'ve received your card payment. {escape(status_line)}</p>'
+        f'<p style="margin:16px 0 0">We\'ve received your payment. {escape(status_line)}</p>'
         f'</td></tr>'
         f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
         f'<tr><td></td><td align="right" style="padding:10px 14px;color:#6B7280">Invoice total</td>'
@@ -1900,6 +1989,54 @@ async def _send_payment_receipt(inv: dict, amount_now: float) -> None:
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     html = render_payment_receipt_email(inv, amount_now, cname, await get_settings())
     await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html)
+
+
+def render_welcome_email(name: str, email: str, temp_password: str, role: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
+    contact = " &nbsp;·&nbsp; ".join([escape(str(x)) for x in contact_bits if x])
+    contact_html = f'<div style="color:#6B7280;font-size:11px;margin-top:6px">{contact}</div>' if contact else ""
+    role_label = {"admin": "Administrator", "salesman": "Salesperson", "installer": "Service / Installer"}.get(role, role.title())
+    login_url = f"{PUBLIC_BASE_URL}/login"
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">WELCOME</div>'
+        f'<div style="color:#6B7280;font-size:13px">{escape(role_label)} account</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:15px;font-weight:bold">Hi {escape(name)},</div>'
+        f'<p style="margin:12px 0 0">An account has been created for you on the {escape(cname)} system. '
+        f'For your security, <b>please change your password before you start using the app</b> — you\'ll be prompted to set a new one the first time you sign in.</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:18px 32px 0"><table role="presentation" width="100%" style="border:1px solid #E5E7EB;background:#F9FAFB">'
+        f'<tr><td style="padding:12px 16px;color:#6B7280;width:150px">Sign-in email</td>'
+        f'<td style="padding:12px 16px;font-weight:bold">{escape(email)}</td></tr>'
+        f'<tr><td style="padding:12px 16px;color:#6B7280;border-top:1px solid #E5E7EB">Temporary password</td>'
+        f'<td style="padding:12px 16px;font-weight:bold;font-family:monospace;border-top:1px solid #E5E7EB">{escape(temp_password)}</td></tr>'
+        f'</table></td></tr>'
+        f'<tr><td style="padding:22px 32px 0" align="left">'
+        f'<a href="{login_url}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:12px 28px;font-weight:bold;letter-spacing:1px">Sign In &amp; Set Your Password</a>'
+        f'</td></tr>'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px;color:#6B7280;font-size:12px">If you didn\'t expect this email, please contact your administrator.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'{contact_html}'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _send_welcome_email(*, name: str, email: str, temp_password: str, role: str) -> None:
+    html = render_welcome_email(name, email, temp_password, role, await get_settings())
+    await send_email(to=email, subject="Welcome to DBG Signs, Inc. — set your password", html=html)
 
 
 @api_router.post("/estimates/{eid}/send")
@@ -1963,6 +2100,18 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
 
     # Accent rule
     c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, H - 162, R, H - 162)
+
+    # PAID IN FULL stamp
+    if doc.get("status") == "paid":
+        c.saveState()
+        c.translate(W / 2, H / 2 + 40)
+        c.rotate(16)
+        green = colors.HexColor("#16A34A")
+        c.setStrokeColor(green); c.setFillColor(green); c.setLineWidth(4)
+        c.roundRect(-168, -36, 336, 72, 12, stroke=1, fill=0)
+        c.setFont("Helvetica-Bold", 36)
+        c.drawCentredString(0, -13, "PAID IN FULL")
+        c.restoreState()
 
     y = H - 196
     # Meta (right)
@@ -2051,6 +2200,65 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     for line in contact:
         if line:
             c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawRightString(R, cy, str(line)); cy -= 11
+    c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
+
+def build_work_order_pdf(wo: dict, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    co = company or {}
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4")
+    y = H - 70
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 40, width=150, height=86, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "WORK ORDER")
+    c.setFillColor(soft); c.setFont("Helvetica", 11); c.drawRightString(R, y - 16, f"#{wo.get('number', '')}")
+    y -= 66
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 30
+
+    eq = wo.get("equipment_type") or ""
+    if eq == "Other" and wo.get("equipment_other"):
+        eq = f"Other: {wo['equipment_other']}"
+    ms, me = wo.get("mileage_start"), wo.get("mileage_end")
+    miles = (me - ms) if (ms is not None and me is not None) else None
+    rows = [
+        ("Customer", wo.get("customer_name") or "—"),
+        ("Date", str(wo.get("date") or "")),
+        ("Equipment", eq or "—"),
+        ("Unit / VIN", wo.get("unit_vin") or "—"),
+        ("Mileage start", "—" if ms is None else str(ms)),
+        ("Mileage end", "—" if me is None else str(me)),
+        ("Miles driven", "—" if miles is None else str(miles)),
+        ("Performed by", wo.get("worker_name") or "—"),
+    ]
+    c.setFont("Helvetica", 11)
+    for label, val in rows:
+        c.setFillColor(soft); c.drawString(L, y, label.upper())
+        c.setFillColor(ink); c.drawString(L + 150, y, str(val))
+        y -= 22
+    y -= 10
+    c.setFillColor(soft); c.setFont("Helvetica-Bold", 10); c.drawString(L, y, "WORK PERFORMED"); y -= 6
+    c.setStrokeColor(colors.HexColor("#E5E7EB")); c.setLineWidth(1); c.rect(L, y - 120, R - L, 118, stroke=1, fill=0)
+    c.setFillColor(ink); c.setFont("Helvetica", 11)
+    text = c.beginText(L + 10, y - 16)
+    words = str(wo.get("work_performed") or "").split()
+    line = ""
+    for w in words:
+        if len(line) + len(w) + 1 > 82:
+            text.textLine(line); line = w
+        else:
+            line = (line + " " + w).strip()
+    if line:
+        text.textLine(line)
+    c.drawText(text)
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 70, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 
@@ -2353,6 +2561,14 @@ async def startup():
             "created_at": now_iso(),
         })
         logger.info("Seeded demo salesman")
+    # seed a demo installer / service worker
+    inst_email = "service@dbgsigns.com"
+    if await db.users.find_one({"email": inst_email}) is None:
+        await db.users.insert_one({
+            "email": inst_email, "password_hash": hash_password("Service2026!"),
+            "name": "Service Tech", "role": "installer", "created_at": now_iso(),
+        })
+        logger.info("Seeded demo installer")
 
 
 @app.on_event("shutdown")

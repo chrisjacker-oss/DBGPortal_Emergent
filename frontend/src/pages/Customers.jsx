@@ -13,6 +13,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const empty = { name: "", company: "", email: "", phone: "", address: "", notes: "", tier: "", title: "", net_terms: "Net 15", portal_enabled: false };
 const TIER_PCT = { 1: "35%", 2: "25%", 3: "15%" };
@@ -27,6 +28,7 @@ export default function Customers() {
   const [contactCust, setContactCust] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [cForm, setCForm] = useState({ name: "", email: "", phone: "", title: "" });
+  const [del, setDel] = useState(null); // { url, label, after }
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -38,15 +40,10 @@ export default function Customers() {
     try { await api.post(`/customers/${contactCust.id}/contacts`, cForm); setCForm({ name: "", email: "", phone: "", title: "" }); loadContacts(contactCust.id); toast.success("Contact added"); }
     catch { toast.error("Could not add contact"); }
   };
-  const delContact = async (id) => {
-    if (!window.confirm("Delete this contact? Any portal login for it is removed too.")) return;
-    try { await api.delete(`/contacts/${id}`); loadContacts(contactCust.id); } catch { toast.error("Delete failed"); }
-  };
+  const delContact = (c) => setDel({ url: `/contacts/${c.id}`, label: `contact ${c.name}`, after: () => loadContacts(contactCust.id) });
   const togglePortal = async (c) => {
     if (c.has_portal) {
-      if (!window.confirm(`Remove portal login for ${c.name}?`)) return;
-      try { await api.delete(`/contacts/${c.id}/portal`); toast.success("Portal login removed"); loadContacts(contactCust.id); }
-      catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+      setDel({ url: `/contacts/${c.id}/portal`, label: `portal login for ${c.name}`, after: () => loadContacts(contactCust.id) });
     } else {
       if (!c.email) { toast.error("Add an email to this contact first"); return; }
       const pw = window.prompt(`Set a portal password for ${c.name}:`);
@@ -71,11 +68,12 @@ export default function Customers() {
     } catch (e) { toast.error("Save failed"); }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm("Delete this customer?")) return;
-    await api.delete(`/customers/${id}`);
-    toast.success("Deleted");
-    load();
+  const remove = (r) => setDel({ url: `/customers/${r.id}`, label: `customer ${r.company || r.name}`, after: load });
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(del.url, { data: { password } });
+      toast.success("Deleted"); const after = del.after; setDel(null); after && after(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   return (
@@ -111,7 +109,7 @@ export default function Customers() {
                     <div className="flex justify-end gap-2">
                       <Btn variant="ghost" onClick={() => openContacts(r)} data-testid={`contacts-customer-${r.id}`} title="Contacts"><UsersThree size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-customer-${r.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-customer-${r.id}`}><Trash size={16} /></Btn>
+                      {isAdmin && <Btn variant="ghost" onClick={() => remove(r)} data-testid={`delete-customer-${r.id}`}><Trash size={16} /></Btn>}
                     </div>
                   </td>
                 </tr>
@@ -189,7 +187,7 @@ export default function Customers() {
                       {c.has_portal ? <UserMinus size={16} /> : <Key size={16} />}
                     </Btn>
                   )}
-                  <Btn variant="ghost" onClick={() => delContact(c.id)} data-testid={`delete-contact-${c.id}`}><Trash size={16} /></Btn>
+                  {isAdmin && <Btn variant="ghost" onClick={() => delContact(c)} data-testid={`delete-contact-${c.id}`}><Trash size={16} /></Btn>}
                 </div>
               </div>
             ))}
@@ -211,6 +209,8 @@ export default function Customers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!del} label={del?.label || "record"} onClose={() => setDel(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

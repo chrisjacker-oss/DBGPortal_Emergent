@@ -7,6 +7,7 @@ import { Inp } from "@/pages/Customers";
 import { downloadCsv } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const empty = { vendor: "", reference: "", description: "", amount: 0, due_date: "", status: "unpaid" };
 
@@ -15,6 +16,7 @@ export default function Payables() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [delRow, setDelRow] = useState(null);
 
   const load = () => api.get("/bills").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -32,7 +34,12 @@ export default function Payables() {
     } catch { toast.error("Save failed"); }
   };
   const markPaid = async (id) => { await api.patch(`/bills/${id}/status`, null, { params: { status: "paid" } }); toast.success("Marked paid"); load(); };
-  const remove = async (id) => { if (!window.confirm("Delete bill?")) return; await api.delete(`/bills/${id}`); toast.success("Deleted"); load(); };
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(`/bills/${delRow.id}`, { data: { password } });
+      toast.success("Bill deleted"); setDelRow(null); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
 
   const outstanding = rows.filter((r) => r.status !== "paid").reduce((s, r) => s + r.amount, 0);
   const paid = rows.filter((r) => r.status === "paid").reduce((s, r) => s + r.amount, 0);
@@ -79,7 +86,7 @@ export default function Payables() {
                     <div className="flex justify-end gap-1">
                       {r.status !== "paid" && <Btn variant="ghost" onClick={() => markPaid(r.id)} data-testid={`pay-bill-${r.id}`}><CheckCircle size={16} /></Btn>}
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-bill-${r.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-bill-${r.id}`}><Trash size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => setDelRow(r)} data-testid={`delete-bill-${r.id}`}><Trash size={16} /></Btn>
                     </div>
                   </td>
                 </tr>
@@ -108,6 +115,8 @@ export default function Payables() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!delRow} label={`bill ${delRow?.number || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

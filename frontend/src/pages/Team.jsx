@@ -6,6 +6,7 @@ import { Btn, StatusBadge } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
 const empty = { name: "", email: "", password: "", role: "salesman", commission_rate: 10 };
 
@@ -14,6 +15,7 @@ export default function Team() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
+  const [delRow, setDelRow] = useState(null);
 
   const load = () => api.get("/users").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -31,10 +33,11 @@ export default function Team() {
       toast.success("Team member saved"); setOpen(false); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
-  const remove = async (id) => {
-    if (!window.confirm("Remove this team member?")) return;
-    try { await api.delete(`/users/${id}`); toast.success("Removed"); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
+  const confirmDelete = async (password) => {
+    try {
+      await api.delete(`/users/${delRow.id}`, { data: { password } });
+      toast.success("Team member removed"); setDelRow(null); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   return (
@@ -67,7 +70,7 @@ export default function Team() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-user-${r.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-user-${r.id}`}><Trash size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => setDelRow(r)} data-testid={`delete-user-${r.id}`}><Trash size={16} /></Btn>
                     </div>
                   </td>
                 </tr>
@@ -106,6 +109,8 @@ export default function Team() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={!!delRow} label={`team member ${delRow?.name || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
     </div>
   );
 }

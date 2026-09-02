@@ -70,3 +70,11 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 
 ## Backlog
 - Split server.py into routers; add search indexes; stamp net_terms onto docs at creation (historical PDF accuracy); require due_date for dunning.
+
+## Changelog 2026-06 (session: onboarding + delete security + commissions)
+- **New team-member onboarding**: admin creates a staff account with a temp password → a welcome email (Resend) is sent with the temp password + a note to change it; user is forced onto a "Set a new password" screen (`ForcePasswordChange.jsx`) on first login. Backend: `must_change_password` flag on create_user + admin password resets (PUT /users when password supplied by another admin); `POST /api/auth/change-password`; login/me return the flag. Agent-tested (backend curl + frontend e2e, iteration_7 100%).
+- **Every delete requires the admin account password**: all DELETE endpoints (customers, contacts, contact-portal, work-orders, materials, material-categories, bills, users, portal-accounts + existing estimates/SO/invoices) now take a `DeleteConfirm` body and `verify_admin_password`; frontend uses shared `AdminDeleteDialog` everywhere. Delete buttons hidden for non-admins (Customers/Contacts for salesman, Work Orders for installer). Agent-tested.
+- **Line-item builder redesigned** (`DocBuilder.jsx`): columns are now Category → Material (filtered by category) → W(in) → H(in) → Qty → Sqft (computed) → Extra hrs → Cost. Free-text description dropped (auto-filled from material); details textbox kept. Admins get "+ Create category…" inline in the category dropdown.
+- **Commissions rework** (`Commissions.jsx`): Unpaid/Paid tabs; admins select rows (checkboxes) and Mark Paid with a required PO number (`POST /api/commissions/pay`), which moves them to the Paid tab (shows PO #). Admin can Move back to Unpaid (`/commissions/unpay`). Added "Paid out" stat + per-salesman Paid column. Salesmen are read-only. Agent/self-tested.
+- Removed custom material category "Wraps". Seeded demo installer `service@dbgsigns.com` in startup().
+

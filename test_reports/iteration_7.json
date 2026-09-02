@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 7 e2e testing of (1) forced password change for new team members, (2) admin-password confirmation on every delete, (3) role gating of deletes, (4) new Category/Material/W/H/Qty/Sqft/ExtraHrs/Cost line-item builder. Backend: 14 passed / 1 skipped (pytest /app/backend/tests/test_iteration7.py). Frontend: 4 Playwright runs, all target flows passed. Full forced-password-change lifecycle works (create member -> temp pw login -> forced 'Set a new password' screen -> wrong temp pw error -> mismatch error -> success -> salesman lands on /estimates -> re-login with new pw not re-prompted -> admin deletes member via AdminDeleteDialog). AdminDeleteDialog verified end-to-end (wrong pw = error toast + no delete, correct pw = delete) on Materials (material + custom category), Customers (customer, contact, contact portal login), Team (member), Payables (bill), Portal Accounts (account), Work Orders (WO), plus estimates/sales-orders/invoices via API. Line-item builder verified in Estimate, Sales Order and Invoice: category filters material dropdown (Digital Vinyl -> 1 of 3 materials), material auto-fills price, 24x36x2 -> Sqft 12.00 and Cost $113.00, totals panel and saved doc total $122.32 (non-zero).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "startup() seed", "issue": "Documented installer demo account service@dbgsigns.com / Service2026! does NOT exist (only admin + sam@dbgsigns.com are seeded). Login returns 401 and /app/memory/test_credentials.md is therefore stale. Installer role gating had to be tested with a temporary installer account created via POST /api/users (since removed)."},
+      {"endpoint": "PUT /api/users/{uid}", "issue": "Admin resetting a member's password does not set must_change_password=true, so an admin-issued password reset is not force-changed on next login (only creation is). Consider setting the flag when password is supplied."},
+      {"endpoint": "POST /api/users", "issue": "Welcome email correctly non-blocking: sends 202 for deliverable addresses (verified with delivered@resend.dev) and only logs an error for undeliverable @example.com addresses. No action needed, informational."},
+      {"endpoint": "DELETE /api/portal-accounts/{uid}", "issue": "Deleting a portal account leaves the auto-created customer record behind (orphan customer with portal flag). May be intentional, but it is how the DB accumulated several 'TEST_Portal User' customers."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Forced password change (non-admin)", "issue": "While ForcePasswordChange is rendered the URL stays on the originally requested route (e.g. /dashboard for a salesman) because Protected renders FPC before the role redirect. Cosmetic only - the screen itself blocks the app correctly.", "affected_selectors": ["force-password-change"]}
+    ],
+    "design_issues": [
+      {"screen": "Work Orders (filters) + Invoice/Bill due-date fields", "issues": ["Native browser date inputs (mm/dd/yyyy) are used instead of the shadcn calendar/date-picker component used elsewhere in the design system"]},
+      {"screen": "Customers > Contacts dialog", "issues": ["Creating a contact portal login uses window.prompt() to collect the password (raw browser prompt, no masking/validation) while the matching delete flow uses the styled AdminDeleteDialog - inconsistent UX"]},
+      {"screen": "Estimates / Invoices lists", "issues": ["Many leftover TEST_ documents from earlier iterations show customer 'Unknown' because their customers were deleted; list is polluted (43 estimates, 12 invoices). Consider a cleanup and/or showing the stored customer name snapshot instead of 'Unknown'"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7.py",
+    "/app/test_reports/pytest/iteration7.xml"
+  ],
+  "action_items": [
+    "Seed the installer demo account (service@dbgsigns.com / Service2026!) in startup() or update /app/memory/test_credentials.md - the documented credential currently returns 401.",
+    "Optionally set must_change_password on admin-initiated password resets (PUT /api/users/{uid}).",
+    "Optionally clean leftover TEST_ estimates/sales-orders/invoices and 'TEST_Portal User' customers from the preview DB.",
+    "Optional polish: replace window.prompt for contact portal password with a styled dialog; replace native date inputs with the shadcn date picker."
+  ],
+  "critical_code_review_comments": [
+    "/app/backend/server.py is 2537 lines - split into routers (auth, customers/contacts, docs, payments, email/pdf, admin) per the <=700-line guideline.",
+    "verify_admin_password + require_admin is repeated in 12 delete endpoints; extract a shared dependency (e.g. Depends(admin_password_confirmed)) to remove duplication.",
+    "DeleteConfirm body on DELETE means a missing body returns 422 with a Pydantic error rather than a friendly 400 message; acceptable but consider a clearer error."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration7.py"],
+  "success_rate": {"backend": "100% (14 passed, 1 skipped - installer account not seeded)", "frontend": "100% of requested flows passed"},
+  "seed_data_creation": "All disposable data created during testing was deleted: staff users wo_newstaff_*/test_installer_*/delivered@resend.dev, TEST_ customer + contact + contact portal login, TEST_ material + custom category, TEST_ bill, TEST_ portal account (+ its customer), TEST_ work orders, and TEST_builder_ estimate/sales-order/invoice. Remaining TEST_Portal User customers pre-date this iteration.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin chrisjacker@gmail.com / SignShop2026! (works), Salesman sam@dbgsigns.com / Sales2026! (works), Installer service@dbgsigns.com / Service2026! (DOES NOT EXIST - 401)",
+  "context_for_next_testing_agent": "Use /app/backend/tests/test_iteration7.py as the regression suite for delete-gating + forced password change (run with `cd /app/backend && python -m pytest tests/test_iteration7.py -q`; pytest.ini already adds xdist args, don't pass -n). Installer flows require creating a temp installer via POST /api/users then POST /api/auth/change-password to clear must_change_password before UI login. Playwright helper pattern used: click trash -> wait for [data-testid=admin-delete-dialog] -> wrong pw (dialog stays open + 'Incorrect admin password' toast) -> correct pw (dialog closes, row gone). In DocBuilder, wait for [data-testid=item-mat-0] options to load before comparing filtered vs unfiltered counts (materials load async).",
+  "rca_of_the_issue": "Only failure found: installer login 401. Root cause - the startup() seed hook only creates the admin (from ADMIN_EMAIL/ADMIN_PASSWORD) and sam@dbgsigns.com salesman; there is no installer seed, so service@dbgsigns.com documented in test_credentials.md was never created (an earlier agent's failed login attempts are also recorded in db.login_attempts). Mitigation: add an installer seed block mirroring the salesman seed, or create the account once via the Team page."
+}

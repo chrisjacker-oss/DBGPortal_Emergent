@@ -19,6 +19,7 @@ import Settings from "@/pages/Settings";
 import Portal from "@/pages/Portal";
 import PortalAccounts from "@/pages/PortalAccounts";
 import WorkOrders from "@/pages/WorkOrders";
+import ForcePasswordChange from "@/pages/ForcePasswordChange";
 
 function Loading() {
   return (
@@ -35,6 +36,7 @@ function Protected({ children, roles }) {
   const { user } = useAuth();
   if (user === null) return <Loading />;
   if (user === false) return <Navigate to="/login" replace />;
+  if (user.must_change_password) return <ForcePasswordChange />;
   if (roles && !roles.includes(user.role)) return <Navigate to={homeFor(user.role)} replace />;
   return children;
 }

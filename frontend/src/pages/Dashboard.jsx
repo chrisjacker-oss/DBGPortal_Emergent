@@ -29,7 +29,9 @@ export default function Dashboard() {
       <PageHeader overline="Shop overview" title="Dashboard" />
       <div className="p-8 space-y-8">
         <div className={`grid grid-cols-1 md:grid-cols-2 ${isAdmin ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-px bg-border border border-border`}>
-          <StatCard testid="stat-receivable" label="Outstanding Receivable" value={currency(d?.receivable)} accent="#F59E0B" sub="Unpaid customer invoices" />
+          <div onClick={() => navigate("/receivables")} className="cursor-pointer transition-colors hover:bg-secondary/40" data-testid="receivable-link" title="View all outstanding receivables">
+            <StatCard testid="stat-receivable" label="Outstanding Receivable" value={currency(d?.receivable)} accent="#F59E0B" sub="View all outstanding →" />
+          </div>
           {isAdmin && <StatCard testid="stat-payable" label="Accounts Payable" value={currency(d?.payable)} accent="#DC2626" sub="Bills owed to vendors" />}
           <StatCard testid="stat-collected" label="Collected (paid)" value={currency(d?.collected)} accent="#16A34A" sub="Invoices marked paid" />
           <StatCard testid="stat-netcash" label="Net Cash Position" value={currency(d?.net_cash)} accent="#06B6D4" sub="Collected − bills paid" />
