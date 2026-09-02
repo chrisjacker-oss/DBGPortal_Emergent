@@ -2625,26 +2625,27 @@ def _pdf_response(doc: dict, pdf: bytes, disposition: str = "attachment") -> Res
                     headers={"Content-Disposition": f'{disposition}; filename="{doc.get("number", "document")}.pdf"'})
 
 
-async def _staff_pdf(collection, doc_id: str, label: str) -> Response:
+async def _staff_pdf(collection, doc_id: str, label: str, inline: bool = False) -> Response:
     doc = await get_or_404(collection, doc_id, label)
     await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
-    return _pdf_response(doc, build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings()))
+    pdf = build_doc_pdf(label, doc, clean(cust) if cust else None, await get_logo_bytes(), await get_settings())
+    return _pdf_response(doc, pdf, "inline" if inline else "attachment")
 
 
 @api_router.get("/invoices/{iid}/pdf")
-async def invoice_pdf(iid: str, user: dict = Depends(require_staff)):
-    return await _staff_pdf(db.invoices, iid, "Invoice")
+async def invoice_pdf(iid: str, inline: bool = False, user: dict = Depends(require_staff)):
+    return await _staff_pdf(db.invoices, iid, "Invoice", inline)
 
 
 @api_router.get("/estimates/{eid}/pdf")
-async def estimate_pdf(eid: str, user: dict = Depends(require_staff)):
-    return await _staff_pdf(db.estimates, eid, "Estimate")
+async def estimate_pdf(eid: str, inline: bool = False, user: dict = Depends(require_staff)):
+    return await _staff_pdf(db.estimates, eid, "Estimate", inline)
 
 
 @api_router.get("/sales-orders/{sid}/pdf")
-async def sales_order_pdf(sid: str, user: dict = Depends(require_staff)):
-    return await _staff_pdf(db.sales_orders, sid, "Sales Order")
+async def sales_order_pdf(sid: str, inline: bool = False, user: dict = Depends(require_staff)):
+    return await _staff_pdf(db.sales_orders, sid, "Sales Order", inline)
 
 
 @api_router.get("/pub/pdf/{token}")

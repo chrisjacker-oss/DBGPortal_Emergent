@@ -10,7 +10,7 @@ import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import { downloadCsv, downloadFile } from "@/lib/download";
-import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function Invoices() {
@@ -60,6 +60,7 @@ export default function Invoices() {
   };
 
   const paidOf = (inv) => (inv?.status === "paid" ? Number(inv?.total || 0) : Number(inv?.amount_paid || 0));
+  const viewPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
   const printInvoice = () => {
     const inv = detailInv; if (!inv) return;
     const paid = paidOf(inv);
@@ -268,6 +269,17 @@ export default function Invoices() {
           {detailInv && (
             <div className="space-y-5 text-sm">
               <StageTracker lineage={lineage} inv={detailInv} paidOf={paidOf} onGo={(to) => { setDetailInv(null); navigate(to); }} />
+
+              {(lineage?.estimate || lineage?.sales_order) && (
+                <div className="flex flex-wrap gap-2" data-testid="linked-docs">
+                  {lineage?.estimate && (
+                    <Btn variant="outline" onClick={() => viewPdf(`/estimates/${lineage.estimate.id}/pdf`)} data-testid="view-quote-btn"><Eye size={16} weight="bold" /> View Quote {lineage.estimate.number}</Btn>
+                  )}
+                  {lineage?.sales_order && (
+                    <Btn variant="outline" onClick={() => viewPdf(`/sales-orders/${lineage.sales_order.id}/pdf`)} data-testid="view-so-btn"><Eye size={16} weight="bold" /> View Sales Order {lineage.sales_order.number}</Btn>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Field label="Issued" value={(detailInv.created_at || "").slice(0, 10) || "—"} />
                 <Field label="Due" value={detailInv.due_date || "—"} />
