@@ -1490,6 +1490,7 @@ async def commissions(user: dict = Depends(require_staff)):
         earned = e.get("status") == "approved" or bool(e.get("sales_order_id"))
         paid = bool(e.get("commission_paid"))
         name = e.get("salesman_name") or "Unassigned"
+        sid = e.get("salesman_id")
         rows.append({
             "id": e["id"], "number": e.get("number"), "title": e.get("title"),
             "customer_name": e.get("customer_name"), "salesman_name": name,
@@ -1497,7 +1498,9 @@ async def commissions(user: dict = Depends(require_staff)):
             "commission_amount": round(amt, 2), "earned": earned,
             "paid": paid, "po_number": e.get("commission_po"), "paid_at": e.get("commission_paid_at"),
         })
-        agg = by_salesman.setdefault(name, {"salesman_name": name, "earned": 0.0, "pending": 0.0, "paid": 0.0, "count": 0})
+        agg = by_salesman.setdefault(name, {"salesman_name": name, "salesman_id": None, "earned": 0.0, "pending": 0.0, "paid": 0.0, "count": 0})
+        if sid and not agg["salesman_id"]:
+            agg["salesman_id"] = sid
         agg["count"] += 1
         if paid:
             agg["paid"] += amt
@@ -1565,20 +1568,17 @@ async def unpay_commissions(payload: CommissionUnpayInput, user: dict = Depends(
     return {"updated": res.modified_count}
 
 
-@api_router.get("/commissions/paid/pdf")
-async def paid_commissions_pdf(salesman_name: Optional[str] = None, date_from: Optional[str] = None,
-                               date_to: Optional[str] = None, user: dict = Depends(require_staff)):
+async def _paid_commission_rows(salesman_name: Optional[str], salesman_id: Optional[str],
+                                date_from: Optional[str], date_to: Optional[str]) -> list:
     q = {"commission_paid": True}
-    scope_label = ""
-    if user["role"] == "salesman":
-        q["salesman_id"] = user["id"]
-        scope_label = user.get("name") or ""
-    elif salesman_name:
-        if salesman_name == "Unassigned":
-            q["$or"] = [{"salesman_name": None}, {"salesman_name": ""}, {"salesman_name": {"$exists": False}}]
-        else:
-            q["salesman_name"] = salesman_name
-        scope_label = salesman_name
+    if salesman_id and salesman_name and salesman_name != "Unassigned":
+        q["$or"] = [{"salesman_id": salesman_id}, {"salesman_name": salesman_name}]
+    elif salesman_id:
+        q["salesman_id"] = salesman_id
+    elif salesman_name and salesman_name != "Unassigned":
+        q["salesman_name"] = salesman_name
+    elif salesman_name == "Unassigned":
+        q["$or"] = [{"salesman_name": None}, {"salesman_name": ""}, {"salesman_name": {"$exists": False}}]
     ests = await db.estimates.find(q).sort("commission_paid_at", -1).to_list(5000)
     rows = []
     for e in ests:
@@ -1596,12 +1596,113 @@ async def paid_commissions_pdf(salesman_name: Optional[str] = None, date_from: O
             "po_number": e.get("commission_po"), "paid_at": e.get("commission_paid_at"),
             "commission_amount": float(e.get("commission_amount") or round(base * rate / 100.0, 2)),
         })
+    return rows
+
+
+def _scope_label(base_label: str, date_from: Optional[str], date_to: Optional[str]) -> str:
     if date_from or date_to:
         rng = f"{date_from or '…'} → {date_to or '…'}"
-        scope_label = f"{scope_label} · {rng}" if scope_label else rng
-    pdf = build_commissions_pdf(rows, await get_settings(), await get_logo_bytes(), scope_label)
+        return f"{base_label} · {rng}" if base_label else rng
+    return base_label
+
+
+def render_commission_email(name: str, count: int, total: float, link: str, scope_label: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
+    contact = " &nbsp;·&nbsp; ".join([escape(str(x)) for x in contact_bits if x])
+    contact_html = f'<div style="color:#6B7280;font-size:11px;margin-top:6px">{contact}</div>' if contact else ""
+    period = f' ({escape(scope_label)})' if scope_label else ""
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">COMMISSION</div>'
+        f'<div style="color:#6B7280;font-size:13px">Paid statement</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#A21CAF"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:15px;font-weight:bold">Hi {escape(name)},</div>'
+        f'<p style="margin:12px 0 0">Here is your paid-commission statement{period}. '
+        f'It covers <b>{count}</b> paid commission(s) totaling <b>{_money(total)}</b>.</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:22px 32px 0" align="left">'
+        f'<a href="{link}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:12px 28px;font-weight:bold;letter-spacing:1px">Download Your Statement (PDF)</a>'
+        f'</td></tr>'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px;color:#6B7280;font-size:12px">Questions about your commissions? Just reply to this email.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'{contact_html}'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+@api_router.get("/commissions/paid/pdf")
+async def paid_commissions_pdf(salesman_name: Optional[str] = None, date_from: Optional[str] = None,
+                               date_to: Optional[str] = None, user: dict = Depends(require_staff)):
+    if user["role"] == "salesman":
+        rows = await _paid_commission_rows(None, user["id"], date_from, date_to)
+        label = _scope_label(user.get("name") or "", date_from, date_to)
+    else:
+        rows = await _paid_commission_rows(salesman_name, None, date_from, date_to)
+        label = _scope_label(salesman_name or "", date_from, date_to)
+    pdf = build_commissions_pdf(rows, await get_settings(), await get_logo_bytes(), label)
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'attachment; filename="paid-commissions.pdf"'})
+
+
+@api_router.get("/pub/commissions/{token}")
+async def public_commissions_pdf(token: str):
+    rec = await db.commission_pdf_tokens.find_one({"token": token})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Statement link is invalid or has expired")
+    rows = await _paid_commission_rows(rec.get("salesman_name"), rec.get("salesman_id"), rec.get("date_from"), rec.get("date_to"))
+    pdf = build_commissions_pdf(rows, await get_settings(), await get_logo_bytes(), rec.get("scope_label", ""))
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="paid-commissions.pdf"', "Cache-Control": "no-store"})
+
+
+class CommissionEmailInput(BaseModel):
+    salesman_id: Optional[str] = None
+    salesman_name: Optional[str] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+
+
+@api_router.post("/commissions/email")
+async def email_commission_statement(payload: CommissionEmailInput, user: dict = Depends(require_admin)):
+    su = None
+    if payload.salesman_id and ObjectId.is_valid(payload.salesman_id):
+        su = await db.users.find_one({"_id": oid(payload.salesman_id)})
+    if not su and payload.salesman_name:
+        su = await db.users.find_one({"name": payload.salesman_name, "role": {"$in": ["salesman", "admin"]}})
+    if not su:
+        raise HTTPException(status_code=404, detail="No staff account found for that salesman")
+    to = su.get("email")
+    if not to:
+        raise HTTPException(status_code=400, detail="That salesman has no email on file")
+    sid = str(su["_id"])
+    rows = await _paid_commission_rows(su.get("name"), sid, payload.date_from, payload.date_to)
+    if not rows:
+        raise HTTPException(status_code=400, detail="No paid commissions to send for this period")
+    total = round(sum(float(r.get("commission_amount") or 0) for r in rows), 2)
+    label = _scope_label(su.get("name") or "", payload.date_from, payload.date_to)
+    token = secrets.token_urlsafe(16)
+    await db.commission_pdf_tokens.insert_one({
+        "token": token, "salesman_id": sid, "salesman_name": su.get("name"),
+        "date_from": payload.date_from, "date_to": payload.date_to, "scope_label": label,
+        "created_at": now_iso(),
+    })
+    link = f"{PUBLIC_BASE_URL}/api/pub/commissions/{token}"
+    html = render_commission_email(su.get("name") or "there", len(rows), total, link, label, await get_settings())
+    await send_email(to=to, subject="Your paid-commission statement · DBG Signs, Inc.", html=html)
+    return {"sent": True, "to": to, "count": len(rows), "total": total}
+
+
 
 
 # ---------------------------------------------------------------------------

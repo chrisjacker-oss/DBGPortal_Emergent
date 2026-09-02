@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatCard, StatusBadge } from "@/components/kit";
 import { downloadFile } from "@/lib/download";
-import { CheckCircle, FilePdf } from "@phosphor-icons/react";
+import { CheckCircle, FilePdf, EnvelopeSimple } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 export default function Commissions() {
@@ -72,6 +72,15 @@ export default function Commissions() {
     try { await downloadFile(`/commissions/paid/pdf?${q.toString()}`, `paid-commissions-${safe}.pdf`, "application/pdf"); }
     catch { toast.error("Export failed"); }
   };
+  const emailStatement = async (s) => {
+    try {
+      const { data: res } = await api.post("/commissions/email", {
+        salesman_id: s.salesman_id, salesman_name: s.salesman_name,
+        date_from: pFrom || null, date_to: pTo || null,
+      });
+      toast.success(`Statement emailed to ${res.to} (${res.count} commissions)`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
+  };
 
   const TabBtn = ({ id, label }) => (
     <button onClick={() => setTab(id)} data-testid={`comm-tab-${id}`}
@@ -117,9 +126,16 @@ export default function Commissions() {
                       <td className="px-6 py-3 text-right font-mono text-[#0E7490]">{currency(s.paid)}</td>
                       <td className="px-6 py-3 text-right font-mono font-semibold">{currency(s.earned + s.pending + s.paid)}</td>
                       <td className="px-6 py-3 text-right">
-                        <Btn variant="ghost" onClick={() => exportSalesmanPdf(s.salesman_name)} data-testid={`export-salesman-${s.salesman_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`} title={`Export ${s.salesman_name} paid commissions`}>
-                          <FilePdf size={16} />
-                        </Btn>
+                        <div className="flex justify-end gap-1">
+                          {s.salesman_id && (
+                            <Btn variant="ghost" onClick={() => emailStatement(s)} data-testid={`email-salesman-${s.salesman_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`} title={`Email ${s.salesman_name} their paid-commission statement`}>
+                              <EnvelopeSimple size={16} />
+                            </Btn>
+                          )}
+                          <Btn variant="ghost" onClick={() => exportSalesmanPdf(s.salesman_name)} data-testid={`export-salesman-${s.salesman_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`} title={`Export ${s.salesman_name} paid commissions`}>
+                            <FilePdf size={16} />
+                          </Btn>
+                        </div>
                       </td>
                     </tr>
                   ))}
