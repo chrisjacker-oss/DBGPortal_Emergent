@@ -2310,6 +2310,18 @@ async def site_search(q: str, user: dict = Depends(require_staff)):
         results.append({"type": "Material", "id": d["id"], "label": d.get("name"),
                         "subtitle": f"{d.get('category', '')} - {_money(d.get('price_per_sqft', 0))}/sqft", "route": "/materials"})
 
+    if user.get("role") == "admin":
+        async for d in db.work_orders.find({"$or": [{"number": rx}, {"work_performed": rx}, {"unit_vin": rx},
+                                                     {"equipment_type": rx}, {"equipment_other": rx},
+                                                     {"customer_name": rx}, {"worker_name": rx}]}).limit(8):
+            d = await enrich_work_order(d)
+            eq = d.get("equipment_type") or ""
+            if eq == "Other" and d.get("equipment_other"):
+                eq = f"Other: {d['equipment_other']}"
+            bits = [x for x in [d.get("customer_name"), eq, d.get("unit_vin"), d.get("date")] if x]
+            results.append({"type": "Work Order", "id": d["id"], "label": d.get("number"),
+                            "subtitle": " · ".join(bits), "route": "/work-orders"})
+
     return {"results": results}
 
 
