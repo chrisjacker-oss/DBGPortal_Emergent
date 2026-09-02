@@ -7,6 +7,8 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import logging
 import secrets
+import asyncio
+import hmac
 import base64
 import re
 import io
@@ -888,20 +890,12 @@ async def _invoice_for_payment(invoice_id: str, user: dict) -> dict:
     return inv
 
 
-async def _apply_payment(payment_intent_id: str) -> None:
-    # Idempotent: only the first flip pending->paid applies the amount to the invoice
-    res = await db.payment_transactions.update_one(
-        {"payment_intent_id": payment_intent_id, "payment_status": {"$ne": "paid"}},
-        {"$set": {"status": "completed", "payment_status": "paid", "updated_at": now_iso()}},
-    )
-    if res.modified_count != 1:
-        return
-    rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
-    inv = await db.invoices.find_one({"_id": oid(rec["invoice_id"])})
+async def _apply_amount_to_invoice(invoice_id: str, amount: float) -> None:
+    inv = await db.invoices.find_one({"_id": oid(invoice_id)})
     if not inv:
         return
     total = float(inv.get("total") or 0)
-    paid = round(float(inv.get("amount_paid") or 0) + float(rec.get("amount") or 0), 2)
+    paid = round(float(inv.get("amount_paid") or 0) + float(amount or 0), 2)
     fully = paid >= total - 0.005
     upd = {"amount_paid": paid, "status": "paid" if fully else "partial"}
     if fully:
@@ -909,9 +903,26 @@ async def _apply_payment(payment_intent_id: str) -> None:
         upd["paid_via"] = "stripe"
     await db.invoices.update_one({"_id": inv["_id"]}, {"$set": upd})
     try:
-        await _send_payment_receipt({**inv, **upd}, float(rec.get("amount") or 0))
+        await _send_payment_receipt({**inv, **upd}, float(amount or 0))
     except Exception as e:  # never let a receipt failure break payment
         logger.error(f"Payment receipt email failed: {e}")
+
+
+async def _apply_payment(payment_intent_id: str) -> None:
+    # Idempotent: only the first flip pending->paid applies the amount(s)
+    res = await db.payment_transactions.update_one(
+        {"payment_intent_id": payment_intent_id, "payment_status": {"$ne": "paid"}},
+        {"$set": {"status": "completed", "payment_status": "paid", "updated_at": now_iso()}},
+    )
+    if res.modified_count != 1:
+        return
+    rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
+    allocations = rec.get("allocations")
+    if allocations:
+        for a in allocations:
+            await _apply_amount_to_invoice(a["invoice_id"], a["amount"])
+    elif rec.get("invoice_id"):
+        await _apply_amount_to_invoice(rec["invoice_id"], rec.get("amount"))
 
 
 @api_router.post("/payments/create-intent")
@@ -943,6 +954,53 @@ async def create_payment_intent(payload: PayIntentInput, user: dict = Depends(ge
     })
     return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
             "amount": amount, "balance": balance}
+
+
+@api_router.post("/payments/create-intent-all")
+async def create_payment_intent_all(user: dict = Depends(get_current_user)):
+    if user.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="Pay-all is available to portal customers only.")
+    cust = await current_customer(user)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    cid = str(cust["_id"])
+    invs = await db.invoices.find({"customer_id": cid, "voided": {"$ne": True}, "status": {"$ne": "paid"}}).to_list(1000)
+    allocations, total = [], 0.0
+    for inv in invs:
+        bal = round(float(inv.get("total") or 0) - float(inv.get("amount_paid") or 0), 2)
+        if bal > 0:
+            allocations.append({"invoice_id": str(inv["_id"]), "amount": bal})
+            total = round(total + bal, 2)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="You have no outstanding balance.")
+    intent = stripe.PaymentIntent.create(
+        amount=int(round(total * 100)), currency="usd", payment_method_types=["card"],
+        description="Pay all outstanding invoices - DBG Signs, Inc.",
+        metadata={"customer_id": cid, "bulk": "true", "invoices": str(len(allocations))},
+    )
+    await db.payment_transactions.insert_one({
+        "payment_intent_id": intent.id, "invoice_id": None, "allocations": allocations,
+        "amount": total, "currency": "usd", "status": "initiated", "payment_status": "pending",
+        "created_at": now_iso(), "updated_at": now_iso(),
+    })
+    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
+            "amount": total, "count": len(allocations)}
+
+
+@api_router.get("/invoices/{iid}/payments")
+async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
+    await _invoice_for_payment(iid, user)  # enforces customer-owns-invoice
+    out = []
+    recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", -1).to_list(2000)
+    for rec in recs:
+        when = rec.get("updated_at") or rec.get("created_at")
+        if rec.get("invoice_id") == iid:
+            out.append({"amount": rec.get("amount"), "date": when, "method": "Card (Stripe)"})
+        for a in (rec.get("allocations") or []):
+            if a.get("invoice_id") == iid:
+                out.append({"amount": a.get("amount"), "date": when, "method": "Card (Stripe)"})
+    out.sort(key=lambda x: x["date"] or "", reverse=True)
+    return out
 
 
 @api_router.get("/payments/status/{payment_intent_id}")
@@ -1449,6 +1507,22 @@ def _money(n) -> str:
     return "${:,.2f}".format(float(n or 0))
 
 
+def _num(n) -> str:
+    f = float(n or 0)
+    return str(int(f)) if f == int(f) else f"{f:g}"
+
+
+def _dims_label(li: dict) -> str:
+    w = float(li.get("width_in") or 0)
+    h = float(li.get("height_in") or 0)
+    area = li.get("area_sqft", 0)
+    if w and h:
+        q = float(li.get("quantity") or 1)
+        qpart = f' × {_num(q)}' if q and q != 1 else ""
+        return f'{_num(w)}" × {_num(h)}"{qpart} · {area} sqft'
+    return f"{area} sqft"
+
+
 def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
@@ -1466,7 +1540,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         rows += (
             f'<tr style="background:{bg}">'
             f'<td style="padding:10px 14px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}{det_html}</td>'
-            f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{li.get("area_sqft", 0)} sqft</td>'
+            f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{escape(_dims_label(li))}</td>'
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0) * factor)}</td></tr>'
         )
     pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />'
@@ -1493,7 +1567,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
         f'<tr style="background:#0A0A0A;color:#fff">'
         f'<th align="left" style="padding:10px 14px;font-size:11px;letter-spacing:1px">DESCRIPTION</th>'
-        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">SQFT USED</th>'
+        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">SIZE</th>'
         f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">AMOUNT</th></tr>'
         f'{rows}'
         f'<tr><td></td><td align="right" style="padding:10px 14px;color:#6B7280">Subtotal</td>'
@@ -1689,7 +1763,7 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFillColor(ink); c.rect(L, y - 6, R - L, 24, fill=1, stroke=0)
     c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
     c.drawString(L + 10, y + 3, "DESCRIPTION")
-    c.drawRightString(ax - 150, y + 3, "SQFT USED")
+    c.drawRightString(ax - 150, y + 3, "SIZE")
     c.drawRightString(ax - 10, y + 3, "AMOUNT")
     y -= 30
 
@@ -1700,8 +1774,10 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         if i % 2 == 1:
             c.setFillColor(rowbg); c.rect(L, y - (rh - 15), R - L, rh, fill=1, stroke=0)
         c.setFillColor(ink); c.setFont("Helvetica", 10)
-        c.drawString(L + 10, y, str(li.get("description", ""))[:58])
-        c.drawRightString(ax - 150, y, f"{li.get('area_sqft', 0)}")
+        c.drawString(L + 10, y, str(li.get("description", ""))[:40])
+        c.setFont("Helvetica", 9)
+        c.drawRightString(ax - 150, y, _dims_label(li))
+        c.setFont("Helvetica", 10)
         c.drawRightString(ax - 10, y, _money(li.get("line_total", 0) * factor))
         if det:
             c.setFillColor(soft); c.setFont("Helvetica", 8)
@@ -1859,6 +1935,54 @@ async def send_all_past_due(days: int = 45, user: dict = Depends(require_admin))
             res = await _send_past_due(inv)
             (sent if res.get("sent") else skipped).append(res)
     return {"days": days, "sent_count": len(sent), "skipped_count": len(skipped), "sent": sent, "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# Scheduled cron: overdue invoice reminders
+# ---------------------------------------------------------------------------
+WEBHOOK_CRON_SECRET = os.environ.get("WEBHOOK_CRON_SECRET", "")
+
+
+async def _run_overdue_reminders(run_id: str) -> None:
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return
+    await db.cron_runs.insert_one({"run_id": run_id, "job": "overdue-reminders", "at": now_iso()})
+    invoices = await db.invoices.find({"voided": {"$ne": True}, "status": {"$ne": "paid"}}).to_list(5000)
+    now = datetime.now(timezone.utc)
+    sent = 0
+    for inv in invoices:
+        if _days_overdue(inv) <= 0:
+            continue
+        last = inv.get("past_due_sent_at")
+        if last:
+            try:
+                if (now - datetime.fromisoformat(last)).days < 3:
+                    continue
+            except ValueError:
+                pass
+        try:
+            r = await _send_past_due(inv)
+            if r.get("sent"):
+                sent += 1
+        except Exception as e:
+            logger.error(f"Overdue reminder failed for {inv.get('number')}: {e}")
+    logger.info(f"Overdue reminder run {run_id}: {sent} email(s) sent")
+
+
+@api_router.post("/cron/overdue-reminders")
+async def cron_overdue_reminders(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not WEBHOOK_CRON_SECRET or not hmac.compare_digest(token, WEBHOOK_CRON_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or secrets.token_hex(8)
+    asyncio.create_task(_run_overdue_reminders(run_id))
+    return {"status": "accepted", "run_id": run_id}
 
 
 # ---------------------------------------------------------------------------

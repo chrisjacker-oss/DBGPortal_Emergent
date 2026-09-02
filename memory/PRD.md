@@ -10,6 +10,10 @@ Sign shop CRM with estimating, materials database, invoicing, customer reorder p
 - Payments: manual paid/unpaid AND Stripe embedded card ("Pay Now") — auto-marks invoice paid on success.
 
 ## Recent changes (2026-06)
+- Documents (PDF + email) show line-item SIZE as `W" × H" × qty · sqft` (helper _dims_label) instead of just sqft.
+- Pay All Outstanding: portal customers can settle every unpaid invoice in one card charge (POST /api/payments/create-intent-all → one PaymentIntent, allocations applied to each invoice on success). Portal header "Pay all ($X)" button.
+- Payment History: GET /api/invoices/{id}/payments lists card payments (date/amount/method), incl. bulk allocations; staff Invoices page has a history dialog per invoice.
+- Overdue Auto-Reminders: daily cron (/app/.emergent/crons.yml → POST /api/cron/overdue-reminders, Bearer WEBHOOK_CRON_SECRET, 15:00 UTC) emails a friendly past-due nudge for invoices past due date (throttled to once / 3 days via past_due_sent_at, idempotent by run_id). Cron endpoint acks immediately + backgrounds work.
 - Material categories: added built-in "Marketing Materials"; admin-managed custom categories (GET/POST/DELETE /api/material-categories; Materials page "Categories" dialog).
 - Commission: base is now MATERIALS-ONLY at SELLING price × commission_rate (no labor/machine, not at-cost). DocBuilder preview + /api/commissions updated.
 - Settings: default_tax_rate applied/seeded to new estimates/SOs/invoices (editable per doc).

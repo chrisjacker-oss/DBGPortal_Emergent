@@ -8,7 +8,8 @@ import DocBuilder from "@/components/DocBuilder";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import { downloadCsv, downloadFile } from "@/lib/download";
-import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise } from "@phosphor-icons/react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export default function Invoices() {
   const { user } = useAuth();
@@ -18,10 +19,19 @@ export default function Invoices() {
   const [editing, setEditing] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [delInv, setDelInv] = useState(null);
+  const [histInv, setHistInv] = useState(null);
+  const [histRows, setHistRows] = useState([]);
   const [tab, setTab] = useState("active");
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+
+  const openHistory = async (r) => {
+    try {
+      const { data } = await api.get(`/invoices/${r.id}/payments`);
+      setHistRows(data); setHistInv(r);
+    } catch { toast.error("Could not load payment history"); }
+  };
 
   const save = async (payload) => {
     try {
@@ -101,6 +111,9 @@ export default function Invoices() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
                       <Btn variant="ghost" onClick={() => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf")} data-testid={`pdf-invoice-${r.id}`} title="Download PDF"><FilePdf size={16} /></Btn>
+                      {(Number(r.amount_paid || 0) > 0 || r.status === "paid") && (
+                        <Btn variant="ghost" onClick={() => openHistory(r)} data-testid={`history-invoice-${r.id}`} title="Payment history"><ClockCounterClockwise size={16} /></Btn>
+                      )}
                       {!r.voided && <>
                         <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-invoice-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
                         {r.status !== "paid" && (
@@ -131,6 +144,32 @@ export default function Invoices() {
       <DocBuilder open={open} kind="invoice" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
+
+      <Dialog open={!!histInv} onOpenChange={(o) => !o && setHistInv(null)}>
+        <DialogContent className="rounded-none max-w-md" data-testid="payment-history-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Payments · {histInv?.number}</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              {currency(histInv?.amount_paid)} paid of {currency(histInv?.total)}
+            </DialogDescription>
+          </DialogHeader>
+          {histRows.length === 0 ? (
+            <div className="py-6 text-center text-muted-foreground text-sm">No card payments recorded.</div>
+          ) : (
+            <div className="divide-y divide-border" data-testid="payment-history-list">
+              {histRows.map((p, i) => (
+                <div key={i} className="flex items-center justify-between py-3 text-sm">
+                  <div>
+                    <div className="font-mono">{p.date ? new Date(p.date).toLocaleString() : "—"}</div>
+                    <div className="text-xs text-muted-foreground">{p.method}</div>
+                  </div>
+                  <div className="font-mono font-semibold text-[#16A34A]">{currency(p.amount)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

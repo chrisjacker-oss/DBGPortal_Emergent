@@ -13,6 +13,7 @@ export default function Portal() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", notes: "", source_invoice_id: "" });
   const [payInv, setPayInv] = useState(null);
+  const [payAll, setPayAll] = useState(null);
   const [error, setError] = useState(null);
 
   const load = () => api.get("/portal/orders")
@@ -53,7 +54,10 @@ export default function Portal() {
   return (
     <div>
       <PageHeader overline={data.customer?.company || data.customer?.name || "Welcome"} title="My Orders">
-        <Btn onClick={openBlank} data-testid="new-reorder-btn"><ArrowsClockwise size={16} weight="bold" /> Request Reorder</Btn>
+        {outstanding > 0.005 && (
+          <Btn onClick={() => setPayAll({ total: outstanding, count: data.invoices.filter((i) => i.status !== "paid").length })} data-testid="pay-all-btn"><CreditCard size={16} weight="bold" /> Pay all ({currency(outstanding)})</Btn>
+        )}
+        <Btn variant="outline" onClick={openBlank} data-testid="new-reorder-btn"><ArrowsClockwise size={16} weight="bold" /> Request Reorder</Btn>
       </PageHeader>
 
       <div className="p-8 space-y-8">
@@ -135,6 +139,7 @@ export default function Portal() {
         </DialogContent>
       </Dialog>
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
+      <PayNowDialog open={!!payAll} payAll={payAll} onClose={() => setPayAll(null)} onPaid={() => { setPayAll(null); load(); }} />
     </div>
   );
 }

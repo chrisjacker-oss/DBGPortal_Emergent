@@ -41,9 +41,10 @@ function CardForm({ amount, onPaid, onClose }) {
   );
 }
 
-export default function PayNowDialog({ open, invoice, onClose, onPaid }) {
+export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid }) {
   const [step, setStep] = useState("amount");
   const [amount, setAmount] = useState("");
+  const [chargeAmount, setChargeAmount] = useState(0);
   const [clientSecret, setClientSecret] = useState(null);
   const [stripePromise, setStripePromise] = useState(null);
   const [error, setError] = useState(null);
@@ -53,17 +54,40 @@ export default function PayNowDialog({ open, invoice, onClose, onPaid }) {
   const paidToDate = Number(invoice?.amount_paid || 0);
   const balance = Math.round((total - paidToDate) * 100) / 100;
 
+  const beginCard = (data, amt) => {
+    const key = data.publishable_key || process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+    if (!key) { setError("Card payments aren't configured yet. Please contact DBG Signs."); return false; }
+    setStripePromise(loadStripe(key));
+    setClientSecret(data.client_secret);
+    setChargeAmount(amt);
+    setStep("card");
+    return true;
+  };
+
+  const startAll = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/payments/create-intent-all");
+      beginCard(data, data.amount);
+    } catch (e) {
+      setError(e.response?.data?.detail || "Unable to start payment. Please try again.");
+    }
+    setBusy(false);
+  };
+
   useEffect(() => {
-    if (open && invoice) {
-      setStep("amount");
-      setAmount(String(balance.toFixed(2)));
-      setClientSecret(null);
-      setStripePromise(null);
-      setError(null);
-      setBusy(false);
+    if (open) {
+      setClientSecret(null); setStripePromise(null); setError(null); setBusy(false);
+      if (payAll) {
+        setStep("loading");
+        startAll();
+      } else {
+        setStep("amount");
+        setAmount(String(balance.toFixed(2)));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, invoice]);
+  }, [open, invoice, payAll]);
 
   const startPayment = async () => {
     const amt = Number(amount);
@@ -72,28 +96,29 @@ export default function PayNowDialog({ open, invoice, onClose, onPaid }) {
     setBusy(true);
     try {
       const { data } = await api.post("/payments/create-intent", { invoice_id: invoice.id, amount: amt });
-      const key = data.publishable_key || process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
-      if (!key) { setError("Card payments aren't configured yet. Please contact DBG Signs."); setBusy(false); return; }
-      setStripePromise(loadStripe(key));
-      setClientSecret(data.client_secret);
-      setStep("card");
+      beginCard(data, amt);
     } catch (e) {
       setError(e.response?.data?.detail || "Unable to start payment. Please try again.");
     }
     setBusy(false);
   };
 
+  const titleText = payAll ? "Pay all outstanding" : `Pay Invoice ${invoice?.number || ""}`;
+  const descText = payAll
+    ? `${payAll.count || ""} invoice${payAll.count === 1 ? "" : "s"} · ${currency(payAll.total)}`
+    : `Balance due ${currency(balance)}${paidToDate > 0 ? ` · ${currency(paidToDate)} already paid` : ""}`;
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="rounded-none max-w-md" data-testid="pay-dialog">
         <DialogHeader>
-          <DialogTitle className="font-display">Pay Invoice {invoice?.number}</DialogTitle>
-          <DialogDescription className="font-mono text-xs">
-            Balance due {currency(balance)}{paidToDate > 0 ? ` · ${currency(paidToDate)} already paid` : ""}
-          </DialogDescription>
+          <DialogTitle className="font-display">{titleText}</DialogTitle>
+          <DialogDescription className="font-mono text-xs">{descText}</DialogDescription>
         </DialogHeader>
 
         {error && <div className="text-sm text-destructive py-4" data-testid="pay-error">{error}</div>}
+
+        {!error && step === "loading" && <div className="py-8 text-center text-muted-foreground text-sm">Loading secure form…</div>}
 
         {!error && step === "amount" && (
           <div className="space-y-4">
@@ -110,7 +135,7 @@ export default function PayNowDialog({ open, invoice, onClose, onPaid }) {
 
         {!error && step === "card" && clientSecret && stripePromise && (
           <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "flat" } }}>
-            <CardForm amount={Number(amount)} onPaid={onPaid} onClose={onClose} />
+            <CardForm amount={chargeAmount} onPaid={onPaid} onClose={onClose} />
           </Elements>
         )}
       </DialogContent>
