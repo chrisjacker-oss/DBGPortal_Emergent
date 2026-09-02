@@ -1065,7 +1065,25 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
 @api_router.get("/invoices")
 async def list_invoices(user: dict = Depends(require_staff)):
     docs = await db.invoices.find().sort("created_at", -1).to_list(1000)
-    return [await enrich_customer(clean(d)) for d in docs]
+    out = []
+    for d in docs:
+        row = await enrich_customer(clean(d))
+        if row.get("status") == "paid":
+            rec = await db.payment_transactions.find_one(
+                {"payment_status": "paid", "$or": [{"invoice_id": row["id"]}, {"allocations.invoice_id": row["id"]}]},
+                sort=[("updated_at", -1)])
+            if rec:
+                if not row.get("paid_at"):
+                    row["paid_at"] = rec.get("updated_at") or rec.get("created_at")
+                row["payment_notes"] = rec.get("notes")
+                method = rec.get("method") or "Card (Stripe)"
+                if rec.get("reference"):
+                    method = f"{method} #{rec['reference']}"
+                row["payment_method"] = method
+            else:
+                row["payment_method"] = row.get("paid_via") or row.get("last_payment_method")
+        out.append(row)
+    return out
 
 
 @api_router.post("/invoices")

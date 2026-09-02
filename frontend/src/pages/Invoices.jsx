@@ -148,6 +148,7 @@ export default function Invoices() {
   };
 
   const visible = rows.filter((r) => (tab === "voided" ? r.voided : tab === "paid" ? (!r.voided && r.status === "paid") : (!r.voided && r.status !== "paid")));
+  const isPaid = tab === "paid";
 
   return (
     <div>
@@ -171,9 +172,11 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
-                <th className="px-6 py-3 font-mono">Due</th>
+                <th className="px-6 py-3 font-mono">{isPaid ? "Paid Date" : "Due"}</th>
                 <th className="px-6 py-3 font-mono">Status</th>
+                {isPaid && <th className="px-6 py-3 font-mono">Payment Type</th>}
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                {isPaid && <th className="px-6 py-3 font-mono">Notes</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
               </tr>
@@ -186,14 +189,16 @@ export default function Invoices() {
                   </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground">{r.due_date || "—"}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                  {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
                     {currency(r.total)}
                     {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (
                       <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
                     )}
                   </td>
+                  {isPaid && <td className="px-6 py-3 text-muted-foreground text-xs italic max-w-[200px]" data-testid={`payment-notes-${r.id}`}>{r.payment_notes ? `“${r.payment_notes}”` : "—"}</td>}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
@@ -222,7 +227,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={isPaid ? 11 : 8} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>
