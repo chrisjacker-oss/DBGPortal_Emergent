@@ -1,40 +1,42 @@
 # DBG Signs, Inc. — Sign Shop CRM (PRD)
 
 ## Original Problem Statement
-Build a sign shop CRM with estimating, materials database, invoicing, customer reorder portal, accounts payable and receivable, and exporting to Xero financial.
+Sign shop CRM with estimating, materials database, invoicing, customer reorder portal, accounts payable/receivable, and Xero export.
 
-## User Choices
-- Auth: Email + password (JWT via httpOnly cookies)
-- Roles: admin, staff, customer (distinct permissions)
-- Xero: export invoices/bills as Xero-compatible CSV files
-- Payments: manual paid/unpaid tracking (no online payments yet)
-- Brand: DBG Signs, Inc. — tagline "Image Is Everything"
+## Users / Choices
+- Auth: email + password (JWT httpOnly cookies). Separate logins: staff console `/login` (admin + salesman), customer portal `/portal-login`.
+- Roles: admin (full control), salesman (limited: estimates, sales orders, invoices, customers, own commissions), customer (portal only).
+- Xero: CSV export (invoices incl. negative tier-discount row, bills).
+- Payments: manual paid/unpaid (Stripe requested, NOT yet integrated).
 
-## Architecture
-- Backend: FastAPI + MongoDB (motor), all routes under /api
-- Frontend: React (CRA/craco) + Tailwind, Swiss-brutalist theme, Phosphor icons
-- Auth: bcrypt hashing, httpOnly cookies, require_staff gate, brute-force lockout, admin seed on startup
+## Accounts (see /app/memory/test_credentials.md)
+- admin: sales@dbgsigns.com / 10297099 ; chrisjacker@gmail.com / SignShop2026!
+- salesman: sam@dbgsigns.com / Sales2026!
 
-## Personas
-- Admin/Owner: full financial + CRM control
-- Staff: estimating, invoicing, materials, customers, AP/AR, reorders
-- Customer: portal only — order history + reorder requests
+## Implemented (through 2026-09)
+- Estimate → Sales Order → Invoice pipeline (approve creates SO, convert creates INV; commission + tier discount carried through).
+- Materials DB costing: cost/sqft = buying_cost ÷ conversion_factor; price/sqft = cost/sqft × (1+markup%). Staff/admin only.
+- Area-based line items (W×H×qty). Shop labor $65/hr @150 sqft/hr and machine $35/hr @150 sqft/hr auto-derived from area; optional extra labor hours. Global Shop Settings.
+- Sales commission per estimate (rate defaults from salesman profile; base = pre-tax cost subtotal). Commissions report (admin: by-salesman; salesman: own).
+- Customer tiers: T1 35% / T2 25% / T3 15% discount applied to subtotal. Customer fields: title, net_terms (COD/50/50/Net 10/Net 15), portal_enabled checkbox.
+- Customer portal (reorders + order history) with portal_enabled gating.
+- Accounts Receivable + Payable dashboards; past-due (>45d) notices email a PDF invoice link with read receipt.
+- Email (Emergent Resend) send of estimates/SOs/invoices + tracking-pixel read receipts.
+- PDF generation (reportlab) for estimates/SOs/invoices + public tokenized PDF links.
+- Site-wide search (estimate/SO/invoice #, customer, material, line-item description).
+- Xero CSV export; role-based nav; DBG Signs branding + Dallas skyline login.
+- Testing: iteration 5 backend 100% (79 pytest), frontend 92%.
 
-## Implemented (2026-09-01)
-- Email/password auth with roles; admin seeded (chrisjacker@gmail.com)
-- Customers CRM (CRUD)
-- Materials database (CRUD, cost/price/margin, staff-only)
-- Estimating builder with line items, material autofill, tax, totals; convert-to-invoice
-- Invoicing (CRUD, mark paid, line items)
-- Accounts Payable (bills CRUD, mark paid, summary)
-- Accounts Receivable (outstanding/overdue/collected, receive payment)
-- Customer reorder portal + staff reorder queue with status advance
-- Xero-compatible CSV export for invoices and bills
-- Dashboard KPIs
-- Rebranded to DBG Signs, Inc. with Dallas skyline login
-- Tested: backend 95%, frontend 100%. Fixed: invalid-ID 404 guard, material cost restricted to staff.
+## KNOWN OPEN ISSUES (not yet fixed)
+- HIGH: Portal.jsx has no error handling for the 403 portal-disabled gate (customer sees blank page / CRA overlay).
+- MEDIUM: Salesman dashboard shows dead "Record Bill" / "Add Material" quick actions; dashboard "payable" figure not gated to admin.
+- LOW: 1-cent FE/BE rounding mismatch in DocBuilder preview; add DialogDescription for a11y.
+
+## PENDING REQUESTS (requested, NOT implemented this session)
+- Remove $/sqft column from customer-facing estimates/sales orders/invoices.
+- Hide the tier discount on customer-facing documents; show only material cost, subtotal, and sqft used.
+- Modern/professional redesign of the estimate/SO/invoice documents sent to customers (PDF + email).
+- Stripe integration (online invoice payment). Playbook not yet pulled; use env Stripe test key, emergentintegrations.
 
 ## Backlog
-- P1: atomic document numbering (avoid reused EST/INV/BILL numbers after delete)
-- P1: lockout keyed on X-Forwarded-For / per-email
-- P2: logout should clear cookies without valid token; partial-payment amounts; PDF invoices; live Xero API sync; pagination
+- Split server.py into routers; add search indexes; stamp net_terms onto docs at creation (historical PDF accuracy); require due_date for dunning.

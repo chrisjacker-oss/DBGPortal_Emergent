@@ -1,0 +1,94 @@
+{
+  "summary": "Iteration 2 full-stack test of the new sign-shop costing/pipeline features. Backend: 34 pytest cases across auth+playbook checks, shop settings, material derived costing, area-based line-item math, estimate->approve->sales order->invoice pipeline, dashboard, and Xero CSV export - 34/34 feature tests pass. A dedicated missing-document suite added this round surfaces 6 real failures (500s instead of 404s and unvalidated status values). Frontend (Playwright, admin login on public URL): Settings page persists rates, Materials table shows all costing columns with correct derived values, material dialog live Cost/sqft + Price/sqft preview correct (240/150 @50% -> 1.60/2.40), estimate builder auto-fills price/sqft from material and computes the spec example live (area 16 sqft, line 163.40, tax 13.48, total 176.88), Approve creates SO-0002 with the same total, SO advances open->in_production->fulfilled, Invoice conversion creates INV-0003, Xero CSV downloads (quantity 1, UnitAmount=line_total=163.40), deleting the SO reverts the estimate to 'sent'. One HIGH severity layout defect found: the Estimate/Invoice DocBuilder dialog renders ~2021px of content inside a ~1022px dialog, so Title, Machine-hours, Line total, the Subtotal/Tax/Total panel and the Save/Cancel footer are all off-screen and unreachable for a real user (Playwright only reached them via programmatic auto-scroll).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PUT /api/materials/{id}, PUT /api/estimates/{id}, PATCH /api/invoices/{id}/status, PATCH /api/sales-orders/{id}/status",
+        "issue": "Return HTTP 500 for a valid-but-unknown ObjectId. update_one matches nothing, then material_out(None)/enrich_customer(None) dereference a None document (enrich_customer does doc['customer_id'] on None; material_out calls clean(None).get). Should be 404. Verified with id 000000000000000000000000 on the public URL.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "PATCH /api/sales-orders/{id}/status",
+        "issue": "Arbitrary status strings are accepted and persisted (status=TEST_bogus_status returned 200 and was saved). Same lack of validation on /invoices, /bills, /reorders status PATCH endpoints - use an Enum/Literal query model."
+      },
+      {
+        "endpoint": "POST /api/estimates, /api/invoices, /api/sales-orders (next_number)",
+        "issue": "Document numbers are derived from collection count_documents(), so numbers are reused/duplicated after any delete (e.g. delete INV-0001 while INV-0002 exists -> next invoice is also INV-0002). Use a counters collection with $inc instead."
+      },
+      {
+        "endpoint": "GET/PUT /api/settings",
+        "issue": "Guarded by require_staff, so staff (not only admin) can change global shop/machine rates that drive all pricing. Confirm this is intended; otherwise add an admin-only guard."
+      },
+      {
+        "endpoint": "PUT /api/estimates/{id}",
+        "issue": "Full-document $set overwrites the doc, so an approved estimate edited afterwards keeps sales_order_id but status is reset to whatever the payload carries (payload default 'draft'), silently desyncing estimate status from its existing sales order."
+      },
+      {
+        "endpoint": "DELETE /api/estimates|invoices|customers|materials|sales-orders/{id}",
+        "issue": "DELETE with a valid-but-unknown id returns 200 {'message':'deleted'} (deleted_count not checked) instead of 404 - verified."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "DocBuilder (Estimate & Invoice builder dialog)",
+        "issue": "Dialog content overflows horizontally and is clipped: measured dialog clientWidth 1022 vs scrollWidth 2021 at a 1920x1080 viewport (766 vs 2021 at 768px). doc-title (left 1466), item-machine-0 (2133), item-line-0 (2369) and save-doc-btn (2381) all sit outside the viewport with no usable horizontal scrollbar, so a real user cannot see line totals / Subtotal-Tax-Total or click Save. Root cause: shadcn DialogContent is a CSS grid and the inner 'border border-border overflow-x-auto' wrapper has default min-width:auto, so the min-w-[860px] line-item grid stretches the dialog instead of scrolling (wrapper scrollWidth == clientWidth == 1971, i.e. overflow-x never engages). Fix: add min-w-0 (and w-full) to the overflow-x-auto wrapper and/or overflow-hidden on DialogContent.",
+        "selector": "[role=\"dialog\"] .overflow-x-auto, [data-testid=\"save-doc-btn\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "SalesOrders.advance()",
+        "issue": "PATCH status call has no try/catch, so a failed request produces an unhandled promise rejection with no user-facing error toast (convert() and remove() handle it correctly).",
+        "selector": "[data-testid^=\"advance-so-\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "New/Edit Estimate & Invoice dialog",
+        "issues": [
+          "Line-item grid is wider than the dialog; the right-hand columns (Line total) and the totals summary card are unreachable at 1920px and worse on tablet/mobile",
+          "Footer Cancel/Save buttons are pushed outside the visible dialog area"
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "HIGH: Fix DocBuilder dialog horizontal overflow (add min-w-0 to the overflow-x-auto line-item wrapper / overflow-hidden on DialogContent) so Line total, totals panel and Save button are visible without programmatic scrolling; re-verify at 1920, 768 and 390 widths.",
+    "HIGH: Return 404 (not 500) when PUT /materials/{id}, PUT /estimates/{id}, PATCH /invoices/{id}/status and PATCH /sales-orders/{id}/status target a valid-but-nonexistent ObjectId - guard the find_one result before material_out()/enrich_customer().",
+    "Replace count_documents()-based next_number with an atomic counters collection to prevent duplicate EST/SO/INV numbers after deletions.",
+    "Validate sales-order/invoice/bill/reorder status values against an enum and return 404 when the target document does not exist (status PATCH currently returns 200/null).",
+    "Return 404 from DELETE endpoints when deleted_count == 0.",
+    "Guard PUT /api/estimates so editing an already-approved estimate cannot silently reset its status while a sales order still references it.",
+    "Add try/catch + error toast to SalesOrders.advance()."
+  ],
+  "critical_code_review_comments": [
+    "server.py compute_line/compute_totals math matches the spec exactly (area, material, labor, machine, tax) and rates are read from persisted settings - verified numerically; no changes needed.",
+    "material_out() guards division by zero conversion_factor (returns 0.0) - verified.",
+    "approve_estimate and convert_sales_order correctly use sales_order_id / invoice_id sentinels for the 400-on-duplicate path, and delete_sales_order reverts the estimate to 'sent' with $unset - verified end to end.",
+    "Xero export falls back to li.line_total then unit_price, so legacy line items still export; quantity hardcoded to 1 as specified - verified in CSV bytes.",
+    "server.py is 785 lines and mixes auth, CRM domains, exports and portal - split into routers (auth, materials, sales, exports) before it grows further.",
+    "app.on_event('startup'/'shutdown') is deprecated in current FastAPI; migrate to a lifespan handler."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "85% (34/40 pytest cases; 6 failures are error-handling defects: 500 instead of 404 on unknown ids, unvalidated status, DELETE 200 on unknown id)",
+    "frontend": "92% (all functional flows pass; 1 HIGH layout defect in the builder dialog)"
+  },
+  "seed_data_creation": "Created and removed transient TEST_ data only: TEST_Vinyl/TEST_ZeroConv materials, TEST_Math/TEST_SqftDirect/TEST_Rates/TEST_Pipeline estimates, TEST_Inv invoice, and a UI-created TEST_UI_Estimate -> SO-0002 -> INV-0003 chain. All deleted; DB verified free of TEST_ records and settings restored to 75/25/40.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "chrisjacker@gmail.com / SignShop2026! (admin) from /app/memory/test_credentials.md - valid, login works, bcrypt hash is $2b$, httpOnly access+refresh cookies set, app-level CORS returns allow-credentials:true with explicit origin, lockout returns 429 on the 6th failed attempt.",
+  "context_for_next_testing_agent": "backend_test.py is pytest-based and idempotent; pytest.ini runs xdist with --dist loadscope, so tests that mutate the single global shop settings document take the 'settings_lock' filelock fixture - keep using it for any new rate-dependent test. Note the CORS preflight assertion must target http://localhost:8001 because the public URL's edge proxy answers OPTIONS itself (returns Allow-Origin '*' and no allow-credentials). The brute-force test clears db.login_attempts (identifier is lowercased 'ip:email') before and after the loop. Not retested this round: customer portal, reorders, bills/AP, invoice status transitions, Xero bills export (all covered in iteration 1). Outstanding: DocBuilder dialog horizontal clipping.",
+  "rca_of_the_issue": "DocBuilder clipping: shadcn DialogContent is display:grid; grid items default to min-width:auto, so the wrapper div carrying overflow-x-auto is sized to its content instead of its container. The line-item rows declare min-w-[860px] across ten fractional columns, expanding the wrapper to ~1971px and the dialog to ~2021px, which exceeds max-w-5xl (1024px). Because the wrapper's scrollWidth equals its clientWidth, no scrollbar appears and the overflowing columns plus the DialogFooter are simply painted outside the viewport. Reproduce: log in as admin -> /estimates -> New Estimate -> at 1920x1080 the Line column, totals card and Save button are off-screen (getBoundingClientRect().left ~2370-2450). Mitigation: add min-w-0 w-full to the overflow-x-auto wrapper (and overflow-hidden on DialogContent), keeping min-w-[860px] on an inner scrollable child only."
+}

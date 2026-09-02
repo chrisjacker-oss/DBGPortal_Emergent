@@ -1,4 +1,18 @@
 import { currency } from "@/lib/api";
+import { PaperPlaneTilt, CheckCircle } from "@phosphor-icons/react";
+
+export function ReceiptBadge({ doc }) {
+  if (!doc?.email_sent_at) return <span className="text-xs text-muted-foreground" data-testid="receipt-none">—</span>;
+  const opened = doc.email_opened_at;
+  const when = new Date(opened || doc.email_sent_at).toLocaleString();
+  return (
+    <span data-testid="receipt-badge" title={opened ? `Opened ${when}` : `Sent ${when}`}
+      className={`inline-flex items-center gap-1 text-xs font-mono ${opened ? "text-[#16A34A]" : "text-[#B45309]"}`}>
+      {opened ? <CheckCircle size={14} weight="bold" /> : <PaperPlaneTilt size={14} weight="bold" />}
+      {opened ? "Read" : "Sent"}
+    </span>
+  );
+}
 
 export function StatCard({ label, value, accent, testid, sub }) {
   return (

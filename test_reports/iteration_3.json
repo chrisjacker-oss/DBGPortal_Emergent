@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 3 full-stack test of DBG Signs CRM: separate staff/customer logins, admin vs salesman RBAC (frontend nav + route guards + backend 403s), commission on estimates (auto rate for salesman, admin picker), Commissions report role-filtering, Team CRUD, estimate->SO->invoice pipeline with commission carry-through, 404/400 error handling, Xero CSV export, portal self-registration. Backend: 30/30 pytest cases pass. Frontend: all requested flows work EXCEPT the DocBuilder horizontal-overflow fix (still broken) and a wrong Role label on the Team page.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force lockout is keyed on request.client.host, which behind the k8s ingress alternates between two proxy IPs (10.231.129.137/.138). Counts split per IP, so lockout needs ~9-10 failures per email instead of 5 (observed codes: 8x401 then 429). Key the limiter on email (and/or X-Forwarded-For) instead of the proxy IP."},
+      {"endpoint": "next_number() / estimate numbering", "issue": "Counter seeding uses collection.count_documents() as the base, which can regenerate an already-used number after deletions. DB currently held two distinct estimates both numbered EST-0004 (legacy artifact, visible in Estimates + Commissions tables). Seed from max existing number instead of the doc count."},
+      {"endpoint": "POST /api/invoices", "issue": "Directly created invoices never get commission_rate/commission_amount/salesman (apply_commission is only called on estimates), so commissions on invoice-only sales are silently 0. Confirm this is intended."},
+      {"endpoint": "GET /api/estimates, /api/sales-orders, /api/invoices", "issue": "A salesman sees ALL staff records, not just their own (only /api/commissions is role-filtered). Flag if 'own records' scoping was intended."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DocBuilder (New/Edit Estimate dialog)", "issue": "HIGH regression NOT fixed: at 1920x1080 the line-item grid still overflows. Measured: grid scrollWidth=1983 vs clientWidth=972; item-line-0 sits at x=2393 (dialog right edge = 1447), so the Line-total value and the row delete (trash) button are completely unreachable without internal horizontal scrolling. The $/sqft, Labor h and Mach h inputs are also clipped, and because the header row uses min-w-[860px] while the input rows expand to ~1983px, the column headers no longer line up with their inputs. Root cause: the number inputs/selects have no min-w-0/width constraint so the fr columns blow past the min-width. Title/Subtotal/Total/commission block/Save+Cancel ARE visible.", "selector": "[role=dialog] .overflow-x-auto, [data-testid='item-line-0'], [data-testid='item-remove-0']", "priority": "HIGH"},
+      {"component": "Team.jsx role column", "issue": "Role is rendered with StatusBadge mapped to unrelated status words: admin shows 'APPROVED' and salesman shows 'PROCESSING' instead of 'ADMIN'/'SALESMAN' (Team.jsx line 63).", "selector": "[data-testid='users-table'] tr td:nth-child(3)", "priority": "HIGH"},
+      {"component": "Navigation logout (customer)", "issue": "Signing out from the customer portal lands on /login (staff console) instead of /portal-login — the Protected redirect wins the race against navigate('/portal-login').", "selector": "[data-testid='logout-btn']", "priority": "MEDIUM"},
+      {"component": "DocBuilder salesman <select>", "issue": "React console error 'In HTML, <span> cannot be a child of <option> ... hydration error' every time the admin estimate dialog opens (dynamic option text wrapper). Noise only, but pollutes console.", "selector": "[data-testid='doc-salesman']", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Sales order -> Invoice convert", "issue": "Flaky on first interaction: the very first click on the convert button right after page load fired no network request (no POST reached the backend, no toast); a retry on a freshly loaded page worked and created INV-0004. Possible pre-hydration click loss — worth a loading/disabled state on row actions.", "affected_selectors": ["[data-testid^='invoice-so-']"]}
+    ],
+    "design_issues": [
+      {"screen": "New Estimate dialog", "issues": ["Line-item table columns clipped/misaligned (see HIGH bug above)", "Header row min-width (860px) differs from row min-width so headers do not sit above their inputs"]},
+      {"screen": "Shop Settings", "issues": ["Shop/machine rates had drifted to 35/35 in the DB (docs say 75/25); QA reset them to 75/25 via the UI so the documented commission example (subtotal 163.40 / commission 16.34) reproduces"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/backend/tests/cleanup_test_data.py", "/app/test_reports/pytest/pytest_results_it3.xml"],
+  "action_items": [
+    "Fix DocBuilder line-item grid overflow properly: add min-w-0 / explicit small widths (e.g. w-full min-w-0) to the Cell inputs and material select, and use the same min-width on the header and item rows so Line total + delete button are visible at 1920px",
+    "Team page: render the actual role text (ADMIN / SALESMAN) instead of StatusBadge('approved'/'processing')",
+    "Key login rate limiting on email (or X-Forwarded-For) so 5 failed attempts really lock out behind the ingress",
+    "Seed number counters from the max existing document number (or use a unique index) to avoid duplicate EST numbers; clean up the existing duplicate EST-0004",
+    "Customer logout should land on /portal-login, not /login",
+    "Decide whether invoices created directly should carry commission fields, and whether salesmen should only see their own estimates/SOs/invoices"
+  ],
+  "critical_code_review_comments": [
+    "next_number(): base = count_documents() is not collision-safe after deletes; use max(number) or a unique index on `number`.",
+    "apply_commission() is only wired into estimate create/update — invoice create bypasses commission entirely.",
+    "login(): identifier = f'{request.client.host}:{email}' — behind the ingress client.host is a rotating proxy IP, weakening the lockout.",
+    "DocBuilder.jsx: grid uses fr columns with unconstrained number inputs; header (min-w-[860px]) and rows (~1983px actual) diverge, causing both clipping and header misalignment."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py", "/app/backend/tests/cleanup_test_data.py"],
+  "success_rate": {"backend": "100% (30/30 pytest)", "frontend": "85% (2 defects: DocBuilder overflow HIGH, Team role label HIGH; 1 minor logout redirect, 1 flaky convert click)"},
+  "seed_data_creation": "All test data removed: TEST_ estimates/SO/invoice, TEST_QA staff + portal users and their customer records, login_attempts rows. Shop settings restored to 75/25/40. Remaining users are only the 4 documented accounts.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Used /app/memory/test_credentials.md: admin sales@dbgsigns.com/10297099, salesman sam@dbgsigns.com/Sales2026! — both valid. Note /app/auth_testing.md does not exist (playbook instructions referenced it).",
+  "context_for_next_testing_agent": "Backend suite is /app/backend/tests/backend_test.py (30 tests, pytest.ini runs -n 2 loadscope) covering auth, RBAC admin/salesman, commissions, users CRUD, 404/400 error handling, materials costing, dashboard, xero export, numbering, brute-force lockout (asserts 429 within 14 attempts because of the proxy-IP keying bug). Cleanup helper: python /app/backend/tests/cleanup_test_data.py (also resets settings to 75/25). Verified via UI: staff/portal login pages + cross links, salesman limited nav + route guards on /materials /payables /settings /team /reorders, salesman estimate auto-commission (10%), admin salesman picker + live commission preview ($163.40 x 10% = $16.34), Commissions page for both roles, Team add/edit/delete + new salesman login, estimate->approve->SO->convert->invoice, Xero CSV download (testid is export-xero-invoices-btn, not export-xero-btn). Estimates 'New Estimate' testid is add-estimate-btn. Re-verify DocBuilder overflow with: grid scrollWidth vs clientWidth and bounding box of [data-testid='item-line-0'].",
+  "rca_of_the_issue": "DocBuilder overflow: DialogContent now has overflow-x-hidden and the grid wrapper has overflow-x-auto, but the line-item inputs (type=number Cells, material select) have no min-w-0/width cap, so the 10 fr-based columns expand to ~1983px inside a 972px scroll container — the Line total and delete button are pushed ~950px out of view and the 860px-min header row no longer aligns with the rows. Lockout: rate-limit key includes the ingress pod IP, which alternates per request, splitting the failure counter across two documents."
+}

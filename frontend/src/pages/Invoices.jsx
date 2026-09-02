@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
-import { downloadCsv } from "@/lib/download";
-import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple } from "@phosphor-icons/react";
+import { downloadCsv, downloadFile } from "@/lib/download";
+import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf } from "@phosphor-icons/react";
 
 export default function Invoices() {
   const [rows, setRows] = useState([]);
@@ -32,6 +32,10 @@ export default function Invoices() {
     if (!window.confirm("Delete invoice?")) return;
     await api.delete(`/invoices/${id}`); toast.success("Deleted"); load();
   };
+  const sendEmail = async (id) => {
+    try { const { data } = await api.post(`/invoices/${id}/send`); toast.success(`Emailed to ${data.to}`); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
+  };
 
   return (
     <div>
@@ -53,6 +57,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">Due</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
               </tr>
             </thead>
@@ -65,8 +70,11 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.due_date || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf")} data-testid={`pdf-invoice-${r.id}`} title="Download PDF"><FilePdf size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-invoice-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
                       {r.status !== "paid" && (
                         <Btn variant="ghost" onClick={() => markPaid(r.id)} data-testid={`mark-paid-${r.id}`} title="Mark paid"><CheckCircle size={16} /></Btn>
                       )}
@@ -76,7 +84,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">No invoices yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">No invoices yet.</td></tr>}
             </tbody>
           </table>
         </div>

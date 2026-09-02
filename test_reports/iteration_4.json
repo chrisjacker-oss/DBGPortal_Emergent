@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 4 full-stack test of DBG Signs CRM. Backend: 45 pytest tests (42 pass, 3 skipped only because the Emergent/Resend email quota was exhausted by repeated sends during this run - the same tests passed with HTTP 200/202 earlier in the session). Verified throughput costing math (machine_hours=area/machine_sqft_per_hr, labor_hours=area/shop_sqft_per_hr + extra), extra-hours labor add-on, settings defaults 65/150/35/150/40 + PUT persistence, commission on pre-tax cost subtotal, sequential unique EST numbering, email send for estimate/SO/invoice (real 202 from Resend to delivered@resend.dev), tracking-pixel read receipt (sent -> opened, first-open timestamp immutable), RBAC (salesman 403 on settings PUT/bills/users/materials POST), pipeline EST->SO->INV with commission carry-through, Xero CSV export, email-keyed login lockout (429). Frontend: verified Settings page, DocBuilder (HIGH-1 overflow FIXED), cost breakdown + commission block, Email column + send buttons + toasts on Estimates/SO/Invoices, receipt badge Sent -> Read, Team role text (HIGH-2 FIXED), salesman nav restrictions. One HIGH frontend bug found: Settings save drops the two sqft/hr throughput fields.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/{estimates|sales-orders|invoices}/{id}/send", "issue": "Upstream email provider 429 (email rate limit exceeded) is mapped to HTTP 502 'Failed to send email'. Because it is a 502, the Kubernetes/Cloudflare edge replaces the JSON body with a Cloudflare HTML error page, so the UI toast shows raw HTML text. Map upstream 429 -> 429 (or 503) with detail like 'Email rate limit reached, try again shortly'."},
+      {"endpoint": "compute_line", "issue": "Backend rounds hours to 4 decimals before multiplying by rate (16/150 -> 0.1067 * 65 = $6.94) while the frontend multiplies unrounded (6.9333 -> $6.93). 1-cent labor/machine display mismatch between DocBuilder preview and saved document."},
+      {"endpoint": "GET /api/estimates", "issue": "Existing demo estimate EST-0001 renders customer_name 'Unknown' - its customer_id points at a deleted customer (orphan reference). Consider guarding/cleaning demo data."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Settings.jsx save()", "issue": "HIGH: PUT /api/settings payload only includes shop_rate_per_hr, machine_rate_per_hr, default_markup. shop_sqft_per_hr and machine_sqft_per_hr are omitted, so Pydantic defaults (150/150) overwrite whatever the user typed. Reproduced: set shop throughput 200 and machine throughput 250, Save, reload -> both back to 150 while the toast says 'Shop settings saved'.", "selector": "[data-testid=\"set-shop-sqft\"], [data-testid=\"set-machine-sqft\"], [data-testid=\"save-settings-btn\"]", "priority": "HIGH"},
+      {"component": "Estimates/SalesOrders/Invoices sendEmail catch", "issue": "On a 502 from the send endpoint the error toast displayed the raw Cloudflare HTML text ('The origin web server returned an invalid or incomplete response to Cloudflare...'). Guard the toast to a friendly message when the error body is not JSON.", "selector": "[data-testid=\"send-invoice-{id}\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "New Estimate dialog (1920px)", "issues": ["HIGH-1 regression is FIXED: dialog scrollWidth == clientWidth (1022px), header columns align with rows, Line-total ($170.67) and row trash button both visible inside the dialog bounds"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iteration4.xml"
+  ],
+  "action_items": [
+    "HIGH: Settings.jsx save() must send shop_sqft_per_hr and machine_sqft_per_hr in the PUT /api/settings payload (currently silently reset to 150).",
+    "Map upstream email 429 to a 4xx/503 with a JSON detail instead of 502 so the edge does not replace the body with a Cloudflare HTML page; show a friendly 'email rate limit' toast.",
+    "Align rounding between DocBuilder preview and backend compute_line (round the cost, not the hours) to avoid 1-cent differences.",
+    "Clean up / guard the orphan customer_id on demo estimate EST-0001 ('Unknown' customer)."
+  ],
+  "critical_code_review_comments": [
+    "Settings.jsx: build the PUT body from the whole form (or a typed helper) instead of hand-listing 3 of 5 fields - the omission bug is caused by Pydantic defaults silently filling the gaps. Consider making SettingsInput fields required (no defaults) so a partial payload 422s instead of resetting rates.",
+    "send_email(): distinguish provider rate limiting (429) from generic upstream failures; log the doc id and recipient for traceability.",
+    "compute_line(): keep hours at full precision internally and round only the currency outputs, so FE/BE previews match exactly.",
+    "DocBuilder.jsx is a single 220-line component doing costing math duplicated from the backend - extract the throughput/breakdown math into a shared util so future rate changes only need one edit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4.py (new)",
+    "/app/backend/tests/backend_test.py (updated 2 stale iteration-3 labor/commission expectations to the new throughput model)"
+  ],
+  "success_rate": {"backend": "100% (42/42 executed, 3 skipped on external email quota)", "frontend": "92% (all flows pass except Settings throughput persistence)"},
+  "seed_data_creation": "Created and then deleted TEST_ customers (incl. one with delivered@resend.dev), TEST_UI Throughput Job estimate EST-0045 -> SO-0006 -> INV-0007, plus TEST_ estimates from pytest. All TEST_ data deleted; shop settings restored to 65/150/35/150/40 (verified via GET).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Admin sales@dbgsigns.com/10297099, Salesman sam@dbgsigns.com/Sales2026! (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Backend suites: /app/backend/tests/backend_test.py (iterations 1-3 regression, updated for throughput math) and /app/backend/tests/test_iteration4.py (settings, throughput costing, commission, email+read receipt, numbering). Run: pytest /app/backend/tests -q (pytest.ini already sets -n 2 --dist loadscope; all iteration-4 tests live in one class because they mutate global settings). IMPORTANT: the Emergent/Resend email quota is easily exhausted - after ~9 sends every /send returns 502 (upstream 429). _assert_sent() in test_iteration4.py skips those tests in that condition; wait before re-running email tests and only use delivered@resend.dev. To simulate an open: read email_token from the list response and GET /api/track/open/{token}. Estimate numbering is now at EST-0045+ (my tests consumed numbers, no duplicates).",
+  "rca_of_the_issue": "Settings throughput bug: Settings.jsx save() constructs the PUT body manually with only 3 of the 5 fields; SettingsInput declares defaults (shop_sqft_per_hr=150, machine_sqft_per_hr=150), so the missing keys are filled with defaults and db.settings is overwritten - the user's throughput edits vanish while a success toast is shown. Email 502s: send_email catches httpx.HTTPStatusError and always raises 502; the provider returned 429 'email rate limit exceeded' after ~9 sends in this session, and the edge proxy rewrites 502 bodies to a Cloudflare HTML page, which the UI then displayed verbatim in the error toast."
+}

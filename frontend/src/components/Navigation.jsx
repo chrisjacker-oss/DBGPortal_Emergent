@@ -1,37 +1,64 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { SearchBar } from "@/components/SearchBar";
 import {
   Gauge,
   Users,
   Stack,
   FileText,
   Receipt,
+  ClipboardText,
   ArrowsClockwise,
   ArrowCircleUp,
   ArrowCircleDown,
+  Percent,
+  UsersThree,
+  Gear,
   SignOut,
 } from "@phosphor-icons/react";
 
-const staffLinks = [
+const adminLinks = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
   { to: "/estimates", label: "Estimates", icon: FileText },
+  { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/materials", label: "Materials", icon: Stack },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/receivables", label: "Receivable", icon: ArrowCircleDown },
   { to: "/payables", label: "Payable", icon: ArrowCircleUp },
+  { to: "/commissions", label: "Commissions", icon: Percent },
   { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
+  { to: "/team", label: "Team", icon: UsersThree },
+  { to: "/settings", label: "Settings", icon: Gear },
+];
+
+const salesmanLinks = [
+  { to: "/dashboard", label: "Dashboard", icon: Gauge },
+  { to: "/estimates", label: "Estimates", icon: FileText },
+  { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
+  { to: "/invoices", label: "Invoices", icon: Receipt },
+  { to: "/customers", label: "Customers", icon: Users },
+  { to: "/commissions", label: "Commissions", icon: Percent },
 ];
 
 export const Navigation = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isCustomer = user?.role === "customer";
-  const links = isCustomer ? [{ to: "/portal", label: "My Orders", icon: ArrowsClockwise }] : staffLinks;
+  const links = isCustomer
+    ? [{ to: "/portal", label: "My Orders", icon: ArrowsClockwise }]
+    : user?.role === "admin"
+    ? adminLinks
+    : salesmanLinks;
 
   const handleLogout = async () => {
-    await logout();
-    navigate("/login");
+    if (isCustomer) {
+      navigate("/portal-login");
+      await logout();
+    } else {
+      await logout();
+      navigate("/login");
+    }
   };
 
   return (
@@ -47,6 +74,12 @@ export const Navigation = () => {
           </div>
         </div>
       </div>
+
+      {!isCustomer && (
+        <div className="px-3 py-3 border-b border-border">
+          <SearchBar />
+        </div>
+      )}
 
       <nav className="flex-1 py-4 overflow-y-auto">
         {links.map(({ to, label, icon: Icon }) => (

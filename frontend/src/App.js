@@ -8,10 +8,14 @@ import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
 import Materials from "@/pages/Materials";
 import Estimates from "@/pages/Estimates";
+import SalesOrders from "@/pages/SalesOrders";
 import Invoices from "@/pages/Invoices";
 import Payables from "@/pages/Payables";
 import Receivables from "@/pages/Receivables";
 import Reorders from "@/pages/Reorders";
+import Commissions from "@/pages/Commissions";
+import Team from "@/pages/Team";
+import Settings from "@/pages/Settings";
 import Portal from "@/pages/Portal";
 
 function Loading() {
@@ -22,11 +26,12 @@ function Loading() {
   );
 }
 
-function Protected({ children, staffOnly }) {
+function Protected({ children, staffOnly, adminOnly }) {
   const { user } = useAuth();
   if (user === null) return <Loading />;
   if (user === false) return <Navigate to="/login" replace />;
-  if (user.role === "customer" && staffOnly) return <Navigate to="/portal" replace />;
+  if (user.role === "customer" && (staffOnly || adminOnly)) return <Navigate to="/portal" replace />;
+  if (adminOnly && user.role !== "admin") return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -44,7 +49,8 @@ function App() {
         <Toaster position="top-right" richColors />
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<Login variant="staff" />} />
+            <Route path="/portal-login" element={<Login variant="customer" />} />
             <Route path="/" element={<Root />} />
             <Route
               path="/portal"
@@ -57,20 +63,24 @@ function App() {
               }
             />
             {[
-              ["/dashboard", <Dashboard />],
-              ["/customers", <Customers />],
-              ["/materials", <Materials />],
-              ["/estimates", <Estimates />],
-              ["/invoices", <Invoices />],
-              ["/payables", <Payables />],
-              ["/receivables", <Receivables />],
-              ["/reorders", <Reorders />],
-            ].map(([path, el]) => (
+              ["/dashboard", <Dashboard />, false],
+              ["/customers", <Customers />, false],
+              ["/materials", <Materials />, true],
+              ["/estimates", <Estimates />, false],
+              ["/sales-orders", <SalesOrders />, false],
+              ["/invoices", <Invoices />, false],
+              ["/payables", <Payables />, true],
+              ["/receivables", <Receivables />, false],
+              ["/reorders", <Reorders />, true],
+              ["/commissions", <Commissions />, false],
+              ["/team", <Team />, true],
+              ["/settings", <Settings />, true],
+            ].map(([path, el, adminOnly]) => (
               <Route
                 key={path}
                 path={path}
                 element={
-                  <Protected staffOnly>
+                  <Protected staffOnly adminOnly={adminOnly}>
                     <Layout>{el}</Layout>
                   </Protected>
                 }

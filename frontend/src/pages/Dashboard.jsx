@@ -7,6 +7,7 @@ import {
   ArrowCircleDown,
   ArrowCircleUp,
   FileText,
+  ClipboardText,
   Wallet,
   Users,
   Stack,
@@ -31,8 +32,9 @@ export default function Dashboard() {
           <StatCard testid="stat-netcash" label="Net Cash Position" value={currency(d?.net_cash)} accent="#06B6D4" sub="Collected − bills paid" />
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border border border-border">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-px bg-border border border-border">
           <MiniStat icon={FileText} label="Open Estimates" value={d?.open_estimates ?? "—"} />
+          <MiniStat icon={ClipboardText} label="Open Sales Orders" value={d?.open_sales_orders ?? "—"} />
           <MiniStat icon={Wallet} label="Total Invoices" value={d?.invoice_count ?? "—"} />
           <MiniStat icon={Users} label="Customers" value={d?.customer_count ?? "—"} />
           <MiniStat icon={Stack} label="Materials" value={d?.material_count ?? "—"} />

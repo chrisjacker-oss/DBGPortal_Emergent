@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
-import { Plus, PencilSimple, Trash, ArrowRight } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple } from "@phosphor-icons/react";
 
 export default function Estimates() {
   const [rows, setRows] = useState([]);
@@ -23,10 +23,19 @@ export default function Estimates() {
     } catch { toast.error("Save failed"); }
   };
 
-  const convert = async (id) => {
-    await api.post(`/estimates/${id}/convert`);
-    toast.success("Converted to invoice");
-    load();
+  const approve = async (id) => {
+    try {
+      const { data } = await api.post(`/estimates/${id}/approve`);
+      toast.success(`Approved → Sales Order ${data.number}`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Approve failed"); }
+  };
+  const sendEmail = async (id) => {
+    try {
+      const { data } = await api.post(`/estimates/${id}/send`);
+      toast.success(`Emailed to ${data.to}`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
   };
   const remove = async (id) => {
     if (!window.confirm("Delete estimate?")) return;
@@ -47,8 +56,11 @@ export default function Estimates() {
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
+                <th className="px-6 py-3 font-mono">Salesman</th>
                 <th className="px-6 py-3 font-mono">Status</th>
+                <th className="px-6 py-3 font-mono text-right">Commission</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
               </tr>
             </thead>
@@ -58,12 +70,16 @@ export default function Estimates() {
                   <td className="px-6 py-3 font-mono">{r.number}</td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
+                  <td className="px-6 py-3 text-muted-foreground">{r.salesman_name || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-estimate-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
                       {r.status !== "approved" && (
-                        <Btn variant="ghost" onClick={() => convert(r.id)} data-testid={`convert-estimate-${r.id}`} title="Convert to invoice"><ArrowRight size={16} /></Btn>
+                        <Btn variant="ghost" onClick={() => approve(r.id)} data-testid={`approve-estimate-${r.id}`} title="Approve → Sales Order"><CheckCircle size={16} /> Approve</Btn>
                       )}
                       <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-estimate-${r.id}`}><PencilSimple size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => remove(r.id)} data-testid={`delete-estimate-${r.id}`}><Trash size={16} /></Btn>
@@ -71,7 +87,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>
