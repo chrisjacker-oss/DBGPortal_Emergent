@@ -161,6 +161,7 @@ export default function Invoices() {
                   <div>
                     <div className="font-mono">{p.date ? new Date(p.date).toLocaleString() : "—"}</div>
                     <div className="text-xs text-muted-foreground">{p.method}</div>
+                    {p.notes && <div className="text-xs text-muted-foreground italic mt-0.5" data-testid={`payment-note-${i}`}>“{p.notes}”</div>}
                   </div>
                   <div className="font-mono font-semibold text-[#16A34A]">{currency(p.amount)}</div>
                 </div>

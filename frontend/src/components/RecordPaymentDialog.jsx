@@ -16,10 +16,11 @@ export default function RecordPaymentDialog({ open, invoice, onClose, onSaved })
   const [reference, setReference] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today());
+  const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (open) { setMethod("Check"); setReference(""); setAmount(String(balance.toFixed(2))); setDate(today()); setBusy(false); }
+    if (open) { setMethod("Check"); setReference(""); setAmount(String(balance.toFixed(2))); setDate(today()); setNotes(""); setBusy(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, invoice]);
 
@@ -31,6 +32,7 @@ export default function RecordPaymentDialog({ open, invoice, onClose, onSaved })
     try {
       await api.post(`/invoices/${invoice.id}/manual-payment`, {
         amount: amt, method, reference: reference.trim() || null, date: new Date(date).toISOString(),
+        notes: notes.trim() || null,
       });
       toast.success("Payment recorded"); onSaved();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to record payment"); }
@@ -58,6 +60,12 @@ export default function RecordPaymentDialog({ open, invoice, onClose, onSaved })
             <Inp label="Amount (USD)" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} testid="rp-amount" />
             <Inp label="Date received" type="date" value={date} onChange={(e) => setDate(e.target.value)} testid="rp-date" />
           </div>
+          <label className="block">
+            <span className="overline text-muted-foreground">Notes (optional)</span>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} data-testid="rp-notes" rows={2}
+              placeholder="e.g. partial payment, deposit, paid at counter…"
+              className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
+          </label>
         </div>
         <DialogFooter>
           <Btn variant="outline" onClick={onClose} disabled={busy}>Cancel</Btn>

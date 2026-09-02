@@ -1201,10 +1201,10 @@ async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
         if rec.get("reference"):
             method = f"{method} #{rec['reference']}"
         if rec.get("invoice_id") == iid:
-            out.append({"amount": rec.get("amount"), "date": when, "method": method})
+            out.append({"amount": rec.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
         for a in (rec.get("allocations") or []):
             if a.get("invoice_id") == iid:
-                out.append({"amount": a.get("amount"), "date": when, "method": method})
+                out.append({"amount": a.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
     out.sort(key=lambda x: x["date"] or "", reverse=True)
     return out
 
@@ -1214,6 +1214,7 @@ class ManualPaymentInput(BaseModel):
     method: str = "Check"  # Check, ACH, Wire, Cash, Card, Other
     reference: Optional[str] = None
     date: Optional[str] = None
+    notes: Optional[str] = None
 
 
 @api_router.post("/invoices/{iid}/manual-payment")
@@ -1232,6 +1233,7 @@ async def record_manual_payment(iid: str, payload: ManualPaymentInput, user: dic
     await db.payment_transactions.insert_one({
         "payment_intent_id": None, "invoice_id": iid, "invoice_number": inv.get("number"),
         "amount": amount, "method": payload.method, "reference": (payload.reference or "").strip() or None,
+        "notes": (payload.notes or "").strip() or None,
         "manual": True, "recorded_by": user.get("name"), "currency": "usd",
         "status": "completed", "payment_status": "paid", "created_at": when, "updated_at": when,
     })
