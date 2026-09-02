@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -6,7 +7,8 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
-import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise } from "@phosphor-icons/react";
+import InternalNoteDialog from "@/components/InternalNoteDialog";
+import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey } from "@phosphor-icons/react";
 
 const NEXT = { open: "in_production", in_production: "fulfilled" };
 
@@ -17,9 +19,14 @@ export default function SalesOrders() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delSo, setDelSo] = useState(null);
+  const [noteDoc, setNoteDoc] = useState(null);
   const [tab, setTab] = useState("active");
+  const [params] = useSearchParams();
+  const focusId = params.get("focus");
+  const focusRef = useRef(null);
   const load = () => api.get("/sales-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
 
   const save = async (payload) => {
     try {
@@ -89,7 +96,7 @@ export default function SalesOrders() {
             </thead>
             <tbody data-testid="sales-orders-table">
               {visible.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`so-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   <td className="px-6 py-3 font-mono">{r.number}</td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
@@ -110,6 +117,9 @@ export default function SalesOrders() {
                         <Btn variant="ghost" onClick={() => setVoid(r.id, false)} data-testid={`reactivate-so-${r.id}`} title="Reactivate"><ArrowCounterClockwise size={16} /></Btn>
                       )}
                       {isAdmin && (
+                        <Btn variant="ghost" onClick={() => setNoteDoc(r)} data-testid={`note-so-${r.id}`} title="Internal note (admin only)"><LockKey size={16} /></Btn>
+                      )}
+                      {isAdmin && (
                         <Btn variant="ghost" onClick={() => setDelSo(r)} data-testid={`delete-so-${r.id}`} title="Delete"><Trash size={16} /></Btn>
                       )}
                     </div>
@@ -124,6 +134,8 @@ export default function SalesOrders() {
 
       <DocBuilder open={open} kind="sales-order" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <AdminDeleteDialog open={!!delSo} label={`sales order ${delSo?.number || ""}`} onClose={() => setDelSo(null)} onConfirm={confirmDelete} />
+      <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/sales-orders/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}
+        onClose={() => setNoteDoc(null)} onSaved={(d) => setRows((rs) => rs.map((x) => (x.id === d.id ? { ...x, internal_notes: d.internal_notes } : x)))} />
     </div>
   );
 }

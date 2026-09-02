@@ -1102,6 +1102,20 @@ async def set_invoice_internal_notes(iid: str, payload: InternalNotesInput, user
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
 
 
+@api_router.patch("/estimates/{eid}/internal-notes")
+async def set_estimate_internal_notes(eid: str, payload: InternalNotesInput, user: dict = Depends(require_admin)):
+    await get_or_404(db.estimates, eid, "Estimate")
+    await db.estimates.update_one({"_id": oid(eid)}, {"$set": {"internal_notes": (payload.notes or "").strip() or None}})
+    return await enrich_customer(clean(await db.estimates.find_one({"_id": oid(eid)})))
+
+
+@api_router.patch("/sales-orders/{sid}/internal-notes")
+async def set_so_internal_notes(sid: str, payload: InternalNotesInput, user: dict = Depends(require_admin)):
+    await get_or_404(db.sales_orders, sid, "Sales order")
+    await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": {"internal_notes": (payload.notes or "").strip() or None}})
+    return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
+
+
 @api_router.get("/invoices/{iid}/lineage")
 async def invoice_lineage(iid: str, user: dict = Depends(require_staff)):
     inv = await get_or_404(db.invoices, iid, "Invoice")

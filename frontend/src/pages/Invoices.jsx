@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -15,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 export default function Invoices() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -265,7 +267,7 @@ export default function Invoices() {
           </DialogHeader>
           {detailInv && (
             <div className="space-y-5 text-sm">
-              <StageTracker lineage={lineage} inv={detailInv} paidOf={paidOf} />
+              <StageTracker lineage={lineage} inv={detailInv} paidOf={paidOf} onGo={(to) => { setDetailInv(null); navigate(to); }} />
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Field label="Issued" value={(detailInv.created_at || "").slice(0, 10) || "—"} />
                 <Field label="Due" value={detailInv.due_date || "—"} />
@@ -354,32 +356,36 @@ function Field({ label, value }) {
   );
 }
 
-function StageTracker({ lineage, inv, paidOf }) {
+function StageTracker({ lineage, inv, paidOf, onGo }) {
   const d = (s) => (s ? String(s).slice(0, 10) : "");
   const paid = inv?.status === "paid";
   const steps = [
-    { key: "estimate", label: "Estimate", num: lineage?.estimate?.number, date: d(lineage?.estimate?.created_at), done: !!lineage?.estimate },
-    { key: "sales_order", label: "Sales Order", num: lineage?.sales_order?.number, date: d(lineage?.sales_order?.created_at), done: !!lineage?.sales_order },
-    { key: "invoice", label: "Invoice", num: inv?.number, date: d(inv?.created_at), done: true },
-    { key: "paid", label: "Paid", num: paid ? "Settled" : "Awaiting", date: d(inv?.paid_at), done: paid },
+    { key: "estimate", label: "Estimate", num: lineage?.estimate?.number, date: d(lineage?.estimate?.created_at), done: !!lineage?.estimate, to: lineage?.estimate ? `/estimates?focus=${lineage.estimate.id}` : null },
+    { key: "sales_order", label: "Sales Order", num: lineage?.sales_order?.number, date: d(lineage?.sales_order?.created_at), done: !!lineage?.sales_order, to: lineage?.sales_order ? `/sales-orders?focus=${lineage.sales_order.id}` : null },
+    { key: "invoice", label: "Invoice", num: inv?.number, date: d(inv?.created_at), done: true, to: null },
+    { key: "paid", label: "Paid", num: paid ? "Settled" : "Awaiting", date: d(inv?.paid_at), done: paid, to: null },
   ];
   return (
     <div className="border border-border bg-secondary/30 p-4" data-testid="invoice-stage-tracker">
       <div className="overline text-muted-foreground mb-3">Workflow</div>
       <div className="flex items-center">
-        {steps.map((s, i) => (
-          <div key={s.key} className="flex items-center flex-1 last:flex-none">
-            <div className="flex flex-col items-center text-center" data-testid={`stage-${s.key}`}>
-              <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 ${s.done ? "bg-[#0E7490] border-[#0E7490] text-white" : "bg-card border-border text-muted-foreground"}`}>
-                {s.done ? <CheckCircle size={18} weight="fill" /> : <span className="text-xs font-mono">{i + 1}</span>}
-              </div>
-              <div className="mt-1.5 text-xs font-mono font-semibold">{s.label}</div>
-              <div className={`text-[11px] font-mono ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.num || "—"}</div>
-              {s.date && <div className="text-[10px] text-muted-foreground font-mono">{s.date}</div>}
+        {steps.map((s, i) => {
+          const clickable = !!(s.to && onGo);
+          return (
+            <div key={s.key} className="flex items-center flex-1 last:flex-none">
+              <button type="button" disabled={!clickable} onClick={() => clickable && onGo(s.to)} data-testid={`stage-${s.key}`}
+                className={`flex flex-col items-center text-center ${clickable ? "cursor-pointer group" : "cursor-default"}`}>
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center border-2 transition-colors ${s.done ? "bg-[#0E7490] border-[#0E7490] text-white" : "bg-card border-border text-muted-foreground"} ${clickable ? "group-hover:ring-2 group-hover:ring-[#06B6D4]/40" : ""}`}>
+                  {s.done ? <CheckCircle size={18} weight="fill" /> : <span className="text-xs font-mono">{i + 1}</span>}
+                </div>
+                <div className={`mt-1.5 text-xs font-mono font-semibold ${clickable ? "group-hover:text-[#0E7490] group-hover:underline" : ""}`}>{s.label}</div>
+                <div className={`text-[11px] font-mono ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.num || "—"}</div>
+                {s.date && <div className="text-[10px] text-muted-foreground font-mono">{s.date}</div>}
+              </button>
+              {i < steps.length - 1 && <div className={`h-0.5 flex-1 mx-2 -mt-8 ${steps[i + 1].done ? "bg-[#0E7490]" : "bg-border"}`} />}
             </div>
-            {i < steps.length - 1 && <div className={`h-0.5 flex-1 mx-2 -mt-8 ${steps[i + 1].done ? "bg-[#0E7490]" : "bg-border"}`} />}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

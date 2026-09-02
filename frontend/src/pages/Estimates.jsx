@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -6,7 +7,8 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
-import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple } from "@phosphor-icons/react";
+import InternalNoteDialog from "@/components/InternalNoteDialog";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey } from "@phosphor-icons/react";
 
 export default function Estimates() {
   const { user } = useAuth();
@@ -15,9 +17,14 @@ export default function Estimates() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delEst, setDelEst] = useState(null);
+  const [noteDoc, setNoteDoc] = useState(null);
+  const [params] = useSearchParams();
+  const focusId = params.get("focus");
+  const focusRef = useRef(null);
 
   const load = () => api.get("/estimates").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
 
   const save = async (payload) => {
     try {
@@ -73,7 +80,7 @@ export default function Estimates() {
             </thead>
             <tbody data-testid="estimates-table">
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`estimate-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   <td className="px-6 py-3 font-mono">{r.number}</td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
@@ -90,6 +97,9 @@ export default function Estimates() {
                       )}
                       <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-estimate-${r.id}`}><PencilSimple size={16} /></Btn>
                       {isAdmin && (
+                        <Btn variant="ghost" onClick={() => setNoteDoc(r)} data-testid={`note-estimate-${r.id}`} title="Internal note (admin only)"><LockKey size={16} /></Btn>
+                      )}
+                      {isAdmin && (
                         <Btn variant="ghost" onClick={() => setDelEst(r)} data-testid={`delete-estimate-${r.id}`} title="Delete"><Trash size={16} /></Btn>
                       )}
                     </div>
@@ -104,6 +114,8 @@ export default function Estimates() {
 
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
+      <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/estimates/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}
+        onClose={() => setNoteDoc(null)} onSaved={(d) => setRows((rs) => rs.map((x) => (x.id === d.id ? { ...x, internal_notes: d.internal_notes } : x)))} />
     </div>
   );
 }
