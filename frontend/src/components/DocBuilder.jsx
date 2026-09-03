@@ -34,6 +34,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const [contacts, setContacts] = useState([]);
   const [settings, setSettings] = useState({ shop_rate_per_hr: 0, shop_sqft_per_hr: 0, machine_rate_per_hr: 0, machine_sqft_per_hr: 0 });
   const [form, setForm] = useState(null);
+  const [ncOpen, setNcOpen] = useState(false);
+  const [nc, setNc] = useState({ name: "", email: "", phone: "", title: "" });
 
   useEffect(() => {
     if (open) {
@@ -102,6 +104,17 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       toast.success("Category added");
     } catch (e) { toast.error(e.response?.data?.detail || "Could not add category"); }
   };
+  const saveContact = async () => {
+    if (!nc.name.trim()) { toast.error("Contact name is required"); return; }
+    try {
+      const { data } = await api.post(`/customers/${form.customer_id}/contacts`, { name: nc.name.trim(), email: nc.email || null, phone: nc.phone || null, title: nc.title || null });
+      const { data: list } = await api.get(`/customers/${form.customer_id}/contacts`);
+      setContacts(list);
+      setForm((f) => ({ ...f, contact_id: data.id }));
+      setNcOpen(false);
+      toast.success("Contact added");
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not add contact"); }
+  };
 
   const breakdown = (li) => {
     const area = areaOf(li);
@@ -161,6 +174,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.65fr_0.6fr_0.8fr_0.3fr]";
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="rounded-none max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
@@ -182,10 +196,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             </label>
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Contact (Attn)</span>
-              <select value={form.contact_id || ""} onChange={(e) => set("contact_id", e.target.value)} data-testid="doc-contact" disabled={!form.customer_id}
+              <select value={form.contact_id || ""} onChange={(e) => { if (e.target.value === "__new__") { setNc({ name: "", email: "", phone: "", title: "" }); setNcOpen(true); } else set("contact_id", e.target.value); }} data-testid="doc-contact" disabled={!form.customer_id}
                 className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50">
                 <option value="">{contacts.length ? "No specific contact" : "No contacts on file"}</option>
                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.title ? ` — ${c.title}` : ""}</option>)}
+                {form.customer_id && <option value="__new__">+ Add new contact…</option>}
               </select>
             </label>
             <Inp label="Title / Job" value={form.title} onChange={(e) => set("title", e.target.value)} testid="doc-title" />
@@ -305,6 +320,28 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={ncOpen} onOpenChange={(o) => !o && setNcOpen(false)}>
+      <DialogContent className="rounded-none max-w-md" data-testid="new-contact-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display">Add contact</DialogTitle>
+          <DialogDescription className="font-mono text-xs">New contact for this customer — becomes selectable as the document's Attn.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <Inp label="Name" value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} testid="nc-name" />
+          <Inp label="Title" value={nc.title} onChange={(e) => setNc({ ...nc, title: e.target.value })} testid="nc-title" />
+          <div className="grid grid-cols-2 gap-3">
+            <Inp label="Email" value={nc.email} onChange={(e) => setNc({ ...nc, email: e.target.value })} testid="nc-email" />
+            <Inp label="Phone" value={nc.phone} onChange={(e) => setNc({ ...nc, phone: e.target.value })} testid="nc-phone" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Btn variant="outline" onClick={() => setNcOpen(false)}>Cancel</Btn>
+          <Btn onClick={saveContact} data-testid="save-contact-btn">Add contact</Btn>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
