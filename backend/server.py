@@ -2486,6 +2486,39 @@ async def track_open(token: str):
 # ---------------------------------------------------------------------------
 # PDF generation
 # ---------------------------------------------------------------------------
+DISCLAIMER_HEADING = "Disclaimer"
+DISCLAIMER_BLOCKS = [
+    ("p", "This outlines the disclaimer for services provided by Deep Blue Graphics (DBG Signs). Deep Blue Graphics (DBG Signs) is not responsible for any defects or issues arising from graphic installations performed in outdoor conditions where the following factors are present:"),
+    ("li", "Temperatures of 60 degrees Fahrenheit or under, or temperatures that drop below 60 degrees Fahrenheit within 36 hours after installation."),
+    ("li", "Winds in excess of 5 mph."),
+    ("li", "Application to damaged or uncleaned equipment."),
+    ("p", "Deep Blue Graphics (DBG Signs) is also not responsible for cleaning or preparing any personal or commercial equipment, including but not limited to service vans, pickup trucks, semi-trailers, box trucks, semi-trucks, or any other oversized equipment. Unless explicitly stated or discussed prior to installation, DBG Signs will not clean or prep equipment. Any issues or defects due to unclean surfaces will not be the liability of DBG Signs. Customers are responsible for cleaning their equipment before installation, and DBG Signs will not be held responsible for any issues due to unclean equipment or graphic issues resulting from it."),
+    ("p", "Regarding warranties:"),
+    ("li", "Equipment older than five years from the current date carries no warranty due to heavy commercial use."),
+    ("li", "For equipment five years and newer, DBG Signs will evaluate any issues and determine if services will be performed for a fix, only if the vinyl is at fault. DBG Signs will not be held responsible for any issues due to customers, customers' employees, or drivers."),
+    ("p", "(Ready Artwork) is as outlined any artwork that is not created by DBG Signs in-house and DBG Signs will not alter or make any changes to artwork unless written consent has been authorized by the customer and then approved by customer. Ready Artwork will be printed and produced with no guarantee to the accuracy of colors due to the artwork was not produced by DBG Signs in-house art dept.; DBG Signs will not be held responsible for any incorrect colors or problems in artwork, IE (Spelling errors, Colors, or anything in the artwork). Any issues will be addressed and fixed at the customer's expense."),
+]
+
+
+def _draw_disclaimer(c, L, R, H) -> None:
+    from reportlab.lib.utils import simpleSplit
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#4B5563"); cyan = colors.HexColor("#06B6D4")
+    y = H - 70
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 16); c.drawString(L, y, DISCLAIMER_HEADING.upper())
+    y -= 10
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 20
+    for kind, text in DISCLAIMER_BLOCKS:
+        indent = 14 if kind == "li" else 0
+        prefix = "•  " if kind == "li" else ""
+        c.setFillColor(soft); c.setFont("Helvetica", 8)
+        lines = simpleSplit(prefix + text, "Helvetica", 8, (R - L) - indent)
+        for ln in lines:
+            if y < 60:
+                c.showPage(); y = H - 70; c.setFont("Helvetica", 8); c.setFillColor(soft)
+            c.drawString(L + indent, y, ln); y -= 11
+        y -= 5
+
+
 def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_bytes: Optional[bytes] = None, company: Optional[dict] = None) -> bytes:
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
@@ -2500,20 +2533,30 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     disc_amt = float(doc.get("discount_amount", 0))
     factor = (sub_raw - disc_amt) / sub_raw if sub_raw else 1.0
 
-    # Logo (top-left)
+    # Logo (top-left, enlarged)
     try:
         logo = ImageReader(io.BytesIO(logo_bytes)) if logo_bytes else ImageReader(str(LOGO_PATH))
-        c.drawImage(logo, L, H - 150, width=180, height=104,
+        c.drawImage(logo, L, H - 128, width=230, height=116,
                     preserveAspectRatio=True, mask="auto", anchor="sw")
     except Exception:
         c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawString(L, H - 96, cname)
+
+    # Company info under the logo
+    ciy = H - 140
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 9); c.drawString(L, ciy, cname); ciy -= 11
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    for line in [co.get("company_address"), co.get("company_phone"),
+                 " · ".join([x for x in [co.get("company_web"), co.get("company_email")] if x])]:
+        if line:
+            c.drawString(L, ciy, str(line)); ciy -= 11
 
     # Document label + number (top-right)
     c.setFillColor(ink); c.setFont("Helvetica-Bold", 28); c.drawRightString(R, H - 82, kind_label.upper())
     c.setFillColor(soft); c.setFont("Helvetica", 11); c.drawRightString(R, H - 100, f"#{doc.get('number', '')}")
 
-    # Accent rule
-    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, H - 162, R, H - 162)
+    # Accent rule (below the header block)
+    rule_y = min(ciy - 2, H - 176)
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, rule_y, R, rule_y)
 
     # PAID IN FULL stamp
     if doc.get("status") == "paid":
@@ -2527,7 +2570,7 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         c.drawCentredString(0, -13, "PAID IN FULL")
         c.restoreState()
 
-    y = H - 196
+    y = rule_y - 30
     # Meta (right)
     meta = [("Date", str(doc.get("created_at", ""))[:10])]
     if doc.get("due_date"):
@@ -2614,6 +2657,9 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     for line in contact:
         if line:
             c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawRightString(R, cy, str(line)); cy -= 11
+    # Disclaimer on its own page
+    c.showPage()
+    _draw_disclaimer(c, L, R, H)
     c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 

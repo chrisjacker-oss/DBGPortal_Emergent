@@ -8,7 +8,8 @@ import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
-import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey } from "@phosphor-icons/react";
+import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye } from "@phosphor-icons/react";
+const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 
 const NEXT = { open: "in_production", in_production: "fulfilled" };
 
@@ -106,6 +107,7 @@ export default function SalesOrders() {
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => viewDocPdf(`/sales-orders/${r.id}/pdf`)} data-testid={`view-so-doc-${r.id}`} title="Web view"><Eye size={16} /></Btn>
                       {!r.voided && <>
                         <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-so-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
                         {NEXT[r.status] && <Btn variant="ghost" onClick={() => advance(r)} data-testid={`advance-so-${r.id}`}>{NEXT[r.status].replace("_", " ")}</Btn>}

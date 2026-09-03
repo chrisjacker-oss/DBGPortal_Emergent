@@ -8,7 +8,8 @@ import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
-import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye } from "@phosphor-icons/react";
+const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 
 export default function Estimates() {
   const { user } = useAuth();
@@ -91,6 +92,7 @@ export default function Estimates() {
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => viewDocPdf(`/estimates/${r.id}/pdf`)} data-testid={`view-estimate-${r.id}`} title="Web view"><Eye size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-estimate-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
                       {r.status !== "approved" && (
                         <Btn variant="ghost" onClick={() => approve(r.id)} data-testid={`approve-estimate-${r.id}`} title="Approve → Sales Order"><CheckCircle size={16} /> Approve</Btn>

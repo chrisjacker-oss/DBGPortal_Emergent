@@ -76,7 +76,7 @@ export const Navigation = () => {
   return (
     <aside className="w-60 shrink-0 border-r border-border bg-card flex flex-col h-screen sticky top-0" data-testid="sidebar">
       <div className="px-6 py-6 border-b border-border">
-        <img src={LOGO_URL} alt="DBG Signs, Inc." className="h-10 w-auto max-w-[180px] object-contain" data-testid="sidebar-logo" />
+        <img src={LOGO_URL} alt="DBG Signs, Inc." className="h-16 w-auto max-w-[260px] object-contain" data-testid="sidebar-logo" />
         <div className="overline text-muted-foreground mt-2">Image Is Everything</div>
       </div>
 

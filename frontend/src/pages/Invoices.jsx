@@ -160,6 +160,7 @@ export default function Invoices() {
 
   const visible = rows.filter((r) => (tab === "voided" ? r.voided : tab === "paid" ? (!r.voided && r.status === "paid") : (!r.voided && r.status !== "paid")));
   const isPaid = tab === "paid";
+  const showComm = tab !== "voided";
   const filtered = isPaid ? visible.filter((r) => {
     const d = (r.paid_at || "").slice(0, 10);
     if (pFrom && d && d < pFrom) return false;
@@ -222,6 +223,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">Status</th>
                 {isPaid && <th className="px-6 py-3 font-mono">Payment Type</th>}
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                {showComm && <th className="px-6 py-3 font-mono text-right">Commission</th>}
                 {isPaid && <th className="px-6 py-3 font-mono">Notes</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
@@ -244,10 +246,21 @@ export default function Invoices() {
                       <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
                     )}
                   </td>
+                  {showComm && (
+                    <td className="px-6 py-3 text-right font-mono" data-testid={`invoice-commission-${r.id}`}>
+                      {Number(r.commission_amount || 0) > 0 ? (
+                        <>
+                          <span className="text-[#A21CAF] font-semibold">{currency(r.commission_amount)}</span>
+                          <div className="text-[11px] text-muted-foreground font-sans">{r.salesman_name || "—"}{r.commission_rate ? ` · ${r.commission_rate}%` : ""}</div>
+                        </>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  )}
                   {isPaid && <td className="px-6 py-3 text-muted-foreground text-xs italic max-w-[200px]" data-testid={`payment-notes-${r.id}`}>{r.payment_notes ? `“${r.payment_notes}”` : "—"}</td>}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-1">
+                      <Btn variant="ghost" onClick={() => viewPdf(`/invoices/${r.id}/pdf`)} data-testid={`view-invoice-${r.id}`} title="Web view"><Eye size={16} /></Btn>
                       <Btn variant="ghost" onClick={() => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf")} data-testid={`pdf-invoice-${r.id}`} title="Download PDF"><FilePdf size={16} /></Btn>
                       {(Number(r.amount_paid || 0) > 0 || r.status === "paid") && (
                         <Btn variant="ghost" onClick={() => openHistory(r)} data-testid={`history-invoice-${r.id}`} title="Payment history"><ClockCounterClockwise size={16} /></Btn>
@@ -273,7 +286,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={isPaid ? 11 : 8} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>
