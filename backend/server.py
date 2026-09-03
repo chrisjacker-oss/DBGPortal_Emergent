@@ -1218,6 +1218,60 @@ async def delete_purchase_order(pid: str, payload: DeleteConfirm, user: dict = D
     return {"message": "deleted"}
 
 
+class POUpdate(BaseModel):
+    number: Optional[str] = None
+    salesman_name: Optional[str] = None
+    customer_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    commission_amount: Optional[float] = None
+    commission_rate: Optional[float] = None
+    notes: Optional[str] = None
+    date: Optional[str] = None
+
+
+@api_router.patch("/purchase-orders/{pid}")
+async def update_purchase_order(pid: str, payload: POUpdate, user: dict = Depends(require_admin)):
+    await get_or_404(db.purchase_orders, pid, "Purchase order")
+    update = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if "commission_amount" in update:
+        update["commission_amount"] = round(float(update["commission_amount"]), 2)
+    if update:
+        await db.purchase_orders.update_one({"_id": oid(pid)}, {"$set": update})
+    return clean(await db.purchase_orders.find_one({"_id": oid(pid)}))
+
+
+@api_router.post("/purchase-orders/{pid}/email")
+async def email_purchase_order(pid: str, user: dict = Depends(require_admin)):
+    po = await get_or_404(db.purchase_orders, pid, "Purchase order")
+    su = None
+    if po.get("salesman_id") and ObjectId.is_valid(po["salesman_id"]):
+        su = await db.users.find_one({"_id": oid(po["salesman_id"])})
+    if not su and po.get("salesman_name"):
+        su = await db.users.find_one({"name": po["salesman_name"], "role": {"$in": ["salesman", "admin"]}})
+    if not su or not su.get("email"):
+        raise HTTPException(status_code=400, detail="No email on file for this salesman")
+    token = secrets.token_urlsafe(16)
+    await db.po_pdf_tokens.insert_one({"token": token, "po_id": pid, "created_at": now_iso()})
+    link = f"{PUBLIC_BASE_URL}/api/pub/po/{token}"
+    html = render_po_email(su.get("name") or "there", po.get("number"), float(po.get("commission_amount") or 0),
+                           po.get("invoice_number"), link, await get_settings())
+    await send_email(to=su["email"], subject=f"Purchase Order {po.get('number')} · DBG Signs, Inc.", html=html)
+    return {"sent": True, "to": su["email"]}
+
+
+@api_router.get("/pub/po/{token}")
+async def public_po_pdf(token: str):
+    rec = await db.po_pdf_tokens.find_one({"token": token})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Link is invalid or has expired")
+    po = await db.purchase_orders.find_one({"_id": oid(rec["po_id"])})
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    pdf = build_po_pdf(clean(po), await get_settings(), await get_logo_bytes())
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{po.get("number")}.pdf"', "Cache-Control": "no-store"})
+
+
 
 
 @api_router.patch("/invoices/{iid}/status")
@@ -1782,6 +1836,36 @@ def _scope_label(base_label: str, date_from: Optional[str], date_to: Optional[st
         rng = f"{date_from or '…'} → {date_to or '…'}"
         return f"{base_label} · {rng}" if base_label else rng
     return base_label
+
+
+def render_po_email(name: str, number: str, amount: float, invoice_number: Optional[str], link: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    inv_line = f" for Invoice {escape(str(invoice_number))}" if invoice_number else ""
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">PURCHASE ORDER</div>'
+        f'<div style="color:#A21CAF;font-size:14px;font-weight:bold">{escape(str(number or ""))}</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:15px;font-weight:bold">Hi {escape(name)},</div>'
+        f'<p style="margin:12px 0 0">A purchase order for your sales commission{inv_line} has been issued for <b>{_money(amount)}</b>.</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:22px 32px 0" align="left">'
+        f'<a href="{link}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:12px 28px;font-weight:bold;letter-spacing:1px">View Purchase Order (PDF)</a>'
+        f'</td></tr>'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
 
 
 def render_commission_email(name: str, count: int, total: float, link: str, scope_label: str, company: Optional[dict] = None) -> str:
@@ -2661,7 +2745,7 @@ def build_po_pdf(po: dict, company: Optional[dict] = None, logo_bytes: Optional[
             pass
     c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "PURCHASE ORDER")
     c.setFillColor(mag); c.setFont("Helvetica-Bold", 13); c.drawRightString(R, y - 18, str(po.get("number") or ""))
-    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 33, (po.get("created_at") or "")[:10])
+    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 33, (po.get("date") or po.get("created_at") or "")[:10])
     y -= 78
     c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 26
     c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "PAY TO")
@@ -2687,6 +2771,12 @@ def build_po_pdf(po: dict, company: Optional[dict] = None, logo_bytes: Optional[
     c.setFillColor(mag); c.rect(R - 260, y - 7, 5, 30, fill=1, stroke=0)
     c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(R - 244, y + 4, "TOTAL DUE")
     c.setFont("Helvetica-Bold", 15); c.drawRightString(R - 10, y + 2, _money(amt))
+    if po.get("notes"):
+        y -= 40
+        c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "NOTES")
+        c.setFillColor(ink); c.setFont("Helvetica", 9)
+        for ln in str(po.get("notes"))[:400].split("\n")[:6]:
+            y -= 13; c.drawString(L, y, ln[:95])
     c.setFillColor(soft); c.setFont("Helvetica", 8)
     c.drawString(L, 80, f"{co.get('company_name') or 'DBG Signs, Inc.'}  ·  Image Is Everything")
     if po.get("created_by"):
