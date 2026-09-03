@@ -19,7 +19,7 @@ export default function ActionsMenu({ items, testid }) {
             <DropdownMenuSeparator key={i} />
           ) : (
             <DropdownMenuItem key={i} data-testid={it.testid}
-              onSelect={(e) => { e.preventDefault(); it.onClick?.(); }}
+              onSelect={() => setTimeout(() => it.onClick?.(), 0)}
               className={`rounded-none cursor-pointer gap-2 ${it.danger ? "text-destructive focus:text-destructive" : ""}`}>
               {it.icon}<span>{it.label}</span>
             </DropdownMenuItem>

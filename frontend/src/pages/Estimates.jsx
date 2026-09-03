@@ -9,13 +9,18 @@ import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
+import { MarginCell } from "@/components/MarginCell";
 import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 
 export default function Estimates() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const [rows, setRows] = useState([]);
+  const [lowThreshold, setLowThreshold] = useState(0);
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delEst, setDelEst] = useState(null);
@@ -26,6 +31,7 @@ export default function Estimates() {
 
   const load = () => api.get("/estimates").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
 
   const save = async (payload) => {
@@ -58,9 +64,20 @@ export default function Estimates() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = rows.length > 0 && rows.every((r) => sel[r.id]);
+  const toggleAll = () => { const n = {}; if (!allChecked) rows.forEach((r) => (n[r.id] = true)); setSel(n); };
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/estimates/bulk-delete", { ids: selIds, password });
+      toast.success(`Deleted ${data.deleted} estimate(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
+
   return (
     <div>
       <PageHeader overline="Sales" title="Estimates">
+        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-estimates-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn onClick={() => { setEditing(null); setOpen(true); }} data-testid="add-estimate-btn"><Plus size={16} weight="bold" /> New Estimate</Btn>
       </PageHeader>
 
@@ -69,6 +86,7 @@ export default function Estimates() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="estimate-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
@@ -76,6 +94,7 @@ export default function Estimates() {
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono text-right">Commission</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
               </tr>
@@ -83,13 +102,17 @@ export default function Estimates() {
             <tbody data-testid="estimates-table">
               {rows.map((r) => (
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`estimate-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
-                  <td className="px-6 py-3 font-mono">{r.number}</td>
+                  {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`estimate-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
+                  <td className="px-6 py-3 font-mono">
+                    <button onClick={() => viewDocPdf(`/estimates/${r.id}/pdf`)} data-testid={`estimate-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
+                  </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.salesman_name || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`estimate-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
@@ -106,7 +129,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -114,6 +137,7 @@ export default function Estimates() {
 
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected estimate(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/estimates/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}
         onClose={() => setNoteDoc(null)} onSaved={(d) => setRows((rs) => rs.map((x) => (x.id === d.id ? { ...x, internal_notes: d.internal_notes } : x)))} />
     </div>

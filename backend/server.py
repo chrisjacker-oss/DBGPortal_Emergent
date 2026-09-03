@@ -251,6 +251,7 @@ class SettingsInput(BaseModel):
     default_tax_rate: float = 0.0
     card_surcharge_enabled: bool = False
     card_surcharge_pct: float = 0.0
+    low_margin_threshold: float = 0.0
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
     company_phone: Optional[str] = ""
@@ -309,9 +310,9 @@ def clean(doc: dict) -> dict:
 
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0,
-                    "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0,
+                    "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
-_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct"}
+_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials"]
 
@@ -438,13 +439,14 @@ def _apply_doc_margin(row: dict) -> dict:
     margin = round(sum(float(li.get("material_margin") or 0) for li in items), 2)
     row["material_margin"] = margin
     row["material_margin_pct"] = round(margin / sell * 100, 1) if sell else 0.0
+    row["has_cost_data"] = any("cost_per_sqft" in li for li in items)
     return row
 
 
-async def next_number(prefix: str, key: str, collection) -> str:
+async def next_number(prefix: str, key: str, collection, start: int = 1) -> str:
     ctr = await db.counters.find_one({"_id": key})
     if not ctr:
-        base = 0
+        base = start - 1
         cursor = collection.find({"number": {"$regex": f"^{prefix}-"}}, {"number": 1})
         async for d in cursor:
             try:
@@ -452,6 +454,8 @@ async def next_number(prefix: str, key: str, collection) -> str:
             except (IndexError, ValueError):
                 pass
         await db.counters.insert_one({"_id": key, "seq": base})
+    elif int(ctr.get("seq", 0)) < start - 1:
+        await db.counters.update_one({"_id": key}, {"$set": {"seq": start - 1}})
     r = await db.counters.find_one_and_update(
         {"_id": key}, {"$inc": {"seq": 1}}, return_document=ReturnDocument.AFTER
     )
@@ -659,6 +663,40 @@ async def bulk_delete_customers(payload: BulkDeleteInput, user: dict = Depends(r
         raise HTTPException(status_code=400, detail="No customers selected")
     res = await db.customers.delete_many({"_id": {"$in": [oid(i) for i in id_list]}})
     await db.contacts.delete_many({"customer_id": {"$in": id_list}})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.post("/estimates/bulk-delete")
+async def bulk_delete_estimates(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No estimates selected")
+    res = await db.estimates.delete_many({"_id": {"$in": [oid(i) for i in ids]}})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.post("/sales-orders/bulk-delete")
+async def bulk_delete_sales_orders(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No sales orders selected")
+    sos = await db.sales_orders.find({"_id": {"$in": [oid(i) for i in ids]}}).to_list(1000)
+    est_ids = [oid(s["estimate_id"]) for s in sos if s.get("estimate_id") and ObjectId.is_valid(s["estimate_id"])]
+    if est_ids:
+        await db.estimates.update_many({"_id": {"$in": est_ids}}, {"$set": {"status": "sent"}, "$unset": {"sales_order_id": ""}})
+    res = await db.sales_orders.delete_many({"_id": {"$in": [oid(i) for i in ids]}})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.post("/invoices/bulk-delete")
+async def bulk_delete_invoices(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No invoices selected")
+    res = await db.invoices.delete_many({"_id": {"$in": [oid(i) for i in ids]}})
     return {"deleted": res.deleted_count}
 
 
@@ -974,7 +1012,7 @@ async def _attach_contact_name(doc: dict) -> dict:
 @api_router.get("/estimates")
 async def list_estimates(user: dict = Depends(require_staff)):
     docs = await db.estimates.find().sort("created_at", -1).to_list(1000)
-    return [await enrich_customer(clean(d)) for d in docs]
+    return [_apply_doc_margin(await enrich_customer(clean(d))) for d in docs]
 
 
 async def apply_commission(doc: dict, user: dict) -> dict:
@@ -990,10 +1028,11 @@ async def apply_commission(doc: dict, user: dict) -> dict:
         su = await db.users.find_one({"_id": oid(doc["salesman_id"])})
         if su:
             rate = float(su.get("commission_rate") or 0)
-    # Commission base = material selling price only (materials, at customer price)
+    # Commission base = gross profit = sale − material cost − shop − machine.
+    # Labor & machine are billed at cost, so this equals the sum of material margins.
     base = 0.0
     for li in doc.get("line_items", []):
-        base += float(li.get("material_cost") or 0)
+        base += float(li.get("material_margin") or 0)
     base = round(base, 2)
     doc["commission_rate"] = rate
     doc["commission_base"] = base
@@ -1008,7 +1047,7 @@ async def create_estimate(payload: EstimateInput, user: dict = Depends(require_s
     doc = payload.model_dump()
     doc.update(totals)
     await apply_commission(doc, user)
-    doc["number"] = await next_number("EST", "estimates", db.estimates)
+    doc["number"] = await next_number("EST", "estimates", db.estimates, start=29500)
     doc["created_at"] = now_iso()
     res = await db.estimates.insert_one(doc)
     return await enrich_customer(clean(await db.estimates.find_one({"_id": res.inserted_id})))
@@ -1061,7 +1100,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "salesman_id": est.get("salesman_id"),
         "salesman_name": est.get("salesman_name"),
         "status": "open",  # open / in_production / fulfilled
-        "number": await next_number("SO", "sales_orders", db.sales_orders),
+        "number": await next_number("SO", "sales_orders", db.sales_orders, start=29500),
         "from_estimate": est.get("number"),
         "estimate_id": str(est["_id"]),
         "created_at": now_iso(),
@@ -1091,7 +1130,7 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
     doc.update(totals)
     await apply_commission(doc, user)
     doc["status"] = payload.status if payload.status in _SO_STATUSES else "open"
-    doc["number"] = await next_number("SO", "sales_orders", db.sales_orders)
+    doc["number"] = await next_number("SO", "sales_orders", db.sales_orders, start=29500)
     doc["created_at"] = now_iso()
     res = await db.sales_orders.insert_one(doc)
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": res.inserted_id})))
@@ -1162,7 +1201,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "salesman_name": so.get("salesman_name"),
         "status": "unpaid",
         "due_date": (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat(),
-        "number": await next_number("INV", "invoices", db.invoices),
+        "number": await next_number("INV", "invoices", db.invoices, start=29500),
         "from_sales_order": so.get("number"),
         "sales_order_id": str(so["_id"]),
         "created_at": now_iso(),
@@ -1206,7 +1245,7 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
     doc = payload.model_dump()
     doc.update(totals)
-    doc["number"] = await next_number("INV", "invoices", db.invoices)
+    doc["number"] = await next_number("INV", "invoices", db.invoices, start=29500)
     doc["created_at"] = now_iso()
     res = await db.invoices.insert_one(doc)
     return await enrich_customer(clean(await db.invoices.find_one({"_id": res.inserted_id})))

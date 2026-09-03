@@ -124,7 +124,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const totMarginPct = totMaterial > 0 ? (totMargin / totMaterial) * 100 : 0;
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
-  const commissionBase = totMaterial;
+  const commissionBase = totMargin;
   const commission = commissionBase * (Number(form.commission_rate || 0) / 100);
 
   const submit = () => {
@@ -215,7 +215,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <div className="px-3 pb-2 pt-1 flex items-center gap-3 min-w-[1000px]">
                   <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="flex-1 min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
                   <div className="text-xs font-mono whitespace-nowrap text-muted-foreground" data-testid={`item-margin-${i}`}>
-                    Margin <span className="text-[#16A34A] font-semibold">{currency(lineMargin(li))}</span> <span className="text-[10px]">({(Number(li.price_per_sqft || 0) * areaOf(li)) > 0 ? ((lineMargin(li) / (Number(li.price_per_sqft || 0) * areaOf(li))) * 100).toFixed(0) : 0}%)</span>
+                    Margin <span className="text-[#16A34A] font-semibold">{(Number(li.price_per_sqft || 0) * areaOf(li)) > 0 ? ((lineMargin(li) / (Number(li.price_per_sqft || 0) * areaOf(li))) * 100).toFixed(0) : 0}%</span>
                   </div>
                 </div>
               </div>
@@ -237,11 +237,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
 
               {hasCommission && (
                 <div className="border border-border p-3 space-y-3" data-testid="commission-block">
-                  <div className="overline text-[#A21CAF]">Sales commission (materials only)</div>
+                  <div className="overline text-[#A21CAF]">Sales commission (on gross profit)</div>
                   {isAdmin ? (
                     <label className="block">
                       <span className="overline text-muted-foreground">Salesman</span>
-                      <select value={form.salesman_id || ""} onChange={(e) => set("salesman_id", e.target.value)} data-testid="doc-salesman"
+                      <select value={form.salesman_id || ""} onChange={(e) => { const sid = e.target.value; const sm = salesmen.find((s) => s.id === sid); setForm({ ...form, salesman_id: sid, commission_rate: sm ? sm.commission_rate : form.commission_rate }); }} data-testid="doc-salesman"
                         className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
                         <option value="">— unassigned —</option>
                         {salesmen.map((s) => <option key={s.id} value={s.id}>{`${s.name} (${s.commission_rate}%)`}</option>)}
@@ -265,7 +265,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <Row label="Machine" value={totMachine} muted />
               <div className="flex justify-between text-xs py-0.5 font-mono" data-testid="doc-margin-summary">
                 <span className="text-[#0E7490]">Material margin (internal)</span>
-                <span className="text-[#16A34A] font-semibold">{currency(totMargin)} ({totMarginPct.toFixed(0)}%)</span>
+                <span className="text-[#16A34A] font-semibold">{totMarginPct.toFixed(0)}%</span>
               </div>
               <div className="border-t border-border mt-2 pt-2"><Row label="Subtotal" value={subtotal} /></div>
               {discRate > 0 && (
@@ -278,7 +278,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <div className="border-t border-border mt-2 pt-2"><Row label="Total" value={total} bold /></div>
               {hasCommission && Number(form.commission_rate || 0) > 0 && (
                 <div className="mt-3 pt-3 border-t border-dashed border-border text-xs font-mono text-muted-foreground space-y-1">
-                  <div className="flex justify-between"><span>Commission base (materials)</span><span>{currency(commissionBase)}</span></div>
+                  <div className="flex justify-between"><span>Commission base (gross profit)</span><span>{currency(commissionBase)}</span></div>
                   <div className="flex justify-between"><span>Rate</span><span>{Number(form.commission_rate)}%</span></div>
                   <div className="flex justify-between text-[#A21CAF]"><span>Commission</span><span>{currency(commission)}</span></div>
                   <div className="flex justify-between text-foreground"><span>Net after commission</span><span>{currency(total - commission)}</span></div>

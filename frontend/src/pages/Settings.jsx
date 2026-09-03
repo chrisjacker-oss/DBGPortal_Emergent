@@ -28,6 +28,7 @@ export default function Settings() {
         default_tax_rate: Number(form.default_tax_rate),
         card_surcharge_enabled: !!form.card_surcharge_enabled,
         card_surcharge_pct: Number(form.card_surcharge_pct || 0),
+        low_margin_threshold: Number(form.low_margin_threshold || 0),
         company_name: form.company_name || "",
         company_address: form.company_address || "",
         company_phone: form.company_phone || "",
@@ -95,6 +96,8 @@ export default function Settings() {
           <Inp label="Default material markup (%)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
           <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />
           <div className="text-xs text-muted-foreground -mt-2">Applied automatically to new quotes, sales orders and invoices (editable per document).</div>
+          <Inp label="Low-margin alert threshold (%)" type="number" value={form.low_margin_threshold ?? 0} onChange={set("low_margin_threshold")} testid="set-low-margin-threshold" />
+          <div className="text-xs text-muted-foreground -mt-2">Estimates, sales orders and invoices whose material margin % falls below this are flagged in red. Set to 0 to disable.</div>
           <label className="flex items-center gap-2 cursor-pointer select-none pt-2" data-testid="set-surcharge-label">
             <input type="checkbox" checked={!!form.card_surcharge_enabled} onChange={(e) => setForm({ ...form, card_surcharge_enabled: e.target.checked })} data-testid="set-card-surcharge-enabled" className="h-4 w-4 accent-[#0A0A0A]" />
             <span className="text-sm">Add a card-processing surcharge to online payments</span>

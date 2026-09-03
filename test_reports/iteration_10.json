@@ -1,0 +1,36 @@
+{
+  "summary": "Frontend-only retest (admin sales@dbgsigns.com) of the two iteration_9 fixes. FIX A (ActionsMenu page-freeze) is RESOLVED: on Estimates, Sales Orders and Invoices, Web view (popup), Edit (DocBuilder -> Cancel), Internal note and Delete-cancel were each exercised in ONE session with no reload; document.body pointer-events stayed 'auto' after every action and the page remained interactive (row checkboxes toggled, other ⋮ menus opened with full item lists). FIX B (commission prefill) is RESOLVED: selecting 'Sam Salesman (10%)' auto-fills Commission rate = 10 and the preview shows '$24.00 x 10% = $2.40'. Regressions pass: bulk delete (wrong pw -> 'Incorrect admin password' toast, dialog stays open, rows intact; correct pw 10297099 -> both QA rows deleted and gone after reload) and Margin column renders a percentage on all three lists with state-correct dropdown items.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "DocBuilder customer dropdown",
+        "issue": "LOW: when 'New Estimate' is opened immediately after the Estimates page loads, the Customer <select> contains only the 'Select customer…' placeholder (customer list still being fetched). Re-opening the dialog a moment later shows all ~350 customers. Result: a doc can be saved with no customer (list then shows 'Unknown'). Consider disabling save / showing a loading state until customers resolve.",
+        "selector": "[data-testid='doc-customer']",
+        "priority": "LOW"
+      },
+      {
+        "component": "Estimates / SOs / Invoices lists",
+        "issue": "LOW (pre-existing, unchanged): most legacy demo rows show Customer='Unknown' and Margin 0% because their customer records were removed by earlier test runs.",
+        "selector": "estimate-row-{id}",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ActionsMenu.jsx onSelect={() => setTimeout(() => it.onClick?.(), 0)} correctly lets Radix close the menu and release the body pointer-events lock — verified across 12 item invocations on 3 pages with no reload.",
+    "Estimates.jsx/SalesOrders.jsx/Invoices.jsx still duplicate the GET /settings low_margin_threshold fetch plus selection/bulk-delete state — extract a shared hook (DRY, carried over from iteration_9)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (frontend-only request)", "frontend": "100% of requested areas pass (FIX A, FIX B, bulk delete, margin/actions regression)" },
+  "seed_data_creation": "Created two throwaway estimates via New Estimate (EST-29500 'QA_ACT_1', EST-29501 'QA_ACT_2', Sam Salesman 10%, 60% margin) and deleted BOTH via the bulk-delete flow with password 10297099. No pre-existing data modified or deleted.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "/app/memory/test_credentials.md - admin sales@dbgsigns.com / 10297099",
+  "context_for_next_testing_agent": "Numbering confirmed live: new estimates came out as EST-29500 and EST-29501 (both since deleted, so the next estimate will be EST-29502). ActionsMenu freeze is fixed — checked with pointer-events assertions after Web view/Edit/Note/Delete-cancel on all three pages plus a follow-up click each time. Menu item sets observed: draft estimate = Web view/Email/Approve->SO/Edit/Internal note/Delete (6); fulfilled SO = Web view/Email/Edit/Void/Internal note/Delete (Advance/Convert correctly hidden); unpaid invoice = Web view/Download PDF/Email/Pay now (card)/Record payment/Edit/Void/Delete (8). NOT retested this round: Approve->SO, Email send, Void, Record payment side effects (mutating actions, skipped to avoid altering data), Settings low-margin threshold, salesman-role view. Popup PDF tabs: use expect_popup without wait_for_load_state (popup url reports ':' in headless). Bulk-delete dialog testids: admin-delete-dialog / admin-delete-password / admin-delete-confirm (do NOT target the dialog's last button — that is the 'Close' X).",
+  "rca_of_the_issue": "Previous freeze was Radix DropdownMenu's body pointer-events lock never released because DropdownMenuItem onSelect called e.preventDefault(). Deferring the handler with setTimeout(...,0) allows the default close, restoring pointer-events; verified empirically (getComputedStyle(document.body).pointerEvents === 'auto' after every item click)."
+}

@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import ActionsMenu from "@/components/ActionsMenu";
+import { MarginCell } from "@/components/MarginCell";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye } from "@phosphor-icons/react";
@@ -19,6 +20,9 @@ export default function SalesOrders() {
   const isAdmin = user?.role === "admin";
   const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const [rows, setRows] = useState([]);
+  const [lowThreshold, setLowThreshold] = useState(0);
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delSo, setDelSo] = useState(null);
@@ -29,6 +33,7 @@ export default function SalesOrders() {
   const focusRef = useRef(null);
   const load = () => api.get("/sales-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
 
   const save = async (payload) => {
@@ -72,10 +77,20 @@ export default function SalesOrders() {
   };
 
   const visible = rows.filter((r) => (tab === "voided" ? r.voided : !r.voided));
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = visible.length > 0 && visible.every((r) => sel[r.id]);
+  const toggleAll = () => { const n = {}; if (!allChecked) visible.forEach((r) => (n[r.id] = true)); setSel(n); };
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/sales-orders/bulk-delete", { ids: selIds, password });
+      toast.success(`Deleted ${data.deleted} sales order(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
 
   return (
     <div>
       <PageHeader overline="Production" title="Sales Orders">
+        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-so-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn onClick={() => { setEditing(null); setOpen(true); }} data-testid="add-so-btn"><Plus size={16} weight="bold" /> New Sales Order</Btn>
       </PageHeader>
       <div className="p-8">
@@ -87,6 +102,7 @@ export default function SalesOrders() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="so-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
@@ -101,18 +117,16 @@ export default function SalesOrders() {
             <tbody data-testid="sales-orders-table">
               {visible.map((r) => (
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`so-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
-                  <td className="px-6 py-3 font-mono">{r.number}</td>
+                  {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`so-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
+                  <td className="px-6 py-3 font-mono">
+                    <button onClick={() => viewDocPdf(`/sales-orders/${r.id}/pdf`)} data-testid={`so-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
+                  </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
-                  {canSeeMargin && (
-                    <td className="px-6 py-3 text-right font-mono" data-testid={`so-margin-${r.id}`}>
-                      <span className="text-[#16A34A] font-semibold">{currency(r.material_margin || 0)}</span>
-                      <div className="text-[11px] text-muted-foreground font-sans">{Number(r.material_margin_pct || 0).toFixed(0)}%</div>
-                    </td>
-                  )}
+                  {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`so-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
@@ -132,7 +146,7 @@ export default function SalesOrders() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={8 + (canSeeMargin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={8 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -140,6 +154,7 @@ export default function SalesOrders() {
 
       <DocBuilder open={open} kind="sales-order" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <AdminDeleteDialog open={!!delSo} label={`sales order ${delSo?.number || ""}`} onClose={() => setDelSo(null)} onConfirm={confirmDelete} />
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected sales order(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/sales-orders/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}
         onClose={() => setNoteDoc(null)} onSaved={(d) => setRows((rs) => rs.map((x) => (x.id === d.id ? { ...x, internal_notes: d.internal_notes } : x)))} />
     </div>

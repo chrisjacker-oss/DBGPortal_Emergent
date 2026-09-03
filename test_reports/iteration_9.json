@@ -1,0 +1,58 @@
+{
+  "summary": "Frontend-only E2E test (admin sales@dbgsigns.com + salesman sam@dbgsigns.com) of the new margin/actions-menu/bulk-delete/clickable-number features on Estimates, Sales Orders, Invoices, plus DocBuilder margin+commission and Settings low-margin threshold. All 10 requested feature areas verified working EXCEPT one critical regression: after choosing any item in the new ⋮ ActionsMenu, the whole page becomes non-interactive (document.body pointer-events:none) until a manual reload.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ActionsMenu.jsx (used on Estimates/SalesOrders/Invoices rows)",
+        "issue": "CRITICAL page-freeze: after clicking ANY dropdown item (Web view, Edit, Internal note, Delete, Email, Approve...), document.body keeps pointer-events:none and a stale Radix dialog/popper node stays mounted, so NO further click anywhere on the page works (verified: row checkbox, other ⋮ buttons, header buttons) until the user reloads. Reproduced 4/4 times on Estimates for Web view, Edit(DocBuilder close via Esc AND via Cancel), Internal note and Delete-cancel. Opening the menu and pressing Escape without selecting an item does NOT freeze (pointer-events:auto), which isolates the cause to the item onSelect handler: `onSelect={(e) => { e.preventDefault(); it.onClick?.(); }}` prevents Radix DropdownMenu from closing, so its body pointer-events lock is never released. Suggested fix: remove e.preventDefault() (or defer the action: `onSelect={() => setTimeout(() => it.onClick?.(), 0)}`) so the menu closes and Radix restores body pointer-events.",
+        "selector": "[data-testid='estimate-actions-{id}'] -> [data-testid='view-estimate-{id}'] / edit / note / delete",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "DocBuilder commission preview",
+        "issue": "Selecting a salesman (e.g. 'Sam Salesman (10%)') does not auto-populate 'Commission rate (%)' (stays 0), so the preview reads '$300.00 x 0% = $0.00' while the saved estimate correctly shows $30.00 (10%). Misleading preview; prefill rate from the chosen salesman's commission_rate.",
+        "selector": "[data-testid='doc-salesman'], [data-testid='doc-commission-rate'], [data-testid='commission-preview']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Estimates / Sales Orders / Invoices lists",
+        "issue": "Cosmetic/data: most pre-existing demo rows show Customer = 'Unknown' (customer records were removed by earlier test runs). Not caused by this change set, but the list shows 'Unknown' rather than a graceful placeholder.",
+        "selector": "estimate-row-{id}",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Settings -> low_margin_threshold",
+        "issue": "Non-reproducible anomaly observed once: after a UI save of 0 the API later returned low_margin_threshold=65 (equal to shop_rate_per_hr). Two subsequent controlled runs (save 30, then save 0) sent correct PUT payloads and persisted correctly, so this could not be reproduced. Worth a quick look at Settings save/state race; left threshold restored to 0 (original value).",
+        "affected_selectors": ["set-low-margin-threshold", "save-settings-btn"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Estimates/SOs/Invoices margin column",
+        "issues": ["Margin values render green (#16A34A) and low-margin flags red (rgb(211,34,34)) with adequate contrast on white; no spacing/alignment problems observed. PDF popup opened by number links renders as a browser PDF viewer tab (expected)."]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "FIX CRITICAL: ActionsMenu item onSelect e.preventDefault() leaves body pointer-events:none -> whole page unclickable after any row action on Estimates/Sales Orders/Invoices. Let the menu close (drop preventDefault or defer onClick).",
+    "Prefill DocBuilder 'Commission rate (%)' from the selected salesman's rate so the commission preview matches the saved value.",
+    "Optional: re-verify Settings low-margin threshold save (one-time value drift to 65 observed, not reproducible)."
+  ],
+  "critical_code_review_comments": [
+    "ActionsMenu.jsx line 22: `onSelect={(e)=>{e.preventDefault(); it.onClick?.();}}` keeps the Radix DropdownMenu open/locked; combined with opening a Dialog from the item this permanently strands the body pointer-events lock. This single line breaks every row action on three pages.",
+    "MarginCell/list margin logic is consistent with backend (margin / material selling price); invoice detail per-line margin uses material_margin/material_cost where line 'material_cost' is the SELL amount, which matches - keep field naming consistent to avoid future confusion.",
+    "Estimates.jsx/SalesOrders.jsx/Invoices.jsx each duplicate the same GET /settings low_margin_threshold fetch and selection/bulk-delete logic - extract a shared hook (useLowMarginThreshold / useRowSelection) to satisfy DRY."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (frontend-only request)", "frontend": "90% (9/10 feature areas pass; ActionsMenu post-click page freeze fails)" },
+  "seed_data_creation": "Created and then deleted throwaway records only: estimates QA_MARGIN_TEST_1 (EST-0258, 60% margin) and QA_MARGIN_TEST_2 (EST-0259, 10% margin) removed via bulk delete; invoice QA_INV_MARGIN (INV-0101, 60% margin) removed via bulk delete. Settings low_margin_threshold temporarily 50/30 and restored to 0. No pre-existing demo data deleted.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "/app/memory/test_credentials.md - admin sales@dbgsigns.com / 10297099; salesman sam@dbgsigns.com / Sales2026!",
+  "context_for_next_testing_agent": "VERIFIED PASSING: (1) Margin column shows percentage (not $) on all three pages; new docs with cost show real % (60%, 10%), legacy docs 0% and correctly unflagged. (2) Actions dropdown item sets are correct per state: draft estimate = Web view/Email/Approve->SO/Edit/Internal note/Delete; approved estimate hides Approve; open SO = Web view/Email/Advance->in production/Convert to invoice/Edit/Void/Internal note/Delete; fulfilled SO hides Advance/Convert; unpaid invoice = Web view/Download PDF/Email/Pay now (card)/Record payment/Edit/Void/Delete; paid invoice = Web view/Download PDF/Payment history/Email/Edit/Void/Delete. Salesman sees only Web view/Email/Edit and no checkboxes (admin-only) but DOES see the Margin column. (3) Row checkbox reveals 'Delete N' header button; select-all toggles all displayed rows (Delete 44 / Delete 8 / Delete 5) and clearing hides the button. (4) Bulk delete: wrong password -> error toast, dialog stays open, rows intact; correct password 10297099 -> selected rows deleted and gone from list (estimates + invoices verified). (5) Estimate & SO numbers open a NEW TAB with the inline PDF (popup fires; the PDF tab never reaches a load state in headless Chromium, so use expect_popup WITHOUT wait_for_load_state). Invoice number opens the detail dialog. (6) DocBuilder: editable Sell/sqft + Cost/sqft, material select auto-fills both (3.5035 / 0.637), per-line 'Margin 60%', 'Material margin (internal) 60%' summary, live totals; commission block titled 'Sales commission (on gross profit)' with base $300 = 506.66 total - 200 material cost - 4.33 shop - 2.33 machine. (7) Invoice detail dialog shows per-line Margin % and 'Material margin - internal only' 60.0%. (8) Settings 'Low-margin alert threshold (%)' saves and persists; at threshold 50 the 10% estimate showed '⚠10% · Low' in red and the 60% one did not. AFTER THE ACTIONSMENU FIX: retest each dropdown item end-to-end (Approve->SO, Email, Void, Record payment) since the freeze previously prevented chaining actions in one session.",
+  "rca_of_the_issue": "Radix DropdownMenu applies pointer-events:none to document.body while open and removes it on close. ActionsMenu.jsx calls e.preventDefault() inside DropdownMenuItem onSelect, which suppresses the automatic close, so the menu's modal lock is never torn down; the visible menu disappears (focus/dialog overlay) but the body lock remains, making the entire page unclickable. Repro: login as admin -> /estimates -> click any ⋮ -> click any item -> try to click a row checkbox (fails; getComputedStyle(document.body).pointerEvents === 'none'); a page reload restores interactivity. Mitigation: remove preventDefault or defer the handler with setTimeout(...,0) so Radix closes and unlocks the body."
+}

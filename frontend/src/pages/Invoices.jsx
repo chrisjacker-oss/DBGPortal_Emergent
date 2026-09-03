@@ -10,6 +10,7 @@ import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import ActionsMenu from "@/components/ActionsMenu";
+import { MarginCell } from "@/components/MarginCell";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -33,13 +34,17 @@ export default function Invoices() {
   const [internalDraft, setInternalDraft] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [tab, setTab] = useState("active");
+  const [lowThreshold, setLowThreshold] = useState(0);
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [sortKey, setSortKey] = useState("");
   const [pFrom, setPFrom] = useState("");
   const [pTo, setPTo] = useState("");
-  useEffect(() => { setSortKey(""); setPFrom(""); setPTo(""); }, [tab]);
+  useEffect(() => { setSortKey(""); setPFrom(""); setPTo(""); setSel({}); }, [tab]);
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
 
   const openHistory = async (r) => {
     try {
@@ -176,10 +181,20 @@ export default function Invoices() {
     if (sortKey === "paid_asc") return (a.paid_at || "").localeCompare(b.paid_at || "");
     return 0;
   });
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = sorted.length > 0 && sorted.every((r) => sel[r.id]);
+  const toggleAll = () => { const n = {}; if (!allChecked) sorted.forEach((r) => (n[r.id] = true)); setSel(n); };
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/invoices/bulk-delete", { ids: selIds, password });
+      toast.success(`Deleted ${data.deleted} invoice(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
 
   return (
     <div>
       <PageHeader overline="Billing" title="Invoices">
+        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-invoices-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn variant="outline" onClick={() => downloadCsv("/export/xero/invoices", "xero_invoices.csv")} data-testid="export-xero-invoices-btn">
           <DownloadSimple size={16} weight="bold" /> Export to Xero
         </Btn>
@@ -218,6 +233,7 @@ export default function Invoices() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="invoice-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
@@ -235,6 +251,7 @@ export default function Invoices() {
             <tbody data-testid="invoices-table">
               {sorted.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                  {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`invoice-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
                     <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
                   </td>
@@ -249,12 +266,7 @@ export default function Invoices() {
                       <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
                     )}
                   </td>
-                  {canSeeMargin && (
-                    <td className="px-6 py-3 text-right font-mono" data-testid={`invoice-margin-${r.id}`}>
-                      <span className="text-[#16A34A] font-semibold">{currency(r.material_margin || 0)}</span>
-                      <div className="text-[11px] text-muted-foreground font-sans">{Number(r.material_margin_pct || 0).toFixed(0)}%</div>
-                    </td>
-                  )}
+                  {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`invoice-margin-${r.id}`} />}
                   {showComm && (
                     <td className="px-6 py-3 text-right font-mono" data-testid={`invoice-commission-${r.id}`}>
                       {Number(r.commission_amount || 0) > 0 ? (
@@ -286,7 +298,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -296,6 +308,7 @@ export default function Invoices() {
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected invoice(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
 
       <Dialog open={!!histInv} onOpenChange={(o) => !o && setHistInv(null)}>
         <DialogContent className="rounded-none max-w-md" data-testid="payment-history-dialog">
@@ -367,7 +380,7 @@ export default function Invoices() {
                         <td className="px-3 py-2 text-center font-mono text-muted-foreground">{li.width_in}" × {li.height_in}" × {li.quantity}</td>
                         <td className="px-3 py-2 text-right font-mono">{Number(li.area_sqft || 0).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right font-mono">{currency(li.line_total)}</td>
-                        {canSeeMargin && <td className="px-3 py-2 text-right font-mono text-[#16A34A]" data-testid={`detail-item-margin-${i}`}>{currency(li.material_margin || 0)}</td>}
+                        {canSeeMargin && <td className="px-3 py-2 text-right font-mono text-[#16A34A]" data-testid={`detail-item-margin-${i}`}>{Number(li.material_cost) > 0 ? ((Number(li.material_margin || 0) / Number(li.material_cost)) * 100).toFixed(0) : 0}%</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -414,7 +427,7 @@ export default function Invoices() {
                   <div className="overline text-[#0E7490] mb-2 flex items-center gap-1.5"><LockKey size={13} weight="bold" /> Material margin · internal only (never shown to the customer)</div>
                   <div className="flex items-center justify-between font-mono text-sm">
                     <span className="text-muted-foreground">Margin</span>
-                    <span className="font-semibold text-[#16A34A]" data-testid="invoice-margin-amount">{currency(detailInv.material_margin || 0)} <span className="text-muted-foreground text-xs">({Number(detailInv.material_margin_pct || 0).toFixed(1)}%)</span></span>
+                    <span className="font-semibold text-[#16A34A]" data-testid="invoice-margin-amount">{Number(detailInv.material_margin_pct || 0).toFixed(1)}%</span>
                   </div>
                 </div>
               )}
