@@ -88,6 +88,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     if (k === "category") {
       const m = materials.find((x) => x.id === items[i].material_id);
       if (!m || m.category !== v) { items[i].material_id = ""; items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
+      if (String(v).trim().toLowerCase() === "shipping") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Shipping"; }
     }
     setForm({ ...form, line_items: items });
   };
@@ -217,6 +218,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const cat = li.category || catOfMaterial(li.material_id);
               const catOptions = categories.includes(cat) || !cat ? categories : [cat, ...categories];
               const matOptions = materials.filter((m) => !cat || m.category === cat);
+              const isShip = String(cat).trim().toLowerCase() === "shipping";
               return (
               <div key={i} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
@@ -225,6 +227,17 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   {catOptions.map((c) => <option key={c} value={c}>{c}</option>)}
                   {isAdmin && <option value="__new__">+ Create category…</option>}
                 </select>
+                {isShip ? (
+                <>
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Shipping cost $</span>
+                  <input type="number" value={li.cost_per_sqft} onChange={(e) => setItem(i, "cost_per_sqft", e.target.value)} data-testid={`item-cost-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">+ 30% markup</span>
+                </div>
+                <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
+                </>
+                ) : (
+                <>
                 <select value={li.material_id || ""} onChange={(e) => setItem(i, "material_id", e.target.value)} data-testid={`item-mat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
                   <option value="">— select material —</option>
                   {matOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -237,6 +250,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.cost_per_sqft} onChange={(v) => setItem(i, "cost_per_sqft", v)} testid={`item-cost-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <input type="number" value={(li.line_total_override !== "" && li.line_total_override != null) ? li.line_total_override : Number(lineTotal(li).toFixed(2))} onChange={(e) => setItem(i, "line_total_override", e.target.value)} data-testid={`item-line-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+                </>
+                )}
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
                 </div>
                 <div className="px-3 pb-2 pt-1 flex items-center gap-3 min-w-[1000px]">
