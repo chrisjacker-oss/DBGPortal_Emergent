@@ -398,7 +398,8 @@ async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate:
     items = []
     for li in line_items:
         li2 = dict(li)
-        li2["cost_per_sqft"] = cost_map.get(li2.get("material_id"), 0.0)
+        client_cost = float(li.get("cost_per_sqft") or 0)
+        li2["cost_per_sqft"] = client_cost or cost_map.get(li2.get("material_id"), 0.0)
         items.append(compute_line(li2, s))
     subtotal = round(sum(i["line_total"] for i in items), 2)
     discount_amount = round(subtotal * (discount_rate / 100.0), 2)

@@ -359,6 +359,7 @@ export default function Invoices() {
                     <th className="px-3 py-2 font-mono text-center">W × H × Qty</th>
                     <th className="px-3 py-2 font-mono text-right">Sqft</th>
                     <th className="px-3 py-2 font-mono text-right">Amount</th>
+                    {canSeeMargin && <th className="px-3 py-2 font-mono text-right text-[#0E7490]">Margin</th>}
                   </tr></thead>
                   <tbody data-testid="invoice-detail-items">
                     {(detailInv.line_items || []).map((li, i) => (
@@ -367,6 +368,7 @@ export default function Invoices() {
                         <td className="px-3 py-2 text-center font-mono text-muted-foreground">{li.width_in}" × {li.height_in}" × {li.quantity}</td>
                         <td className="px-3 py-2 text-right font-mono">{Number(li.area_sqft || 0).toFixed(2)}</td>
                         <td className="px-3 py-2 text-right font-mono">{currency(li.line_total)}</td>
+                        {canSeeMargin && <td className="px-3 py-2 text-right font-mono text-[#16A34A]" data-testid={`detail-item-margin-${i}`}>{currency(li.material_margin || 0)}</td>}
                       </tr>
                     ))}
                   </tbody>

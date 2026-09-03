@@ -7,7 +7,7 @@ import { Inp } from "@/pages/Customers";
 import { Plus, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, extra_labor_hours: 0 };
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -76,12 +76,12 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     items[i] = { ...items[i], [k]: v };
     if (k === "material_id") {
       const m = materials.find((x) => x.id === v);
-      if (m) { items[i].price_per_sqft = m.price_per_sqft; items[i].description = m.name; items[i].category = m.category || items[i].category; }
-      else { items[i].price_per_sqft = 0; items[i].description = ""; }
+      if (m) { items[i].price_per_sqft = m.price_per_sqft; items[i].cost_per_sqft = m.cost_per_sqft || 0; items[i].description = m.name; items[i].category = m.category || items[i].category; }
+      else { items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
     }
     if (k === "category") {
       const m = materials.find((x) => x.id === items[i].material_id);
-      if (!m || m.category !== v) { items[i].material_id = ""; items[i].price_per_sqft = 0; items[i].description = ""; }
+      if (!m || m.category !== v) { items[i].material_id = ""; items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
     }
     setForm({ ...form, line_items: items });
   };
@@ -109,6 +109,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     return { area, material, machine, labor, total: material + machine + labor };
   };
   const lineTotal = (li) => breakdown(li).total;
+  const lineMargin = (li) => (Number(li.price_per_sqft || 0) - Number(li.cost_per_sqft || 0)) * areaOf(li);
 
   const subtotal = form.line_items.reduce((s, li) => s + lineTotal(li), 0);
   const selCust = customers.find((c) => c.id === form.customer_id);
@@ -118,6 +119,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const tax = taxable * (Number(form.tax_rate || 0) / 100);
   const total = taxable + tax;
   const totMaterial = form.line_items.reduce((s, li) => s + breakdown(li).material, 0);
+  const totMatCost = form.line_items.reduce((s, li) => s + Number(li.cost_per_sqft || 0) * areaOf(li), 0);
+  const totMargin = totMaterial - totMatCost;
+  const totMarginPct = totMaterial > 0 ? (totMargin / totMaterial) * 100 : 0;
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
   const commissionBase = totMaterial;
@@ -137,12 +141,13 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           description: li.description, details: li.details || "", material_id: li.material_id || null,
           width_in: Number(li.width_in || 0), height_in: Number(li.height_in || 0),
           quantity: Number(li.quantity || 0), price_per_sqft: Number(li.price_per_sqft || 0),
+          cost_per_sqft: Number(li.cost_per_sqft || 0),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
         })),
     });
   };
 
-  const cols = "grid-cols-[1.1fr_1.35fr_0.5fr_0.5fr_0.5fr_0.6fr_0.7fr_0.6fr_0.85fr_0.3fr]";
+  const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.65fr_0.6fr_0.8fr_0.3fr]";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -176,17 +181,17 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           </div>
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">
-            <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[920px]`}>
+            <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[1000px]`}>
               <div>Category</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
-              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">$/sqft</div><div className="text-right">Extra hrs</div>
-              <div className="text-right">Cost</div><div></div>
+              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Sell/sqft</div><div className="text-right">Cost/sqft</div><div className="text-right">Extra hrs</div>
+              <div className="text-right">Total</div><div></div>
             </div>
             {form.line_items.map((li, i) => {
               const cat = li.category || catOfMaterial(li.material_id);
               const catOptions = categories.includes(cat) || !cat ? categories : [cat, ...categories];
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               return (
-              <div key={i} className="border-b border-border last:border-0 min-w-[920px]">
+              <div key={i} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
                 <select value={cat} onChange={(e) => e.target.value === "__new__" ? createCategoryFor(i) : setItem(i, "category", e.target.value)} data-testid={`item-cat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
                   <option value="">All categories</option>
@@ -202,17 +207,21 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.quantity} onChange={(v) => setItem(i, "quantity", v)} testid={`item-qty-${i}`} />
                 <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
                 <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
+                <Cell value={li.cost_per_sqft} onChange={(v) => setItem(i, "cost_per_sqft", v)} testid={`item-cost-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
                 </div>
-                <div className="px-3 pb-2 pt-1">
-                  <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="w-full min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
+                <div className="px-3 pb-2 pt-1 flex items-center gap-3 min-w-[1000px]">
+                  <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="flex-1 min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
+                  <div className="text-xs font-mono whitespace-nowrap text-muted-foreground" data-testid={`item-margin-${i}`}>
+                    Margin <span className="text-[#16A34A] font-semibold">{currency(lineMargin(li))}</span> <span className="text-[10px]">({(Number(li.price_per_sqft || 0) * areaOf(li)) > 0 ? ((lineMargin(li) / (Number(li.price_per_sqft || 0) * areaOf(li))) * 100).toFixed(0) : 0}%)</span>
+                  </div>
                 </div>
               </div>
               );
             })}
-            <div className="px-3 py-2 min-w-[920px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>
+            <div className="px-3 py-2 min-w-[1000px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -254,6 +263,10 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <Row label="Material cost" value={totMaterial} muted />
               <Row label="Shop labor" value={totLabor} muted />
               <Row label="Machine" value={totMachine} muted />
+              <div className="flex justify-between text-xs py-0.5 font-mono" data-testid="doc-margin-summary">
+                <span className="text-[#0E7490]">Material margin (internal)</span>
+                <span className="text-[#16A34A] font-semibold">{currency(totMargin)} ({totMarginPct.toFixed(0)}%)</span>
+              </div>
               <div className="border-t border-border mt-2 pt-2"><Row label="Subtotal" value={subtotal} /></div>
               {discRate > 0 && (
                 <div className="flex justify-between text-sm py-0.5" data-testid="discount-row">
