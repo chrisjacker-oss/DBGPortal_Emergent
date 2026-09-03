@@ -2483,6 +2483,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'{contact_html}'
         f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
         f'</div></td></tr>'
+        f'{_disclaimer_html()}'
         f'</table></div>{pixel}'
     )
 
@@ -2663,6 +2664,29 @@ DISCLAIMER_BLOCKS = [
     ("li", "For equipment five years and newer, DBG Signs will evaluate any issues and determine if services will be performed for a fix, only if the vinyl is at fault. DBG Signs will not be held responsible for any issues due to customers, customers' employees, or drivers."),
     ("p", "(Ready Artwork) is as outlined any artwork that is not created by DBG Signs in-house and DBG Signs will not alter or make any changes to artwork unless written consent has been authorized by the customer and then approved by customer. Ready Artwork will be printed and produced with no guarantee to the accuracy of colors due to the artwork was not produced by DBG Signs in-house art dept.; DBG Signs will not be held responsible for any incorrect colors or problems in artwork, IE (Spelling errors, Colors, or anything in the artwork). Any issues will be addressed and fixed at the customer's expense."),
 ]
+
+
+def _disclaimer_html() -> str:
+    parts = [
+        f'<div style="font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;margin:0 0 6px">{escape(DISCLAIMER_HEADING)}</div>',
+        '<div style="height:2px;background:#06B6D4;width:56px;margin:0 0 10px"></div>',
+    ]
+    ul_open = False
+    for kind, text in DISCLAIMER_BLOCKS:
+        if kind == "li":
+            if not ul_open:
+                parts.append('<ul style="margin:0 0 8px 18px;padding:0;color:#6B7280;font-size:11px;line-height:1.55">')
+                ul_open = True
+            parts.append(f'<li style="margin:0 0 4px">{escape(text)}</li>')
+        else:
+            if ul_open:
+                parts.append('</ul>')
+                ul_open = False
+            parts.append(f'<p style="margin:0 0 8px;color:#6B7280;font-size:11px;line-height:1.55">{escape(text)}</p>')
+    if ul_open:
+        parts.append('</ul>')
+    return ('<tr><td style="padding:2px 32px 26px">'
+            '<div style="border-top:1px solid #E5E7EB;padding-top:14px">' + "".join(parts) + '</div></td></tr>')
 
 
 def _draw_disclaimer(c, L, R, H) -> None:
