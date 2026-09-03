@@ -119,10 +119,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const breakdown = (li) => {
     const area = areaOf(li);
     const material = Number(li.price_per_sqft || 0) * area;
+    const isShip = String(li.category || "").trim().toLowerCase() === "shipping";
     const machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
-    const machine = machineH * settings.machine_rate_per_hr;
+    const machine = isShip ? 0 : machineH * settings.machine_rate_per_hr;
     const laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
-    const labor = laborH * settings.shop_rate_per_hr;
+    const labor = isShip ? 0 : laborH * settings.shop_rate_per_hr;
     return { area, material, machine, labor, total: material + machine + labor };
   };
   const lineTotal = (li) => {
@@ -161,7 +162,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       line_items: form.line_items
         .filter((li) => li.description || li.material_id)
         .map((li) => ({
-          description: li.description, details: li.details || "", material_id: li.material_id || null,
+          description: li.description, details: li.details || "", category: li.category || null, material_id: li.material_id || null,
           width_in: Number(li.width_in || 0), height_in: Number(li.height_in || 0),
           quantity: Number(li.quantity || 0), price_per_sqft: Number(li.price_per_sqft || 0),
           cost_per_sqft: Number(li.cost_per_sqft || 0),

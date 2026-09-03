@@ -158,6 +158,7 @@ class LoginInput(BaseModel):
 class LineItem(BaseModel):
     description: str = ""
     details: Optional[str] = ""
+    category: Optional[str] = None
     material_id: Optional[str] = None
     width_in: float = 0.0
     height_in: float = 0.0
@@ -315,7 +316,7 @@ DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machin
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
 
-PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials"]
+PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "Shipping"]
 
 
 async def get_settings() -> dict:
@@ -354,6 +355,10 @@ def compute_line(li: dict, s: dict) -> dict:
     sh_sqft = float(s.get("shop_sqft_per_hr") or 0)
     labor_hours_raw = (area / sh_sqft if sh_sqft else 0.0) + float(li.get("extra_labor_hours") or 0)
     labor_cost = round(labor_hours_raw * float(s.get("shop_rate_per_hr") or 0), 2)
+    # Shipping lines are a flat cost (+ markup) — no shop/machine labor applied
+    if str(li.get("category") or "").strip().lower() == "shipping":
+        labor_cost = 0.0
+        machine_cost = 0.0
     computed_total = round(material_cost + labor_cost + machine_cost, 2)
     ov = li.get("line_total_override")
     line_total = round(float(ov), 2) if (ov is not None and str(ov) != "" and float(ov) > 0) else computed_total
