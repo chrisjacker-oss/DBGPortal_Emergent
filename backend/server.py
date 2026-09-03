@@ -598,6 +598,55 @@ async def import_customers(payload: CustomerImportInput, user: dict = Depends(re
     return {"created": created, "skipped": skipped, "errors": errors[:25]}
 
 
+class BulkDeleteInput(BaseModel):
+    ids: List[str] = []
+    password: str
+
+
+@api_router.post("/customers/bulk-delete")
+async def bulk_delete_customers(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    id_list = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not id_list:
+        raise HTTPException(status_code=400, detail="No customers selected")
+    res = await db.customers.delete_many({"_id": {"$in": [oid(i) for i in id_list]}})
+    await db.contacts.delete_many({"customer_id": {"$in": id_list}})
+    return {"deleted": res.deleted_count}
+
+
+@api_router.post("/contacts/import")
+async def import_contacts(payload: CustomerImportInput, user: dict = Depends(require_worker)):
+    import csv as _csv
+    text = (payload.csv or "").lstrip("\ufeff")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="The CSV file is empty")
+    reader = _csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV has no header row")
+    created, skipped, errors = 0, 0, []
+    for i, raw in enumerate(reader, start=2):
+        r = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items() if k is not None}
+        name = r.get("name") or r.get("contact") or r.get("contact name") or ""
+        company = r.get("customer") or r.get("company") or r.get("company name") or ""
+        if not name:
+            skipped += 1; errors.append(f"Row {i}: missing contact name"); continue
+        if not company:
+            skipped += 1; errors.append(f"Row {i}: missing customer/company to attach '{name}' to"); continue
+        cust = await db.customers.find_one({"company": {"$regex": f"^{re.escape(company)}$", "$options": "i"}})
+        if not cust:
+            cust = await db.customers.find_one({"name": {"$regex": f"^{re.escape(company)}$", "$options": "i"}})
+        if not cust:
+            skipped += 1; errors.append(f"Row {i}: no customer matching '{company}'"); continue
+        await db.contacts.insert_one({
+            "customer_id": str(cust["_id"]), "name": name,
+            "email": (r.get("email") or "").lower() or None,
+            "phone": r.get("phone") or None, "title": r.get("title") or None,
+            "created_at": now_iso(),
+        })
+        created += 1
+    return {"created": created, "skipped": skipped, "errors": errors[:25]}
+
+
 @api_router.put("/customers/{cid}")
 async def update_customer(cid: str, payload: CustomerInput, user: dict = Depends(require_staff)):
     await get_or_404(db.customers, cid, "Customer")

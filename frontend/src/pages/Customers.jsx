@@ -32,6 +32,9 @@ export default function Customers() {
   const [importOpen, setImportOpen] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importKind, setImportKind] = useState("customers"); // customers | contacts
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -79,13 +82,14 @@ export default function Customers() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
-  const openImport = () => { setImportResult(null); setImportOpen(true); };
+  const openImport = (kind) => { setImportKind(kind); setImportResult(null); setImportOpen(true); };
   const downloadTemplate = () => {
-    const csv = "name,company,email,phone,address,title,tier,net_terms,notes\n" +
-      "John Doe,Acme Signs,john@acme.com,555-123-4567,\"123 Main St, Dallas TX\",Owner,1,Net 15,VIP account\n";
+    const csv = importKind === "contacts"
+      ? "customer,name,email,phone,title\nAcme Signs,Jane Roe,jane@acme.com,555-222-3333,Purchasing\n"
+      : "name,company,email,phone,address,title,tier,net_terms,notes\nJohn Doe,Acme Signs,john@acme.com,555-123-4567,\"123 Main St, Dallas TX\",Owner,1,Net 15,VIP account\n";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "customer-import-template.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `${importKind}-import-template.csv`; a.click();
     URL.revokeObjectURL(url);
   };
   const handleFile = async (e) => {
@@ -95,18 +99,30 @@ export default function Customers() {
     setImporting(true); setImportResult(null);
     try {
       const text = await file.text();
-      const { data } = await api.post("/customers/import", { csv: text });
+      const { data } = await api.post(importKind === "contacts" ? "/contacts/import" : "/customers/import", { csv: text });
       setImportResult(data);
-      if (data.created > 0) { toast.success(`Imported ${data.created} customer(s)`); load(); }
-      else toast.message("No new customers were imported");
+      if (data.created > 0) { toast.success(`Imported ${data.created} ${importKind === "contacts" ? "contact" : "customer"}(s)`); load(); }
+      else toast.message("Nothing new was imported");
     } catch (err) { toast.error(err.response?.data?.detail || "Import failed"); }
     finally { setImporting(false); }
+  };
+
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = rows.length > 0 && rows.every((r) => sel[r.id]);
+  const toggleAll = () => { const n = {}; if (!allChecked) rows.forEach((r) => (n[r.id] = true)); setSel(n); };
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/customers/bulk-delete", { ids: selIds, password });
+      toast.success(`Deleted ${data.deleted} customer(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
   return (
     <div>
       <PageHeader overline="CRM" title="Customers">
-        <Btn variant="outline" onClick={openImport} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
+        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
+        <Btn variant="outline" onClick={() => openImport("customers")} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
+        <Btn variant="outline" onClick={() => openImport("contacts")} data-testid="import-contacts-btn"><UploadSimple size={16} weight="bold" /> Import Contacts</Btn>
         <Btn onClick={openNew} data-testid="add-customer-btn"><Plus size={16} weight="bold" /> New Customer</Btn>
       </PageHeader>
 
@@ -115,6 +131,7 @@ export default function Customers() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="customer-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">Name</th>
                 <th className="px-6 py-3 font-mono">Company</th>
                 <th className="px-6 py-3 font-mono">Email</th>
@@ -127,6 +144,7 @@ export default function Customers() {
             <tbody data-testid="customers-table">
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                  {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`customer-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-medium">{r.name}{r.title && <span className="block text-xs text-muted-foreground">{r.title}</span>}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.company || "—"}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.email || "—"}</td>
@@ -143,7 +161,7 @@ export default function Customers() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">No customers yet.</td></tr>
+                <tr><td colSpan={isAdmin ? 8 : 7} className="px-6 py-10 text-center text-muted-foreground">No customers yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -243,8 +261,8 @@ export default function Customers() {
       <Dialog open={importOpen} onOpenChange={(o) => !o && !importing && setImportOpen(false)}>
         <DialogContent className="rounded-none max-w-lg" data-testid="import-customers-dialog">
           <DialogHeader>
-            <DialogTitle className="font-display">Import customers from CSV</DialogTitle>
-            <DialogDescription className="font-mono text-xs">Columns: name, company, email, phone, address, title, tier (1–3), net_terms, notes. Rows with a duplicate email are skipped.</DialogDescription>
+            <DialogTitle className="font-display">{importKind === "contacts" ? "Import contacts from CSV" : "Import customers from CSV"}</DialogTitle>
+            <DialogDescription className="font-mono text-xs">{importKind === "contacts" ? "Columns: customer (company to attach to), name, email, phone, title. Rows are skipped if the customer can't be matched." : "Columns: name, company, email, phone, address, title, tier (1–3), net_terms, notes. Rows with a duplicate email are skipped."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <button onClick={downloadTemplate} data-testid="download-template-btn" className="inline-flex items-center gap-2 text-sm text-[#0E7490] hover:underline">
@@ -253,7 +271,7 @@ export default function Customers() {
             <label className="block border-2 border-dashed border-input px-4 py-8 text-center cursor-pointer hover:bg-secondary/40 transition-colors">
               <UploadSimple size={28} className="mx-auto mb-2 text-muted-foreground" />
               <div className="text-sm font-medium">{importing ? "Importing…" : "Choose a .csv file to upload"}</div>
-              <div className="text-xs text-muted-foreground mt-1">Your customer list will be added to the CRM</div>
+              <div className="text-xs text-muted-foreground mt-1">{importKind === "contacts" ? "Contacts will be attached to matching customers" : "Your customer list will be added to the CRM"}</div>
               <input type="file" accept=".csv,text/csv" onChange={handleFile} disabled={importing} data-testid="import-file-input" className="hidden" />
             </label>
             {importResult && (
@@ -272,6 +290,8 @@ export default function Customers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected customer(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
     </div>
   );
 }
