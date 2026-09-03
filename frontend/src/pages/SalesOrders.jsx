@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
+import ActionsMenu from "@/components/ActionsMenu";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye } from "@phosphor-icons/react";
@@ -16,6 +17,7 @@ const NEXT = { open: "in_production", in_production: "fulfilled" };
 export default function SalesOrders() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -91,6 +93,7 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 font-mono">From</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
               </tr>
@@ -104,31 +107,32 @@ export default function SalesOrders() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  {canSeeMargin && (
+                    <td className="px-6 py-3 text-right font-mono" data-testid={`so-margin-${r.id}`}>
+                      <span className="text-[#16A34A] font-semibold">{currency(r.material_margin || 0)}</span>
+                      <div className="text-[11px] text-muted-foreground font-sans">{Number(r.material_margin_pct || 0).toFixed(0)}%</div>
+                    </td>
+                  )}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Btn variant="ghost" onClick={() => viewDocPdf(`/sales-orders/${r.id}/pdf`)} data-testid={`view-so-doc-${r.id}`} title="Web view"><Eye size={16} /></Btn>
-                      {!r.voided && <>
-                        <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-so-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
-                        {NEXT[r.status] && <Btn variant="ghost" onClick={() => advance(r)} data-testid={`advance-so-${r.id}`}>{NEXT[r.status].replace("_", " ")}</Btn>}
-                        {!r.invoice_id && <Btn variant="ghost" onClick={() => convert(r.id)} data-testid={`invoice-so-${r.id}`} title="Convert to invoice"><Receipt size={16} /> Invoice</Btn>}
-                        <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-so-${r.id}`}><PencilSimple size={16} /></Btn>
-                        {isAdmin && <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-so-${r.id}`} title="Void"><Prohibit size={16} /></Btn>}
-                      </>}
-                      {r.voided && isAdmin && (
-                        <Btn variant="ghost" onClick={() => setVoid(r.id, false)} data-testid={`reactivate-so-${r.id}`} title="Reactivate"><ArrowCounterClockwise size={16} /></Btn>
-                      )}
-                      {isAdmin && (
-                        <Btn variant="ghost" onClick={() => setNoteDoc(r)} data-testid={`note-so-${r.id}`} title="Internal note (admin only)"><LockKey size={16} /></Btn>
-                      )}
-                      {isAdmin && (
-                        <Btn variant="ghost" onClick={() => setDelSo(r)} data-testid={`delete-so-${r.id}`} title="Delete"><Trash size={16} /></Btn>
-                      )}
+                    <div className="flex justify-end">
+                      <ActionsMenu testid={`so-actions-${r.id}`} items={[
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}` },
+                        { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
+                        { label: NEXT[r.status] ? `Advance → ${NEXT[r.status].replace("_", " ")}` : "", icon: <ArrowCounterClockwise size={16} />, onClick: () => advance(r), testid: `advance-so-${r.id}`, hidden: r.voided || !NEXT[r.status] },
+                        { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided },
+                        { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-so-${r.id}`, hidden: !isAdmin || r.voided },
+                        { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-so-${r.id}`, hidden: !isAdmin || !r.voided },
+                        { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-so-${r.id}`, hidden: !isAdmin },
+                        { separator: true, hidden: !isAdmin },
+                        { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelSo(r), testid: `delete-so-${r.id}`, danger: true, hidden: !isAdmin },
+                      ]} />
                     </div>
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={8} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={8 + (canSeeMargin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
             </tbody>
           </table>
         </div>

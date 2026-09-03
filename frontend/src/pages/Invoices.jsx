@@ -9,6 +9,7 @@ import DocBuilder from "@/components/DocBuilder";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
+import ActionsMenu from "@/components/ActionsMenu";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -224,6 +225,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">Status</th>
                 {isPaid && <th className="px-6 py-3 font-mono">Payment Type</th>}
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 {showComm && <th className="px-6 py-3 font-mono text-right">Commission</th>}
                 {isPaid && <th className="px-6 py-3 font-mono">Notes</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
@@ -247,6 +249,12 @@ export default function Invoices() {
                       <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
                     )}
                   </td>
+                  {canSeeMargin && (
+                    <td className="px-6 py-3 text-right font-mono" data-testid={`invoice-margin-${r.id}`}>
+                      <span className="text-[#16A34A] font-semibold">{currency(r.material_margin || 0)}</span>
+                      <div className="text-[11px] text-muted-foreground font-sans">{Number(r.material_margin_pct || 0).toFixed(0)}%</div>
+                    </td>
+                  )}
                   {showComm && (
                     <td className="px-6 py-3 text-right font-mono" data-testid={`invoice-commission-${r.id}`}>
                       {Number(r.commission_amount || 0) > 0 ? (
@@ -260,34 +268,25 @@ export default function Invoices() {
                   {isPaid && <td className="px-6 py-3 text-muted-foreground text-xs italic max-w-[200px]" data-testid={`payment-notes-${r.id}`}>{r.payment_notes ? `“${r.payment_notes}”` : "—"}</td>}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Btn variant="ghost" onClick={() => viewPdf(`/invoices/${r.id}/pdf`)} data-testid={`view-invoice-${r.id}`} title="Web view"><Eye size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf")} data-testid={`pdf-invoice-${r.id}`} title="Download PDF"><FilePdf size={16} /></Btn>
-                      {(Number(r.amount_paid || 0) > 0 || r.status === "paid") && (
-                        <Btn variant="ghost" onClick={() => openHistory(r)} data-testid={`history-invoice-${r.id}`} title="Payment history"><ClockCounterClockwise size={16} /></Btn>
-                      )}
-                      {!r.voided && <>
-                        <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-invoice-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
-                        {r.status !== "paid" && (
-                          <Btn variant="ghost" onClick={() => setPayInv(r)} data-testid={`pay-invoice-${r.id}`} title="Pay now (card)"><CreditCard size={16} /></Btn>
-                        )}
-                        {r.status !== "paid" && (
-                          <Btn variant="ghost" onClick={() => setRecInv(r)} data-testid={`mark-paid-${r.id}`} title="Record payment (check / ACH / wire)"><CheckCircle size={16} /></Btn>
-                        )}
-                        <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-invoice-${r.id}`}><PencilSimple size={16} /></Btn>
-                        {isAdmin && <Btn variant="ghost" onClick={() => setVoid(r.id, true)} data-testid={`void-invoice-${r.id}`} title="Void"><Prohibit size={16} /></Btn>}
-                      </>}
-                      {r.voided && isAdmin && (
-                        <Btn variant="ghost" onClick={() => setVoid(r.id, false)} data-testid={`reactivate-invoice-${r.id}`} title="Reactivate"><ArrowCounterClockwise size={16} /></Btn>
-                      )}
-                      {isAdmin && (
-                        <Btn variant="ghost" onClick={() => setDelInv(r)} data-testid={`delete-invoice-${r.id}`} title="Delete"><Trash size={16} /></Btn>
-                      )}
+                    <div className="flex justify-end">
+                      <ActionsMenu testid={`invoice-actions-${r.id}`} items={[
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}` },
+                        { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}` },
+                        { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") },
+                        { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
+                        { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
+                        { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided },
+                        { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-invoice-${r.id}`, hidden: !isAdmin || r.voided },
+                        { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-invoice-${r.id}`, hidden: !isAdmin || !r.voided },
+                        { separator: true, hidden: !isAdmin },
+                        { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelInv(r), testid: `delete-invoice-${r.id}`, danger: true, hidden: !isAdmin },
+                      ]} />
                     </div>
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>

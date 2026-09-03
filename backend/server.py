@@ -431,6 +431,16 @@ def strip_margins(doc: dict) -> dict:
     return d
 
 
+def _apply_doc_margin(row: dict) -> dict:
+    """Derive doc-level material_margin from line items so list rows are always accurate."""
+    items = row.get("line_items") or []
+    sell = round(sum(float(li.get("material_cost") or 0) for li in items), 2)
+    margin = round(sum(float(li.get("material_margin") or 0) for li in items), 2)
+    row["material_margin"] = margin
+    row["material_margin_pct"] = round(margin / sell * 100, 1) if sell else 0.0
+    return row
+
+
 async def next_number(prefix: str, key: str, collection) -> str:
     ctr = await db.counters.find_one({"_id": key})
     if not ctr:
@@ -1067,7 +1077,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
 @api_router.get("/sales-orders")
 async def list_sales_orders(user: dict = Depends(require_staff)):
     docs = await db.sales_orders.find().sort("created_at", -1).to_list(1000)
-    return [await enrich_customer(clean(d)) for d in docs]
+    return [_apply_doc_margin(await enrich_customer(clean(d))) for d in docs]
 
 
 _SO_STATUSES = ("open", "in_production", "fulfilled")
@@ -1171,6 +1181,7 @@ async def list_invoices(user: dict = Depends(require_staff)):
     out = []
     for d in docs:
         row = await enrich_customer(clean(d))
+        _apply_doc_margin(row)
         if row.get("status") == "paid":
             rec = await db.payment_transactions.find_one(
                 {"payment_status": "paid", "$or": [{"invoice_id": row["id"]}, {"allocations.invoice_id": row["id"]}]},

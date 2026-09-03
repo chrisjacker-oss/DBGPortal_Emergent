@@ -8,6 +8,7 @@ import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
+import ActionsMenu from "@/components/ActionsMenu";
 import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 
@@ -91,19 +92,16 @@ export default function Estimates() {
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Btn variant="ghost" onClick={() => viewDocPdf(`/estimates/${r.id}/pdf`)} data-testid={`view-estimate-${r.id}`} title="Web view"><Eye size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => sendEmail(r.id)} data-testid={`send-estimate-${r.id}`} title="Email to customer"><EnvelopeSimple size={16} /></Btn>
-                      {r.status !== "approved" && (
-                        <Btn variant="ghost" onClick={() => approve(r.id)} data-testid={`approve-estimate-${r.id}`} title="Approve → Sales Order"><CheckCircle size={16} /> Approve</Btn>
-                      )}
-                      <Btn variant="ghost" onClick={() => { setEditing(r); setOpen(true); }} data-testid={`edit-estimate-${r.id}`}><PencilSimple size={16} /></Btn>
-                      {isAdmin && (
-                        <Btn variant="ghost" onClick={() => setNoteDoc(r)} data-testid={`note-estimate-${r.id}`} title="Internal note (admin only)"><LockKey size={16} /></Btn>
-                      )}
-                      {isAdmin && (
-                        <Btn variant="ghost" onClick={() => setDelEst(r)} data-testid={`delete-estimate-${r.id}`} title="Delete"><Trash size={16} /></Btn>
-                      )}
+                    <div className="flex justify-end">
+                      <ActionsMenu testid={`estimate-actions-${r.id}`} items={[
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}` },
+                        { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
+                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}` },
+                        { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
+                        { separator: true, hidden: !isAdmin },
+                        { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelEst(r), testid: `delete-estimate-${r.id}`, danger: true, hidden: !isAdmin },
+                      ]} />
                     </div>
                   </td>
                 </tr>
