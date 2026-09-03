@@ -2406,6 +2406,8 @@ def _num(n) -> str:
 
 
 def _dims_label(li: dict) -> str:
+    if str(li.get("category") or "").strip().lower() == "shipping":
+        return ""
     w = float(li.get("width_in") or 0)
     h = float(li.get("height_in") or 0)
     area = li.get("area_sqft", 0)
