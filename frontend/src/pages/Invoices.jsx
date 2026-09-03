@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 export default function Invoices() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
@@ -406,6 +407,16 @@ export default function Invoices() {
                 <Btn variant="outline" onClick={() => downloadFile(`/invoices/${detailInv.id}/pdf`, `${detailInv.number}.pdf`, "application/pdf")} data-testid="detail-download-pdf"><FilePdf size={16} weight="bold" /> Download PDF</Btn>
                 <Btn onClick={printInvoice} data-testid="detail-print-btn"><Printer size={16} weight="bold" /> Print / Save as PDF</Btn>
               </div>
+
+              {canSeeMargin && (
+                <div className="border border-[#0E7490]/30 bg-[#0E7490]/5 p-3" data-testid="invoice-margin-block">
+                  <div className="overline text-[#0E7490] mb-2 flex items-center gap-1.5"><LockKey size={13} weight="bold" /> Material margin · internal only (never shown to the customer)</div>
+                  <div className="flex items-center justify-between font-mono text-sm">
+                    <span className="text-muted-foreground">Margin</span>
+                    <span className="font-semibold text-[#16A34A]" data-testid="invoice-margin-amount">{currency(detailInv.material_margin || 0)} <span className="text-muted-foreground text-xs">({Number(detailInv.material_margin_pct || 0).toFixed(1)}%)</span></span>
+                  </div>
+                </div>
+              )}
 
               {isAdmin && (
                 <div className="border border-[#A21CAF]/30 bg-[#A21CAF]/5 p-3">

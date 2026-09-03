@@ -163,6 +163,7 @@ class LineItem(BaseModel):
     height_in: float = 0.0
     quantity: float = 1
     price_per_sqft: float = 0.0
+    cost_per_sqft: float = 0.0
     extra_labor_hours: float = 0.0
 
 
@@ -342,6 +343,9 @@ def compute_line(li: dict, s: dict) -> dict:
     area = round((w * h / 144.0) * qty, 4) if (w > 0 and h > 0) else round(qty, 4)
     pps = float(li.get("price_per_sqft") or 0)
     material_cost = round(pps * area, 2)
+    cps = float(li.get("cost_per_sqft") or 0)
+    material_buying_cost = round(cps * area, 2)
+    material_margin = round(material_cost - material_buying_cost, 2)
     # Machine + shop time derived from throughput (sqft/hr); round currency not hours
     m_sqft = float(s.get("machine_sqft_per_hr") or 0)
     machine_hours_raw = area / m_sqft if m_sqft else 0.0
@@ -359,6 +363,9 @@ def compute_line(li: dict, s: dict) -> dict:
         "labor_cost": labor_cost,
         "machine_cost": machine_cost,
         "line_total": line_total,
+        "cost_per_sqft": cps,
+        "material_buying_cost": material_buying_cost,
+        "material_margin": material_margin,
     })
     return item
 
@@ -380,17 +387,47 @@ async def customer_discount(customer_id: Optional[str]) -> float:
 
 async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate: float = 0.0) -> dict:
     s = await get_settings()
-    items = [compute_line(li, s) for li in line_items]
+    # Resolve material buying cost/sqft from the material record (never trust client for cost)
+    mat_ids = [li.get("material_id") for li in line_items if li.get("material_id") and ObjectId.is_valid(li.get("material_id"))]
+    cost_map = {}
+    if mat_ids:
+        async for m in db.materials.find({"_id": {"$in": [ObjectId(x) for x in set(mat_ids)]}}):
+            bc = float(m.get("buying_cost") or 0)
+            cf = float(m.get("conversion_factor") or 0)
+            cost_map[str(m["_id"])] = round(bc / cf, 4) if cf else 0.0
+    items = []
+    for li in line_items:
+        li2 = dict(li)
+        li2["cost_per_sqft"] = cost_map.get(li2.get("material_id"), 0.0)
+        items.append(compute_line(li2, s))
     subtotal = round(sum(i["line_total"] for i in items), 2)
     discount_amount = round(subtotal * (discount_rate / 100.0), 2)
     discounted = round(subtotal - discount_amount, 2)
     tax_amount = round(discounted * (tax_rate / 100.0), 2)
     total = round(discounted + tax_amount, 2)
+    material_selling = round(sum(i["material_cost"] for i in items), 2)
+    material_margin = round(sum(i["material_margin"] for i in items), 2)
+    material_margin_pct = round(material_margin / material_selling * 100, 1) if material_selling else 0.0
     return {
         "line_items": items, "subtotal": subtotal,
         "discount_rate": discount_rate, "discount_amount": discount_amount,
         "tax_amount": tax_amount, "total": total,
+        "material_margin": material_margin, "material_margin_pct": material_margin_pct,
     }
+
+
+# Fields carrying internal cost/margin data that customers must never see
+_MARGIN_LINE_FIELDS = ("cost_per_sqft", "material_buying_cost", "material_margin")
+_MARGIN_DOC_FIELDS = ("material_margin", "material_margin_pct")
+
+
+def strip_margins(doc: dict) -> dict:
+    d = dict(doc)
+    for f in _MARGIN_DOC_FIELDS:
+        d.pop(f, None)
+    if isinstance(d.get("line_items"), list):
+        d["line_items"] = [{k: v for k, v in li.items() if k not in _MARGIN_LINE_FIELDS} for li in d["line_items"]]
+    return d
 
 
 async def next_number(prefix: str, key: str, collection) -> str:
@@ -2128,7 +2165,7 @@ async def portal_orders(user: dict = Depends(get_current_user)):
     reorders = await db.reorders.find({"customer_id": cid}).sort("created_at", -1).to_list(500)
     return {
         "customer": clean(cust),
-        "invoices": [{k: v for k, v in clean(i).items() if k != "internal_notes"} for i in invoices],
+        "invoices": [strip_margins({k: v for k, v in clean(i).items() if k != "internal_notes"}) for i in invoices],
         "reorders": [clean(r) for r in reorders],
     }
 

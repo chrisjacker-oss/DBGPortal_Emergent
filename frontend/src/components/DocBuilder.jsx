@@ -142,7 +142,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     });
   };
 
-  const cols = "grid-cols-[1.2fr_1.5fr_0.6fr_0.6fr_0.6fr_0.7fr_0.7fr_1fr_0.3fr]";
+  const cols = "grid-cols-[1.1fr_1.35fr_0.5fr_0.5fr_0.5fr_0.6fr_0.7fr_0.6fr_0.85fr_0.3fr]";
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -176,9 +176,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           </div>
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">
-            <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[820px]`}>
+            <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[920px]`}>
               <div>Category</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
-              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Extra hrs</div>
+              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">$/sqft</div><div className="text-right">Extra hrs</div>
               <div className="text-right">Cost</div><div></div>
             </div>
             {form.line_items.map((li, i) => {
@@ -186,7 +186,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const catOptions = categories.includes(cat) || !cat ? categories : [cat, ...categories];
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               return (
-              <div key={i} className="border-b border-border last:border-0 min-w-[820px]">
+              <div key={i} className="border-b border-border last:border-0 min-w-[920px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
                 <select value={cat} onChange={(e) => e.target.value === "__new__" ? createCategoryFor(i) : setItem(i, "category", e.target.value)} data-testid={`item-cat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
                   <option value="">All categories</option>
@@ -201,6 +201,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.height_in} onChange={(v) => setItem(i, "height_in", v)} testid={`item-h-${i}`} />
                 <Cell value={li.quantity} onChange={(v) => setItem(i, "quantity", v)} testid={`item-qty-${i}`} />
                 <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
+                <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
@@ -211,7 +212,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               </div>
               );
             })}
-            <div className="px-3 py-2 min-w-[820px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>
+            <div className="px-3 py-2 min-w-[920px]"><Btn variant="ghost" onClick={addItem} data-testid="add-line-item-btn"><Plus size={16} weight="bold" /> Add line</Btn></div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
