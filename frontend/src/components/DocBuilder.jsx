@@ -7,7 +7,7 @@ import { Inp } from "@/pages/Customers";
 import { Plus, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -76,8 +76,12 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     items[i] = { ...items[i], [k]: v };
     if (k === "material_id") {
       const m = materials.find((x) => x.id === v);
-      if (m) { items[i].price_per_sqft = m.price_per_sqft; items[i].cost_per_sqft = m.cost_per_sqft || 0; items[i].description = m.name; items[i].category = m.category || items[i].category; }
+      if (m) { const c = m.cost_per_sqft || 0; items[i].cost_per_sqft = c; items[i].price_per_sqft = c > 0 ? Number((c * 1.3).toFixed(4)) : m.price_per_sqft; items[i].description = m.name; items[i].category = m.category || items[i].category; }
       else { items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
+    }
+    if (k === "cost_per_sqft") {
+      const c = Number(v) || 0;
+      if (c > 0) items[i].price_per_sqft = Number((c * 1.3).toFixed(4));
     }
     if (k === "category") {
       const m = materials.find((x) => x.id === items[i].material_id);
@@ -108,8 +112,15 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     const labor = laborH * settings.shop_rate_per_hr;
     return { area, material, machine, labor, total: material + machine + labor };
   };
-  const lineTotal = (li) => breakdown(li).total;
-  const lineMargin = (li) => (Number(li.price_per_sqft || 0) - Number(li.cost_per_sqft || 0)) * areaOf(li);
+  const lineTotal = (li) => {
+    const ov = li.line_total_override;
+    if (ov !== "" && ov != null && Number(ov) > 0) return Number(ov);
+    return breakdown(li).total;
+  };
+  const lineMargin = (li) => {
+    const b = breakdown(li);
+    return lineTotal(li) - (Number(li.cost_per_sqft || 0) * areaOf(li)) - b.labor - b.machine;
+  };
 
   const subtotal = form.line_items.reduce((s, li) => s + lineTotal(li), 0);
   const selCust = customers.find((c) => c.id === form.customer_id);
@@ -119,9 +130,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const tax = taxable * (Number(form.tax_rate || 0) / 100);
   const total = taxable + tax;
   const totMaterial = form.line_items.reduce((s, li) => s + breakdown(li).material, 0);
-  const totMatCost = form.line_items.reduce((s, li) => s + Number(li.cost_per_sqft || 0) * areaOf(li), 0);
-  const totMargin = totMaterial - totMatCost;
-  const totMarginPct = totMaterial > 0 ? (totMargin / totMaterial) * 100 : 0;
+  const totMargin = form.line_items.reduce((s, li) => s + lineMargin(li), 0);
+  const totMarginPct = subtotal > 0 ? (totMargin / subtotal) * 100 : 0;
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
   const commissionBase = totMargin;
@@ -142,6 +152,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           width_in: Number(li.width_in || 0), height_in: Number(li.height_in || 0),
           quantity: Number(li.quantity || 0), price_per_sqft: Number(li.price_per_sqft || 0),
           cost_per_sqft: Number(li.cost_per_sqft || 0),
+          line_total_override: (li.line_total_override === "" || li.line_total_override == null) ? null : Number(li.line_total_override),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
         })),
     });
@@ -209,13 +220,13 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
                 <Cell value={li.cost_per_sqft} onChange={(v) => setItem(i, "cost_per_sqft", v)} testid={`item-cost-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
-                <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
+                <input type="number" value={(li.line_total_override !== "" && li.line_total_override != null) ? li.line_total_override : Number(lineTotal(li).toFixed(2))} onChange={(e) => setItem(i, "line_total_override", e.target.value)} data-testid={`item-line-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                 <button onClick={() => rmItem(i)} data-testid={`item-remove-${i}`} className="flex justify-center text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
                 </div>
                 <div className="px-3 pb-2 pt-1 flex items-center gap-3 min-w-[1000px]">
                   <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="flex-1 min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
                   <div className="text-xs font-mono whitespace-nowrap text-muted-foreground" data-testid={`item-margin-${i}`}>
-                    Margin <span className="text-[#16A34A] font-semibold">{(Number(li.price_per_sqft || 0) * areaOf(li)) > 0 ? ((lineMargin(li) / (Number(li.price_per_sqft || 0) * areaOf(li))) * 100).toFixed(0) : 0}%</span>
+                    Margin <span className="text-[#16A34A] font-semibold">{lineTotal(li) > 0 ? ((lineMargin(li) / lineTotal(li)) * 100).toFixed(0) : 0}%</span>
                   </div>
                 </div>
               </div>

@@ -39,6 +39,12 @@ export default function Materials() {
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
   const removeCat = (c) => setDel({ url: `/material-categories/${c.id}`, label: `category "${c.name}"`, after: loadCats });
+  const renameCat = async (c) => {
+    const name = window.prompt("Rename category:", c.name);
+    if (!name || !name.trim() || name.trim() === c.name) return;
+    try { await api.put(`/material-categories/${c.id}`, { name: name.trim() }); toast.success("Category renamed"); loadCats(); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Rename failed"); }
+  };
 
   const openNew = () => { setForm({ ...empty, markup: defaultMarkup }); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, stock: r.stock ?? "", category: r.category ?? "", supplier: r.supplier ?? "" }); setEditing(r.id); setOpen(true); };
@@ -185,7 +191,10 @@ export default function Materials() {
                 {cats.custom.map((c) => (
                   <div key={c.id} className="flex items-center justify-between border border-border px-3 py-2">
                     <span className="text-sm font-medium">{c.name}</span>
-                    <Btn variant="ghost" onClick={() => removeCat(c)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
+                    <div className="flex items-center gap-1">
+                      <Btn variant="ghost" onClick={() => renameCat(c)} data-testid={`edit-category-${c.id}`}><PencilSimple size={16} /></Btn>
+                      <Btn variant="ghost" onClick={() => removeCat(c)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
+                    </div>
                   </div>
                 ))}
               </div>

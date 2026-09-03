@@ -164,6 +164,7 @@ class LineItem(BaseModel):
     quantity: float = 1
     price_per_sqft: float = 0.0
     cost_per_sqft: float = 0.0
+    line_total_override: Optional[float] = None
     extra_labor_hours: float = 0.0
 
 
@@ -346,7 +347,6 @@ def compute_line(li: dict, s: dict) -> dict:
     material_cost = round(pps * area, 2)
     cps = float(li.get("cost_per_sqft") or 0)
     material_buying_cost = round(cps * area, 2)
-    material_margin = round(material_cost - material_buying_cost, 2)
     # Machine + shop time derived from throughput (sqft/hr); round currency not hours
     m_sqft = float(s.get("machine_sqft_per_hr") or 0)
     machine_hours_raw = area / m_sqft if m_sqft else 0.0
@@ -354,7 +354,11 @@ def compute_line(li: dict, s: dict) -> dict:
     sh_sqft = float(s.get("shop_sqft_per_hr") or 0)
     labor_hours_raw = (area / sh_sqft if sh_sqft else 0.0) + float(li.get("extra_labor_hours") or 0)
     labor_cost = round(labor_hours_raw * float(s.get("shop_rate_per_hr") or 0), 2)
-    line_total = round(material_cost + labor_cost + machine_cost, 2)
+    computed_total = round(material_cost + labor_cost + machine_cost, 2)
+    ov = li.get("line_total_override")
+    line_total = round(float(ov), 2) if (ov is not None and str(ov) != "" and float(ov) > 0) else computed_total
+    # Gross profit = sale - material cost - shop - machine (labor/machine billed at cost)
+    material_margin = round(line_total - material_buying_cost - labor_cost - machine_cost, 2)
     item = dict(li)
     item.update({
         "area_sqft": area,
@@ -407,9 +411,8 @@ async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate:
     discounted = round(subtotal - discount_amount, 2)
     tax_amount = round(discounted * (tax_rate / 100.0), 2)
     total = round(discounted + tax_amount, 2)
-    material_selling = round(sum(i["material_cost"] for i in items), 2)
     material_margin = round(sum(i["material_margin"] for i in items), 2)
-    material_margin_pct = round(material_margin / material_selling * 100, 1) if material_selling else 0.0
+    material_margin_pct = round(material_margin / subtotal * 100, 1) if subtotal else 0.0
     return {
         "line_items": items, "subtotal": subtotal,
         "discount_rate": discount_rate, "discount_amount": discount_amount,
@@ -435,10 +438,10 @@ def strip_margins(doc: dict) -> dict:
 def _apply_doc_margin(row: dict) -> dict:
     """Derive doc-level material_margin from line items so list rows are always accurate."""
     items = row.get("line_items") or []
-    sell = round(sum(float(li.get("material_cost") or 0) for li in items), 2)
+    revenue = round(sum(float(li.get("line_total") or 0) for li in items), 2)
     margin = round(sum(float(li.get("material_margin") or 0) for li in items), 2)
     row["material_margin"] = margin
-    row["material_margin_pct"] = round(margin / sell * 100, 1) if sell else 0.0
+    row["material_margin_pct"] = round(margin / revenue * 100, 1) if revenue else 0.0
     row["has_cost_data"] = any("cost_per_sqft" in li for li in items)
     return row
 
@@ -937,6 +940,24 @@ async def create_category(payload: CategoryInput, user: dict = Depends(require_a
         raise HTTPException(status_code=400, detail="That category already exists")
     res = await db.material_categories.insert_one({"name": name, "created_at": now_iso()})
     return {"id": str(res.inserted_id), "name": name}
+
+
+@api_router.put("/material-categories/{cid}")
+async def update_category(cid: str, payload: CategoryInput, user: dict = Depends(require_admin)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name is required")
+    cat = await get_or_404(db.material_categories, cid, "Category")
+    existing_lower = {c.lower() for c in PRESET_CATEGORIES}
+    async for c in db.material_categories.find({"_id": {"$ne": oid(cid)}}):
+        existing_lower.add(c["name"].lower())
+    if name.lower() in existing_lower:
+        raise HTTPException(status_code=400, detail="That category already exists")
+    old = cat["name"]
+    await db.material_categories.update_one({"_id": oid(cid)}, {"$set": {"name": name}})
+    if old != name:
+        await db.materials.update_many({"category": old}, {"$set": {"category": name}})
+    return {"id": cid, "name": name}
 
 
 @api_router.delete("/material-categories/{cid}")
