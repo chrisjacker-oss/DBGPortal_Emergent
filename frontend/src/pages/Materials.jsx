@@ -9,7 +9,7 @@ import { Plus, PencilSimple, Trash, Tag } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
-const empty = { name: "", category: "Cut Vinyl", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 40, stock: "", supplier: "" };
+const empty = { name: "", category: "Cut Vinyl", unit: "roll", buying_cost: 0, conversion_factor: 1, markup: 2, stock: "", supplier: "" };
 
 export default function Materials() {
   const { user } = useAuth();
@@ -53,7 +53,7 @@ export default function Materials() {
   // live preview of derived costs
   const cf = Number(form.conversion_factor || 0);
   const previewCost = cf ? Number(form.buying_cost || 0) / cf : 0;
-  const previewPrice = previewCost * (1 + Number(form.markup || 0) / 100);
+  const previewPrice = previewCost * (Number(form.markup) > 0 ? Number(form.markup) : 1);
 
   const save = async () => {
     const payload = {
@@ -111,7 +111,7 @@ export default function Materials() {
                   <td className="px-5 py-3 text-right font-mono">{currency(m.buying_cost)}</td>
                   <td className="px-5 py-3 text-right font-mono">{m.conversion_factor}</td>
                   <td className="px-5 py-3 text-right font-mono">{currency(m.cost_per_sqft)}</td>
-                  <td className="px-5 py-3 text-right font-mono">{m.markup}%</td>
+                  <td className="px-5 py-3 text-right font-mono">{m.markup}×</td>
                   <td className="px-5 py-3 text-right font-mono font-semibold">{currency(m.price_per_sqft)}</td>
                   <td className="px-5 py-3 text-right font-mono text-[#16A34A]">{marginPct(m)}%</td>
                   <td className="px-5 py-3">
@@ -153,7 +153,7 @@ export default function Materials() {
             <div className="grid grid-cols-3 gap-3">
               <Inp label="Buying cost / unit" type="number" value={form.buying_cost} onChange={set("buying_cost")} testid="mat-buying-cost" />
               <Inp label="Conv. (sqft/unit)" type="number" value={form.conversion_factor} onChange={set("conversion_factor")} testid="mat-conversion" />
-              <Inp label="Markup %" type="number" value={form.markup} onChange={set("markup")} testid="mat-markup" />
+              <Inp label="Markup (× multiplier)" type="number" value={form.markup} onChange={set("markup")} testid="mat-markup" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Inp label="Supplier" value={form.supplier} onChange={set("supplier")} testid="mat-supplier" />

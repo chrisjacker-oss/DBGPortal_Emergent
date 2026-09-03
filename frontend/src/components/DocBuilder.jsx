@@ -78,7 +78,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     items[i] = { ...items[i], [k]: v };
     if (k === "material_id") {
       const m = materials.find((x) => x.id === v);
-      if (m) { const c = m.cost_per_sqft || 0; items[i].cost_per_sqft = c; items[i].price_per_sqft = c > 0 ? Number((c * 1.3).toFixed(4)) : m.price_per_sqft; items[i].description = m.name; items[i].category = m.category || items[i].category; }
+      if (m) { const c = m.cost_per_sqft || 0; items[i].cost_per_sqft = c; items[i].price_per_sqft = m.price_per_sqft || (c > 0 ? Number((c * 1.3).toFixed(4)) : 0); items[i].description = m.name; items[i].category = m.category || items[i].category; }
       else { items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
     }
     if (k === "cost_per_sqft") {

@@ -188,7 +188,7 @@ class MaterialInput(BaseModel):
     unit: str = "roll"  # roll / sheet / each
     buying_cost: float = 0.0        # cost per purchased unit (roll/sheet)
     conversion_factor: float = 1.0  # usable sqft per purchased unit
-    markup: float = 0.0             # percent markup on cost
+    markup: float = 0.0             # price multiplier on cost (price = cost x markup)
     stock: Optional[float] = None
     supplier: Optional[str] = None
     image_url: Optional[str] = None
@@ -249,7 +249,7 @@ class SettingsInput(BaseModel):
     shop_sqft_per_hr: float = 150.0
     machine_rate_per_hr: float = 35.0
     machine_sqft_per_hr: float = 150.0
-    default_markup: float = 40.0
+    default_markup: float = 2.0
     default_tax_rate: float = 0.0
     card_surcharge_enabled: bool = False
     card_surcharge_pct: float = 0.0
@@ -311,7 +311,7 @@ def clean(doc: dict) -> dict:
     return doc
 
 
-DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 40.0,
+DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 2.0,
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
@@ -334,7 +334,7 @@ def material_out(doc: dict) -> dict:
     mk = float(d.get("markup") or 0)
     cost_per_sqft = round(bc / cf, 4) if cf else 0.0
     d["cost_per_sqft"] = cost_per_sqft
-    d["price_per_sqft"] = round(cost_per_sqft * (1 + mk / 100.0), 4)
+    d["price_per_sqft"] = round(cost_per_sqft * mk, 4) if mk > 0 else cost_per_sqft
     return d
 
 

@@ -93,7 +93,7 @@ export default function Settings() {
             <Inp label="Machine rate ($/hr)" type="number" value={form.machine_rate_per_hr} onChange={set("machine_rate_per_hr")} testid="set-machine-rate" />
             <Inp label="Machine throughput (sqft/hr)" type="number" value={form.machine_sqft_per_hr} onChange={set("machine_sqft_per_hr")} testid="set-machine-sqft" />
           </div>
-          <Inp label="Default material markup (%)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
+          <Inp label="Default material markup (× multiplier)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
           <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />
           <div className="text-xs text-muted-foreground -mt-2">Applied automatically to new quotes, sales orders and invoices (editable per document).</div>
           <Inp label="Low-margin alert threshold (%)" type="number" value={form.low_margin_threshold ?? 0} onChange={set("low_margin_threshold")} testid="set-low-margin-threshold" />
