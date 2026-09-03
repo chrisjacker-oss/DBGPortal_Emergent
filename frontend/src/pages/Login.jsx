@@ -38,7 +38,7 @@ export default function Login({ variant = "staff" }) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       <div className="flex flex-col justify-center px-8 sm:px-16 py-12 max-w-xl w-full mx-auto">
-        <div className="flex items-center gap-3 mb-12">
+        <div className="flex items-center gap-3 mb-4">
           <img src={LOGO_URL} alt="DBG Signs, Inc." className="h-64 w-auto max-w-[560px] object-contain" data-testid="login-logo" />
         </div>
 
