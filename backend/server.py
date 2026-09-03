@@ -1497,6 +1497,20 @@ async def _apply_amount_to_invoice(invoice_id: str, amount: float) -> None:
         logger.error(f"Payment receipt email failed: {e}")
 
 
+async def _apply_amount_to_so(so_id: str, amount: float) -> None:
+    so = await db.sales_orders.find_one({"_id": oid(so_id)})
+    if not so:
+        return
+    total = float(so.get("total") or 0)
+    paid = round(float(so.get("amount_paid") or 0) + float(amount or 0), 2)
+    fully = paid >= total - 0.005
+    upd = {"amount_paid": paid, "payment_status": "paid" if fully else "partial"}
+    if fully:
+        upd["paid_at"] = now_iso()
+        upd["paid_via"] = "stripe"
+    await db.sales_orders.update_one({"_id": so["_id"]}, {"$set": upd})
+
+
 async def _apply_payment(payment_intent_id: str) -> None:
     # Idempotent: only the first flip pending->paid applies the amount(s)
     res = await db.payment_transactions.update_one(
@@ -1510,6 +1524,8 @@ async def _apply_payment(payment_intent_id: str) -> None:
     if allocations:
         for a in allocations:
             await _apply_amount_to_invoice(a["invoice_id"], a["amount"])
+    elif rec.get("collection") == "sales_orders" and rec.get("doc_id"):
+        await _apply_amount_to_so(rec["doc_id"], rec.get("amount"))
     elif rec.get("invoice_id"):
         await _apply_amount_to_invoice(rec["invoice_id"], rec.get("amount"))
 
@@ -1681,6 +1697,99 @@ async def stripe_webhook(request: Request):
             {"$set": {"status": "failed", "payment_status": "failed", "updated_at": now_iso()}},
         )
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Public (no-login) card payment via secure email link
+# ---------------------------------------------------------------------------
+class PubPayInput(BaseModel):
+    amount: Optional[float] = None
+
+
+async def _pub_doc_from_token(token: str):
+    tr = await db.email_tracking.find_one({"token": token})
+    if not tr:
+        raise HTTPException(status_code=404, detail="This payment link is invalid or has expired.")
+    coll = tr.get("collection")
+    doc_id = tr.get("doc_id")
+    if coll == "invoices":
+        doc = await db.invoices.find_one({"_id": oid(doc_id)})
+    elif coll == "sales_orders":
+        doc = await db.sales_orders.find_one({"_id": oid(doc_id)})
+    else:
+        raise HTTPException(status_code=400, detail="This link is not payable.")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return coll, doc
+
+
+@api_router.get("/pub/pay/{token}")
+async def pub_pay_info(token: str):
+    coll, doc = await _pub_doc_from_token(token)
+    cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
+    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+    total = float(doc.get("total") or 0)
+    balance = round(total - float(doc.get("amount_paid") or 0), 2)
+    s = await get_settings()
+    return {
+        "kind": "Invoice" if coll == "invoices" else "Sales Order",
+        "number": doc.get("number"), "customer_name": cname,
+        "total": total, "amount_paid": float(doc.get("amount_paid") or 0), "balance": balance,
+        "voided": bool(doc.get("voided")),
+        "paid": doc.get("status") == "paid" or doc.get("payment_status") == "paid" or balance <= 0,
+        "company_name": s.get("company_name") or "DBG Signs, Inc.",
+        "publishable_key": STRIPE_PUBLISHABLE_KEY,
+    }
+
+
+@api_router.post("/pub/pay/{token}/intent")
+async def pub_pay_intent(token: str, payload: PubPayInput = PubPayInput()):
+    coll, doc = await _pub_doc_from_token(token)
+    if doc.get("voided"):
+        raise HTTPException(status_code=400, detail="This document has been voided.")
+    total = float(doc.get("total") or 0)
+    balance = round(total - float(doc.get("amount_paid") or 0), 2)
+    if doc.get("status") == "paid" or doc.get("payment_status") == "paid" or balance <= 0:
+        raise HTTPException(status_code=400, detail="This is already paid in full.")
+    amount = round(float(payload.amount), 2) if payload.amount is not None else balance
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero.")
+    if amount > balance + 0.005:
+        raise HTTPException(status_code=400, detail=f"Payment can't exceed the balance due of ${balance:,.2f}.")
+    s = await get_settings()
+    surcharge = round(amount * float(s.get("card_surcharge_pct") or 0) / 100.0, 2) if s.get("card_surcharge_enabled") else 0.0
+    charged = round(amount + surcharge, 2)
+    label = "Invoice" if coll == "invoices" else "Sales Order"
+    intent = stripe.PaymentIntent.create(
+        amount=int(round(charged * 100)), currency="usd", payment_method_types=["card"],
+        description=f"{label} {doc.get('number', '')} - DBG Signs, Inc.",
+        metadata={"collection": coll, "doc_id": str(doc["_id"]), "number": doc.get("number", "")},
+    )
+    await db.payment_transactions.insert_one({
+        "payment_intent_id": intent.id, "collection": coll, "doc_id": str(doc["_id"]),
+        "invoice_id": str(doc["_id"]) if coll == "invoices" else None,
+        "invoice_number": doc.get("number"), "amount": amount, "surcharge": surcharge, "charged": charged,
+        "currency": "usd", "status": "initiated", "payment_status": "pending", "public": True,
+        "created_at": now_iso(), "updated_at": now_iso(),
+    })
+    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
+            "amount": amount, "balance": balance, "surcharge": surcharge, "charged": charged}
+
+
+@api_router.get("/pub/pay/status/{payment_intent_id}")
+async def pub_payment_status(payment_intent_id: str):
+    rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id, "public": True})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    if rec.get("payment_status") != "paid":
+        try:
+            pi = stripe.PaymentIntent.retrieve(payment_intent_id)
+            if pi.status == "succeeded":
+                await _apply_payment(payment_intent_id)
+                rec = await db.payment_transactions.find_one({"payment_intent_id": payment_intent_id})
+        except stripe.error.StripeError as e:
+            logger.error(f"pub status retrieve failed for {payment_intent_id}: {e}")
+    return {"payment_status": rec["payment_status"]}
 
 
 # ---------------------------------------------------------------------------
@@ -2443,6 +2552,15 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     label = "Amount Due" if kind_label == "Invoice" else "Total"
     due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
     attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
+    pay_btn = ""
+    if kind_label in ("Invoice", "Sales Order") and not doc.get("voided"):
+        pay_url = f"{PUBLIC_BASE_URL}/pay/{token}"
+        pay_btn = (
+            f'<tr><td style="padding:22px 32px 0" align="center">'
+            f'<a href="{pay_url}" style="display:inline-block;background:#06B6D4;color:#0A0A0A;text-decoration:none;padding:14px 36px;font-weight:bold;letter-spacing:1px;font-size:14px">PAY WITH CREDIT CARD →</a>'
+            f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Click above to pay securely online by card. Powered by Stripe.</div>'
+            f'</td></tr>'
+        )
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -2474,6 +2592,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
         f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>'
         f'</table></td></tr>'
+        f'{pay_btn}'
         # Footer
         f'<tr><td style="padding:22px 32px 28px">'
         f'<p style="margin:0 0 4px">Questions about this {escape(kind_label.lower())}? Just reply to this email.</p>'

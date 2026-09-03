@@ -21,6 +21,7 @@ import Portal from "@/pages/Portal";
 import PortalAccounts from "@/pages/PortalAccounts";
 import WorkOrders from "@/pages/WorkOrders";
 import ForcePasswordChange from "@/pages/ForcePasswordChange";
+import PublicPay from "@/pages/PublicPay";
 
 function Loading() {
   return (
@@ -58,6 +59,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login variant="staff" />} />
             <Route path="/portal-login" element={<Login variant="customer" />} />
+            <Route path="/pay/:token" element={<PublicPay />} />
             <Route path="/" element={<Root />} />
             <Route
               path="/portal"
