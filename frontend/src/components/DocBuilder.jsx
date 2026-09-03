@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import { Plus, Trash } from "@phosphor-icons/react";
+import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
@@ -188,14 +189,12 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
 
         <div className="space-y-4 min-w-0">
           <div className="grid grid-cols-3 gap-3">
-            <label className="block min-w-0">
+            <div className="block min-w-0">
               <span className="overline text-muted-foreground">Customer</span>
-              <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value, contact_id: "" })} data-testid="doc-customer"
-                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="">Select customer…</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
-              </select>
-            </label>
+              <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
+                options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
+                onChange={(v) => setForm({ ...form, customer_id: v, contact_id: "" })} />
+            </div>
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Contact (Attn)</span>
               <select value={form.contact_id || ""} onChange={(e) => { if (e.target.value === "__new__") { setNc({ name: "", email: "", phone: "", title: "" }); setNcOpen(true); } else set("contact_id", e.target.value); }} data-testid="doc-contact" disabled={!form.customer_id}
