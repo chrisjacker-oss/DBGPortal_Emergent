@@ -13,7 +13,7 @@ import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt } from "@phosphor-icons/react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 export default function Invoices() {
   const { user } = useAuth();
@@ -329,7 +329,7 @@ export default function Invoices() {
         <DialogContent className="rounded-none max-w-md" data-testid="xero-email-dialog">
           <DialogHeader>
             <DialogTitle className="font-display">Email to accounting (Xero)</DialogTitle>
-            <DialogDescription className="font-mono text-xs">Sends invoice {xeroInv?.number} with its payment record (date, type, amount) and the PDF for record keeping.</DialogDescription>
+            <DialogDescription className="font-mono text-xs">Sends invoice {xeroInv?.number} with its payment record (date, type, amount) and a secure link to download the invoice PDF for record keeping.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <label className="overline text-muted-foreground">Recipient email</label>

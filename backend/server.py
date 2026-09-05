@@ -1436,6 +1436,37 @@ async def public_po_pdf(token: str):
                     headers={"Content-Disposition": f'inline; filename="{po.get("number")}.pdf"', "Cache-Control": "no-store"})
 
 
+async def _invoice_pdf_link(iid: str) -> str:
+    """Mint a tokenized first-party link to download an invoice PDF (used in emails,
+    since the managed email provider does not support file attachments)."""
+    token = secrets.token_urlsafe(24)
+    await db.invoice_pdf_tokens.insert_one({"token": token, "invoice_id": str(iid), "created_at": now_iso()})
+    return f"{PUBLIC_BASE_URL}/api/pub/invoice-pdf/{token}"
+
+
+@api_router.get("/pub/invoice-pdf/{token}")
+async def public_invoice_pdf(token: str):
+    rec = await db.invoice_pdf_tokens.find_one({"token": token})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Link is invalid or has expired")
+    try:
+        created = datetime.fromisoformat(str(rec.get("created_at")).replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - created).days > 90:
+            raise HTTPException(status_code=404, detail="This link has expired")
+    except (ValueError, TypeError):
+        pass
+    inv = await db.invoices.find_one({"_id": oid(rec["invoice_id"])})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
+    s = await get_settings()
+    pdf = build_doc_pdf("Invoice", clean(inv), clean(cust) if cust else None, await get_logo_bytes(), s)
+    date_str = (str(inv.get("paid_at"))[:10] if inv.get("paid_at") else now_iso()[:10])
+    fname = f"{date_str}.{inv.get('number', 'invoice')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}"', "Cache-Control": "no-store"})
+
+
 
 
 @api_router.patch("/invoices/{iid}/status")
@@ -1665,6 +1696,7 @@ async def _send_accounting_record(inv: dict, to: str) -> int:
         + f'</td><td style="padding:4px 10px;border-bottom:1px solid #eee" align="right">{_money(p.get("amount") or 0)}</td></tr>'
         for p in pays
     ) or '<tr><td colspan="3" style="padding:6px 10px;color:#888">No recorded payments.</td></tr>'
+    pdf_link = await _invoice_pdf_link(iid)
     html = (
         '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">'
         f'<h2 style="margin:0 0 4px">Invoice {escape(str(inv.get("number", "")))} — Accounting Record</h2>'
@@ -1679,17 +1711,10 @@ async def _send_accounting_record(inv: dict, to: str) -> int:
         '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead>'
         '<tr style="text-align:left;color:#888;font-size:11px"><th style="padding:4px 10px">Date</th><th style="padding:4px 10px">Type</th><th style="padding:4px 10px" align="right">Amount</th></tr>'
         f'</thead><tbody>{rows}</tbody></table>'
-        f'<div style="color:#888;font-size:11px;margin-top:16px">The full invoice PDF is attached for your records.</div></div>'
+        f'<div style="margin-top:20px"><a href="{pdf_link}" style="display:inline-block;background:#0E7490;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:6px;font-size:13px;font-weight:bold">Download invoice PDF</a></div>'
+        f'<div style="color:#888;font-size:11px;margin-top:10px">Click the button above to download the full invoice PDF for your records.</div></div>'
     )
-    attachments = None
-    try:
-        pdf = build_doc_pdf("Invoice", clean(inv), clean(cust) if cust else None, await get_logo_bytes(), s)
-        date_str = (str(inv.get("paid_at"))[:10] if inv.get("paid_at") else now_iso()[:10])
-        attachments = [{"filename": f"{date_str}.{inv.get('number', 'invoice')}.pdf",
-                        "content": base64.b64encode(pdf).decode("ascii"), "content_type": "application/pdf"}]
-    except Exception as e:
-        logger.error(f"Accounting email PDF build failed: {e}")
-    await send_email(to=to, subject=f"[Accounting] Invoice {inv.get('number', '')} — {cname}", html=html, attachments=attachments)
+    await send_email(to=to, subject=f"[Accounting] Invoice {inv.get('number', '')} — {cname}", html=html)
     return len(pays)
 
 
@@ -2623,11 +2648,9 @@ def _assert_safe_email(subject: str, html: str) -> None:
                 raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
 
 
-async def send_email(*, to: str, subject: str, html: str, attachments: Optional[list] = None) -> Optional[str]:
+async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
     _assert_safe_email(subject, html)
     payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
-    if attachments:
-        payload["attachments"] = attachments
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -2772,7 +2795,7 @@ async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
     return {"status": "sent", "to": to}
 
 
-def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: str, company: Optional[dict] = None) -> str:
+def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: str, company: Optional[dict] = None, pdf_link: Optional[str] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
@@ -2812,6 +2835,8 @@ def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: st
         f'</table></td></tr>'
         f'<tr><td style="padding:22px 32px 28px">'
         f'<p style="margin:0 0 4px">Questions about this payment? Just reply to this email.</p>'
+        + (f'<div style="margin:14px 0 4px"><a href="{pdf_link}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:6px;font-size:13px;font-weight:bold">Download receipt (PDF)</a></div>' if pdf_link else "")
+        +
         f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
         f'<div style="font-weight:bold">{escape(cname)}</div>'
         f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
@@ -2829,16 +2854,9 @@ async def _send_payment_receipt(inv: dict, amount_now: float) -> None:
         return
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     s = await get_settings()
-    html = render_payment_receipt_email(inv, amount_now, cname, s)
-    attachments = None
-    try:
-        pdf = build_doc_pdf("Invoice", inv, clean(cust) if cust else None, await get_logo_bytes(), s)
-        date_str = (str(inv.get("paid_at"))[:10] if inv.get("paid_at") else now_iso()[:10])
-        fname = f"{date_str}.{inv.get('number', 'invoice')}.pdf"
-        attachments = [{"filename": fname, "content": base64.b64encode(pdf).decode("ascii"), "content_type": "application/pdf"}]
-    except Exception as e:
-        logger.error(f"Payment receipt PDF build failed: {e}")
-    await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html, attachments=attachments)
+    pdf_link = await _invoice_pdf_link(str(inv.get("_id") or inv.get("id")))
+    html = render_payment_receipt_email(inv, amount_now, cname, s, pdf_link)
+    await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html)
 
 
 def render_welcome_email(name: str, email: str, temp_password: str, role: str, company: Optional[dict] = None) -> str:

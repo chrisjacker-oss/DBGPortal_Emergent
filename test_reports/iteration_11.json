@@ -1,0 +1,44 @@
+{
+  "summary": "Retested the two reported bugs. (1) Invoices tab: renders fine as admin — no blank screen, no 'DialogFooter is not defined' page error; invoice-number click opens the detail dialog, DialogFooter buttons (Edit invoice / Download PDF / Print) are present and 'Edit invoice' opens the DocBuilder editor; Active/Paid/Voided tabs all render. (2) Accounting email with tokenized PDF link: created a $0.66 TEST invoice, recorded a full manual payment via POST /api/invoices/{iid}/manual-payment -> 200, status=paid, amount_paid=total, paid_at set; backend log confirms the auto accounting email POST to the provider returned 202 Accepted while the customer receipt to a fake address failed (422 undeliverable) and was swallowed without breaking the payment. GET /api/pub/invoice-pdf/{token} returns 200 application/pdf (%PDF magic, correct filename in Content-Disposition) with no auth, and 404 for an invalid token. Auth playbook re-verified: bcrypt $2b$ hashes, httpOnly+Secure+SameSite=None cookies, allow_credentials with explicit origins, lockout after 5 failures (401x5 then 429), seed_admin updates existing admin password. 9/9 pytest cases passed; all TEST data cleaned up.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/invoices/{iid}/email-accounting", "issue": "Provider 422 'Undeliverable recipient' is mapped to HTTP 502 'Failed to send email' in send_email(); the UI shows a generic server error instead of 'that recipient address is undeliverable'. Suggest mapping 422 -> 400 with provider message."},
+      {"endpoint": "GET /api/pub/invoice-pdf/{token}", "issue": "Tokens in db.invoice_pdf_tokens never expire and are never invalidated (no TTL index, no created_at check), so every emailed link grants permanent unauthenticated access to the invoice PDF. Also a new token is minted on every email send (receipt + accounting), so the collection grows unbounded. Add TTL index / expiry validation (same applies to po_pdf_tokens)."},
+      {"endpoint": "GET /api/invoices/{iid}", "issue": "No single-invoice GET route exists (returns 405); clients must fetch the whole list to re-read one invoice."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DocBuilder (Edit Invoice dialog)", "issue": "React console error 'Encountered two children with the same key: Shipping' repeats on open — duplicate option/category key in the material or category select list", "selector": "Edit Invoice dialog material/category select", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Invoices > Email to accounting (Xero) dialog", "issues": ["Copy still says 'Sends invoice ... and the PDF for record keeping' — the email now contains a 'Download invoice PDF' link, not an attachment; update wording to avoid support confusion"]},
+      {"screen": "Invoices > Edit Invoice (DocBuilder) and Record Payment dialogs", "issues": ["Uses native browser date pickers (input type=date, mm/dd/yyyy) and native <select> elements instead of the shadcn Calendar/Select used elsewhere — inconsistent styling"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_invoice_pdf_link.py",
+    "/app/test_reports/pytest/iteration11_pdflink.xml"
+  ],
+  "action_items": [
+    "Add expiry/TTL to invoice_pdf_tokens (and po_pdf_tokens) and validate age in public_invoice_pdf",
+    "Map email-provider 422 undeliverable-recipient to a 400 with a user-readable message instead of 502",
+    "Update Xero dialog description text: email now carries a secure download link, not an attachment",
+    "Fix duplicate React key 'Shipping' in DocBuilder select options"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 3661 lines — split into routers (invoices, payments, email, pdf) for maintainability",
+    "_invoice_pdf_link mints an unlimited-lifetime public token per email; treat as a bearer credential with expiry and optionally single-use",
+    "manual-payment correctly wraps receipt email in try/except and _maybe_auto_accounting swallows exceptions (HTTPException included), so email failures cannot roll back a payment — verified in logs"
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration11_invoice_pdf_link.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Created and deleted TEST_QA customer + TEST_QA invoices (INV-29519, INV-29520) plus 2 manual payment records; DB verified clean afterwards. Invoice number counter advanced to ~INV-29520.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin sales@dbgsigns.com / 10297099; salesman sam@dbgsigns.com / Sales2026!",
+  "context_for_next_testing_agent": "Invoice create requires 'title' (422 without it). DELETE /api/invoices/{id} and /api/customers/{id} require a JSON body {\"password\": <admin password>}. There is no GET /api/invoices/{id} (405) — read via the list. Email provider rejects fake recipient domains with 422 (surfaced as 502); use delivered@resend.dev for real send tests. Tokens for /api/pub/invoice-pdf are only obtainable from db.invoice_pdf_tokens (not returned by any API). Reusable suite: /app/backend/tests/test_iteration11_invoice_pdf_link.py.",
+  "rca_of_the_issue": "Both reported bugs are fixed and verified: the blank Invoices tab was a missing DialogFooter import (now present at Invoices.jsx line 16, used at 340) and the page renders with zero page errors; the missing-PDF accounting email now sends a tokenized first-party download link served by GET /api/pub/invoice-pdf/{token}, which returns a valid PDF. Remaining risk is only the unbounded lifetime of those public tokens."
+}
