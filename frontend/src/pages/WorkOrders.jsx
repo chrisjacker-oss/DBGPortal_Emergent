@@ -26,7 +26,10 @@ export default function WorkOrders() {
   const [fFrom, setFFrom] = useState("");
   const [fTo, setFTo] = useState("");
   const [fCust, setFCust] = useState("");
+  const [fVin, setFVin] = useState("");
   const [delRow, setDelRow] = useState(null);
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = () => api.get("/work-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -35,8 +38,12 @@ export default function WorkOrders() {
   const visible = rows.filter((r) =>
     (!fFrom || (r.date || "") >= fFrom) &&
     (!fTo || (r.date || "") <= fTo) &&
-    (!fCust || r.customer_name === fCust)
+    (!fCust || r.customer_name === fCust) &&
+    (!fVin || String(r.unit_vin || "").toLowerCase().includes(fVin.toLowerCase()))
   );
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = visible.length > 0 && visible.every((r) => sel[r.id]);
+  const toggleAll = () => { if (allChecked) setSel({}); else { const n = {}; visible.forEach((r) => { n[r.id] = true; }); setSel(n); } };
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const openNew = () => { setForm(empty()); setCustOther(false); setEditing(null); setOpen(true); };
@@ -73,11 +80,19 @@ export default function WorkOrders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/work-orders/bulk-delete", { ids: selIds, password });
+      toast.success(`Deleted ${data.deleted} work order(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
+
   const miles = (r) => (r.mileage_start != null && r.mileage_end != null ? Math.max(0, r.mileage_end - r.mileage_start) : null);
 
   return (
     <div>
       <PageHeader overline="Service · Installation" title="Work Orders">
+        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-wo-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn onClick={openNew} data-testid="add-work-order-btn"><Plus size={16} weight="bold" /> New Work Order</Btn>
       </PageHeader>
 
@@ -92,13 +107,16 @@ export default function WorkOrders() {
               <option value="">All customers</option>
               {custOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select></label>
-          {(fFrom || fTo || fCust) && <Btn variant="outline" onClick={() => { setFFrom(""); setFTo(""); setFCust(""); }} data-testid="wo-filter-clear">Clear</Btn>}
+          <label className="block"><span className="overline text-muted-foreground">Unit / VIN</span>
+            <input type="text" value={fVin} onChange={(e) => setFVin(e.target.value)} data-testid="wo-filter-vin" placeholder="Search unit / VIN" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
+          {(fFrom || fTo || fCust || fVin) && <Btn variant="outline" onClick={() => { setFFrom(""); setFTo(""); setFCust(""); setFVin(""); }} data-testid="wo-filter-clear">Clear</Btn>}
           <div className="ml-auto text-sm text-muted-foreground font-mono self-center">{visible.length} of {rows.length}</div>
         </div>
         <div className="border border-border bg-card overflow-x-auto">
           <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                {isAdmin && <th className="px-5 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="wo-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-5 py-3 font-mono">#</th>
                 <th className="px-5 py-3 font-mono">Date</th>
                 <th className="px-5 py-3 font-mono">Customer</th>
@@ -113,6 +131,7 @@ export default function WorkOrders() {
             <tbody data-testid="work-orders-table">
               {visible.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50 align-top">
+                  {isAdmin && <td className="px-5 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`wo-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-5 py-3 font-mono">{r.number}</td>
                   <td className="px-5 py-3 font-mono text-muted-foreground">{r.date}</td>
                   <td className="px-5 py-3">{r.customer_name || "—"}</td>
@@ -130,7 +149,7 @@ export default function WorkOrders() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={isAdmin ? 9 : 8} className="px-6 py-12 text-center text-muted-foreground"><Wrench size={22} className="mx-auto mb-2 opacity-50" />No work orders match.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={isAdmin ? 10 : 8} className="px-6 py-12 text-center text-muted-foreground"><Wrench size={22} className="mx-auto mb-2 opacity-50" />No work orders match.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -184,6 +203,7 @@ export default function WorkOrders() {
       </Dialog>
 
       <AdminDeleteDialog open={!!delRow} label={`work order ${delRow?.number || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected work order(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
     </div>
   );
 }

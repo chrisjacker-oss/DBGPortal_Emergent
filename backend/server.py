@@ -873,6 +873,16 @@ async def delete_work_order(wid: str, payload: DeleteConfirm, user: dict = Depen
     return {"message": "deleted"}
 
 
+@api_router.post("/work-orders/bulk-delete")
+async def bulk_delete_work_orders(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No work orders selected")
+    res = await db.work_orders.delete_many({"_id": {"$in": [oid(i) for i in ids]}})
+    return {"deleted": res.deleted_count}
+
+
 @api_router.get("/work-orders/{wid}/pdf")
 async def work_order_pdf(wid: str, user: dict = Depends(require_worker)):
     wo = await get_or_404(db.work_orders, wid, "Work order")
@@ -1755,9 +1765,17 @@ async def _pub_doc_from_token(token: str):
 
 
 @api_router.get("/reports/salespeople")
-async def salespeople_report(user: dict = Depends(require_admin)):
+async def salespeople_report(start: Optional[str] = None, end: Optional[str] = None, user: dict = Depends(require_admin)):
     now = datetime.now(timezone.utc)
-    cy, py = now.year, now.year - 1
+    # Default range: current year to date
+    try:
+        start_dt = datetime.fromisoformat(start).replace(tzinfo=timezone.utc) if start else datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    except ValueError:
+        start_dt = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    try:
+        end_dt = (datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1)) if end else None
+    except ValueError:
+        end_dt = None
     agg: dict = {}
 
     def _row(name):
@@ -1775,18 +1793,16 @@ async def salespeople_report(user: dict = Depends(require_admin)):
             dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         except ValueError:
             continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if dt < start_dt or (end_dt and dt >= end_dt):
+            continue
         name = inv.get("salesman_name") or "Unassigned"
-        total = float(inv.get("total") or 0)
-        paid = float(inv.get("amount_paid") or 0)
-        comm = float(inv.get("commission_amount") or 0)
-        if dt.year == cy:
-            r = _row(name)
-            r["invoice_count"] += 1
-            r["ytd_sales"] += total
-            r["ytd_collected"] += paid
-            r["ytd_commission"] += comm
-        elif dt.year == py:
-            _row(name)["prev_year_sales"] += total
+        r = _row(name)
+        r["invoice_count"] += 1
+        r["ytd_sales"] += float(inv.get("total") or 0)
+        r["ytd_collected"] += float(inv.get("amount_paid") or 0)
+        r["ytd_commission"] += float(inv.get("commission_amount") or 0)
 
     rows = []
     for r in agg.values():
@@ -1800,7 +1816,9 @@ async def salespeople_report(user: dict = Depends(require_admin)):
         "commission": round(sum(r["ytd_commission"] for r in rows), 2),
         "invoice_count": sum(r["invoice_count"] for r in rows),
     }
-    return {"year": cy, "prev_year": py, "salespeople": rows, "totals": totals}
+    period_label = f"{start_dt.date()} → {(end_dt - timedelta(days=1)).date()}" if end_dt else f"{start_dt.date()} → {now.date()}"
+    return {"salespeople": rows, "totals": totals, "period_label": period_label,
+            "start": start_dt.date().isoformat(), "end": (end_dt - timedelta(days=1)).date().isoformat() if end_dt else now.date().isoformat()}
 
 
 @api_router.get("/reports/sales")
@@ -2475,6 +2493,53 @@ async def export_customers(user: dict = Depends(require_staff)):
             rows.append(["Contact", c.get("company") or c.get("name") or "", ct.get("name") or "",
                          ct.get("title") or "", ct.get("email") or "", ct.get("phone") or "", "", "", "", "", ""])
     return csv_response(rows, "customers_contacts.csv")
+
+
+@api_router.get("/export/contacts")
+async def export_contacts(user: dict = Depends(require_staff)):
+    header = ["Name", "Title", "Email", "Phone", "Company"]
+    rows = [header]
+    customers = await db.customers.find().to_list(5000)
+    cust_name = {str(c["_id"]): (c.get("company") or c.get("name") or "") for c in customers}
+    contacts = await db.contacts.find().to_list(20000)
+    contacts.sort(key=lambda c: (cust_name.get(str(c.get("customer_id")), ""), c.get("name") or ""))
+    for ct in contacts:
+        rows.append([ct.get("name") or "", ct.get("title") or "", ct.get("email") or "",
+                     ct.get("phone") or "", cust_name.get(str(ct.get("customer_id")), "")])
+    return csv_response(rows, "contacts.csv")
+
+
+@api_router.get("/export/accounting-pdf")
+async def export_accounting_month_pdf(month: str, user: dict = Depends(require_staff)):
+    """Combined PDF of accounting records for every invoice PAID in the given month (YYYY-MM)."""
+    try:
+        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+    end = (start.replace(year=start.year + 1, month=1) if start.month == 12
+           else start.replace(month=start.month + 1))
+    items = []
+    invs = await db.invoices.find({"status": "paid", "voided": {"$ne": True}}).sort("paid_at", 1).to_list(5000)
+    for inv in invs:
+        raw = inv.get("paid_at") or inv.get("updated_at") or inv.get("created_at")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if not (start <= dt < end):
+            continue
+        cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
+        payments = await _accounting_payments_for_invoice(str(inv["_id"]))
+        items.append((clean(inv), clean(cust) if cust else None, payments))
+    if not items:
+        raise HTTPException(status_code=404, detail=f"No invoices were paid in {month}.")
+    pdf = build_accounting_bulk_pdf(items, await get_settings(), await get_logo_bytes())
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Accounting-{month}.pdf"', "Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------
@@ -3157,12 +3222,9 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     return buf.getvalue()
 
 
-def build_accounting_pdf(inv: dict, customer: Optional[dict], payments: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+def _draw_accounting(c, W, H, inv: dict, customer: Optional[dict], payments: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> None:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
-    W, H = letter
-    buf = io.BytesIO()
-    c = pdfcanvas.Canvas(buf, pagesize=letter)
     L, R = 54, W - 54
     ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4")
     rowbg = colors.HexColor("#F7F7F8")
@@ -3252,7 +3314,26 @@ def build_accounting_pdf(inv: dict, customer: Optional[dict], payments: list, co
 
     c.setFillColor(soft); c.setFont("Helvetica", 8)
     c.drawString(L, 46, f"{cname} · Accounting record generated {now_iso()[:10]}")
+
+
+def build_accounting_pdf(inv: dict, customer: Optional[dict], payments: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    _draw_accounting(c, W, H, inv, customer, payments, company, logo_bytes)
     c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
+
+def build_accounting_bulk_pdf(items: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    """items: list of (inv, customer, payments). One accounting record per invoice, each starting a new page."""
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    for inv, customer, payments in items:
+        _draw_accounting(c, W, H, inv, customer, payments, company, logo_bytes)
+        c.showPage()
+    c.save(); buf.seek(0)
     return buf.getvalue()
 
 

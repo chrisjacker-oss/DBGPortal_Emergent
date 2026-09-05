@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import api, { currency } from "@/lib/api";
 import { PageHeader } from "@/components/Layout";
+import { Btn } from "@/components/kit";
 import { TrendUp, TrendDown } from "@phosphor-icons/react";
 
 function Delta({ pct }) {
@@ -16,8 +17,16 @@ function Delta({ pct }) {
 export default function Reports() {
   const [data, setData] = useState(null);
   const [team, setTeam] = useState(null);
+  const [tFrom, setTFrom] = useState("");
+  const [tTo, setTTo] = useState("");
+  const loadTeam = (from, to) => {
+    const q = [];
+    if (from) q.push(`start=${from}`);
+    if (to) q.push(`end=${to}`);
+    api.get(`/reports/salespeople${q.length ? `?${q.join("&")}` : ""}`).then((r) => setTeam(r.data)).catch(() => {});
+  };
   useEffect(() => { api.get("/reports/sales").then((r) => setData(r.data)).catch(() => {}); }, []);
-  useEffect(() => { api.get("/reports/salespeople").then((r) => setTeam(r.data)).catch(() => {}); }, []);
+  useEffect(() => { loadTeam(); }, []);
 
   if (!data) return <div className="p-8 text-muted-foreground">Loading…</div>;
   const k = data.kpis;
@@ -96,10 +105,27 @@ export default function Reports() {
         </table>
       </div>
 
-      {team && team.salespeople.length > 0 && (
+      {team && (
         <div className="mt-10" data-testid="salesperson-report">
-          <div className="overline text-muted-foreground mb-4">Sales by salesperson · {team.year} YTD</div>
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
+            <div className="overline text-muted-foreground">Sales by salesperson · {team.period_label}</div>
+            <div className="flex items-end gap-2">
+              <label className="block"><span className="overline text-muted-foreground">From</span>
+                <input type="date" value={tFrom} onChange={(e) => setTFrom(e.target.value)} data-testid="salesperson-from"
+                  className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+              </label>
+              <label className="block"><span className="overline text-muted-foreground">To</span>
+                <input type="date" value={tTo} onChange={(e) => setTTo(e.target.value)} data-testid="salesperson-to"
+                  className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+              </label>
+              <Btn variant="solid" onClick={() => loadTeam(tFrom, tTo)} data-testid="salesperson-apply">Apply</Btn>
+              <Btn variant="outline" onClick={() => { setTFrom(""); setTTo(""); loadTeam(); }} data-testid="salesperson-reset">YTD</Btn>
+            </div>
+          </div>
 
+          {team.salespeople.length === 0 ? (
+            <div className="border border-border bg-card p-8 text-center text-muted-foreground" data-testid="salesperson-empty">No sales in this period.</div>
+          ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="border border-border bg-card p-5" data-testid="salesperson-chart">
               <ResponsiveContainer width="100%" height={Math.max(220, team.salespeople.length * 54)}>
@@ -145,6 +171,7 @@ export default function Reports() {
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>

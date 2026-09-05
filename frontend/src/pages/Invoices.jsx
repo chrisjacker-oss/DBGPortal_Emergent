@@ -41,6 +41,7 @@ export default function Invoices() {
   const [sortKey, setSortKey] = useState("");
   const [pFrom, setPFrom] = useState("");
   const [pTo, setPTo] = useState("");
+  const [acctMonth, setAcctMonth] = useState(() => new Date().toISOString().slice(0, 7));
   useEffect(() => { setSortKey(""); setPFrom(""); setPTo(""); setSel({}); }, [tab]);
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
@@ -210,6 +211,18 @@ export default function Invoices() {
             <Btn variant={tab === "voided" ? "solid" : "outline"} onClick={() => setTab("voided")} data-testid="tab-voided">Voided</Btn>
           </div>
           <div className="flex items-end gap-3 ml-auto flex-wrap">
+            {isAdmin && (
+              <div className="flex items-end gap-2" data-testid="acct-month-export">
+                <label className="block">
+                  <span className="overline text-muted-foreground">Accounting export</span>
+                  <input type="month" value={acctMonth} onChange={(e) => setAcctMonth(e.target.value)} data-testid="acct-month-input"
+                    className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+                </label>
+                <Btn variant="outline" onClick={async () => { try { await downloadFile(`/export/accounting-pdf?month=${acctMonth}`, `Accounting-${acctMonth}.pdf`, "application/pdf"); } catch { toast.error(`No paid invoices found for ${acctMonth}`); } }} data-testid="acct-month-download-btn">
+                  <FilePdf size={16} weight="bold" /> Paid invoices PDF
+                </Btn>
+              </div>
+            )}
             <label className="block">
               <span className="overline text-muted-foreground">Sort by</span>
               <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} data-testid="invoice-sort" className="mt-1 block border border-input bg-card px-3 py-1.5 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">

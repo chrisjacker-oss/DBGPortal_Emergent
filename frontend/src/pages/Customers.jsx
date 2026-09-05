@@ -125,6 +125,7 @@ export default function Customers() {
         <Btn variant="outline" onClick={() => openImport("customers")} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
         <Btn variant="outline" onClick={() => openImport("contacts")} data-testid="import-contacts-btn"><UploadSimple size={16} weight="bold" /> Import Contacts</Btn>
         <Btn variant="outline" onClick={() => downloadCsv("/export/customers", "customers_contacts.csv")} data-testid="export-customers-btn"><DownloadSimple size={16} weight="bold" /> Export CSV</Btn>
+        <Btn variant="outline" onClick={() => downloadCsv("/export/contacts", "contacts.csv")} data-testid="export-contacts-btn"><DownloadSimple size={16} weight="bold" /> Export Contacts</Btn>
         <Btn onClick={openNew} data-testid="add-customer-btn"><Plus size={16} weight="bold" /> New Customer</Btn>
       </PageHeader>
 
