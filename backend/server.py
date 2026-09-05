@@ -2483,9 +2483,11 @@ def _assert_safe_email(subject: str, html: str) -> None:
                 raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
 
 
-async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
+async def send_email(*, to: str, subject: str, html: str, attachments: Optional[list] = None) -> Optional[str]:
     _assert_safe_email(subject, html)
     payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if attachments:
+        payload["attachments"] = attachments
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -2686,8 +2688,17 @@ async def _send_payment_receipt(inv: dict, amount_now: float) -> None:
     if not to:
         return
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
-    html = render_payment_receipt_email(inv, amount_now, cname, await get_settings())
-    await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html)
+    s = await get_settings()
+    html = render_payment_receipt_email(inv, amount_now, cname, s)
+    attachments = None
+    try:
+        pdf = build_doc_pdf("Invoice", inv, clean(cust) if cust else None, await get_logo_bytes(), s)
+        date_str = (str(inv.get("paid_at"))[:10] if inv.get("paid_at") else now_iso()[:10])
+        fname = f"{date_str}.{inv.get('number', 'invoice')}.pdf"
+        attachments = [{"filename": fname, "content": base64.b64encode(pdf).decode("ascii"), "content_type": "application/pdf"}]
+    except Exception as e:
+        logger.error(f"Payment receipt PDF build failed: {e}")
+    await send_email(to=to, subject=f"Payment received — Invoice {inv.get('number', '')} · DBG Signs, Inc.", html=html, attachments=attachments)
 
 
 def render_welcome_email(name: str, email: str, temp_password: str, role: str, company: Optional[dict] = None) -> str:
@@ -2950,6 +2961,27 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFillColor(cyan); c.rect(ax - 230, y - 7, 5, 28, fill=1, stroke=0)
     c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(ax - 214, y + 2, label)
     c.setFont("Helvetica-Bold", 14); c.drawRightString(ax - 10, y + 1, _money(doc.get("total", 0)))
+
+    # Payment details (invoices with payments applied)
+    amt_paid = float(doc.get("amount_paid") or 0)
+    if kind_label == "Invoice" and amt_paid > 0:
+        bal = round(float(doc.get("total") or 0) - amt_paid, 2)
+        y -= 26
+        c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(ax - 100, y, "Amount Paid")
+        c.setFillColor(colors.HexColor("#16A34A")); c.setFont("Helvetica-Bold", 10); c.drawRightString(ax - 10, y, "-" + _money(amt_paid)); y -= 15
+        pm = doc.get("paid_via") or doc.get("last_payment_method")
+        if pm:
+            when = str(doc.get("paid_at"))[:10] if doc.get("paid_at") else ""
+            c.setFillColor(soft); c.setFont("Helvetica", 8)
+            c.drawRightString(ax - 10, y + 1, f"Paid via {pm}" + (f" on {when}" if when else "")); y -= 14
+        y -= 4
+        c.setFillColor(ink); c.rect(ax - 230, y - 7, 230, 26, fill=1, stroke=0)
+        c.setFillColor(cyan); c.rect(ax - 230, y - 7, 5, 26, fill=1, stroke=0)
+        c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 11); c.drawString(ax - 214, y + 1, "BALANCE DUE")
+        c.setFont("Helvetica-Bold", 13); c.drawRightString(ax - 10, y + 1, _money(bal))
+        if bal <= 0.005:
+            c.saveState(); c.setFillColor(colors.HexColor("#16A34A")); c.setFont("Helvetica-Bold", 24)
+            c.translate(L + 40, y + 30); c.rotate(9); c.drawString(0, 0, "PAID IN FULL"); c.restoreState()
 
     # Footer
     fy = 88
