@@ -18,6 +18,7 @@ const NEXT = { open: "in_production", in_production: "fulfilled" };
 export default function SalesOrders() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isSalesman = user?.role === "salesman";
   const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const [rows, setRows] = useState([]);
   const [lowThreshold, setLowThreshold] = useState(0);
@@ -131,11 +132,11 @@ export default function SalesOrders() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`so-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}` },
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}`, hidden: isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
-                        { label: NEXT[r.status] ? `Advance → ${NEXT[r.status].replace("_", " ")}` : "", icon: <ArrowCounterClockwise size={16} />, onClick: () => advance(r), testid: `advance-so-${r.id}`, hidden: r.voided || !NEXT[r.status] },
-                        { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided },
+                        { label: NEXT[r.status] ? `Advance → ${NEXT[r.status].replace("_", " ")}` : "", icon: <ArrowCounterClockwise size={16} />, onClick: () => advance(r), testid: `advance-so-${r.id}`, hidden: r.voided || !NEXT[r.status] || isSalesman },
+                        { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id || isSalesman },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided || isSalesman },
                         { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-so-${r.id}`, hidden: !isAdmin || r.voided },
                         { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-so-${r.id}`, hidden: !isAdmin || !r.voided },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-so-${r.id}`, hidden: !isAdmin },

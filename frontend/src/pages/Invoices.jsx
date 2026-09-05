@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 export default function Invoices() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isSalesman = user?.role === "salesman";
   const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -282,14 +283,14 @@ export default function Invoices() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`invoice-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}` },
-                        { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}` },
-                        { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") },
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}`, hidden: isSalesman },
+                        { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}`, hidden: isSalesman },
+                        { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
-                        { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
-                        { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" },
-                        { label: "Download to accounting", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/accounting-pdf`, `Accounting-${r.number}.pdf`, "application/pdf"), testid: `acct-pdf-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided },
+                        { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
+                        { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
+                        { label: "Download to accounting", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/accounting-pdf`, `Accounting-${r.number}.pdf`, "application/pdf"), testid: `acct-pdf-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || isSalesman },
                         { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-invoice-${r.id}`, hidden: !isAdmin || r.voided },
                         { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-invoice-${r.id}`, hidden: !isAdmin || !r.voided },
                         { separator: true, hidden: !isAdmin },

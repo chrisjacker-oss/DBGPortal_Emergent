@@ -16,6 +16,7 @@ const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/a
 export default function Estimates() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const isSalesman = user?.role === "salesman";
   const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const [rows, setRows] = useState([]);
   const [lowThreshold, setLowThreshold] = useState(0);
@@ -117,10 +118,10 @@ export default function Estimates() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`estimate-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}` },
+                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
-                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}` },
+                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" || isSalesman },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },
                         { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelEst(r), testid: `delete-estimate-${r.id}`, danger: true, hidden: !isAdmin },
