@@ -1496,6 +1496,7 @@ async def _apply_amount_to_invoice(invoice_id: str, amount: float) -> None:
         await _send_payment_receipt({**inv, **upd}, float(amount or 0))
     except Exception as e:  # never let a receipt failure break payment
         logger.error(f"Payment receipt email failed: {e}")
+    await _maybe_auto_accounting({**inv, **upd})
 
 
 async def _apply_amount_to_so(so_id: str, amount: float) -> None:
@@ -1632,6 +1633,13 @@ async def email_invoice_accounting(iid: str, payload: AccountingEmailInput, user
     to = (payload.email or s.get("accounting_email") or "").strip()
     if not to:
         raise HTTPException(status_code=400, detail="No accounting email set. Add one in Settings or enter one here.")
+    count = await _send_accounting_record(inv, to)
+    return {"sent_to": to, "payments": count}
+
+
+async def _send_accounting_record(inv: dict, to: str) -> int:
+    s = await get_settings()
+    iid = str(inv.get("_id") or inv.get("id"))
     pays = []
     recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", -1).to_list(2000)
     for rec in recs:
@@ -1682,7 +1690,21 @@ async def email_invoice_accounting(iid: str, payload: AccountingEmailInput, user
     except Exception as e:
         logger.error(f"Accounting email PDF build failed: {e}")
     await send_email(to=to, subject=f"[Accounting] Invoice {inv.get('number', '')} — {cname}", html=html, attachments=attachments)
-    return {"sent_to": to, "payments": len(pays)}
+    return len(pays)
+
+
+async def _maybe_auto_accounting(inv_after: dict) -> None:
+    """Auto-email the accounting record when an invoice is fully paid (recipient from Settings)."""
+    if inv_after.get("status") != "paid":
+        return
+    s = await get_settings()
+    to = (s.get("accounting_email") or "").strip()
+    if not to:
+        return
+    try:
+        await _send_accounting_record(inv_after, to)
+    except Exception as e:
+        logger.error(f"Auto accounting email failed: {e}")
 
 
 class ManualPaymentInput(BaseModel):
@@ -1726,6 +1748,7 @@ async def record_manual_payment(iid: str, payload: ManualPaymentInput, user: dic
         await _send_payment_receipt(fresh, amount)
     except Exception as e:
         logger.error(f"Manual payment receipt email failed: {e}")
+    await _maybe_auto_accounting(fresh)
     return await enrich_customer(clean(fresh))
 
 
