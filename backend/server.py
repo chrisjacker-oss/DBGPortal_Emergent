@@ -3135,6 +3135,105 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     return buf.getvalue()
 
 
+def build_accounting_pdf(inv: dict, customer: Optional[dict], payments: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 54, W - 54
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4")
+    rowbg = colors.HexColor("#F7F7F8")
+    y = H - 70
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 40, width=150, height=86, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 20); c.drawRightString(R, y, "ACCOUNTING RECORD")
+    c.setFillColor(soft); c.setFont("Helvetica", 11); c.drawRightString(R, y - 16, f"Invoice #{inv.get('number', '')}")
+    y -= 62
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 26
+
+    custname = (customer.get("company") or customer.get("name")) if customer else "Customer"
+    total = float(inv.get("total") or 0); paid = float(inv.get("amount_paid") or 0); bal = round(total - paid, 2)
+    status = "PAID IN FULL" if bal <= 0.005 and paid > 0 else ((inv.get("status") or "").upper() or "OPEN")
+    for label, val in [("Customer", custname), ("Invoice date", str(inv.get("created_at", ""))[:10]), ("Status", status)]:
+        c.setFillColor(soft); c.setFont("Helvetica", 9); c.drawString(L, y, label.upper())
+        c.setFillColor(ink); c.setFont("Helvetica-Bold", 10); c.drawString(L + 130, y, str(val)); y -= 18
+    y -= 8
+
+    # Invoice line items
+    c.setFillColor(ink); c.rect(L, y - 6, R - L, 22, fill=1, stroke=0)
+    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
+    c.drawString(L + 10, y + 2, "DESCRIPTION"); c.drawRightString(R - 10, y + 2, "AMOUNT")
+    y -= 28
+    sub_raw = float(inv.get("subtotal", 0)); disc = float(inv.get("discount_amount", 0))
+    factor = (sub_raw - disc) / sub_raw if sub_raw else 1.0
+    c.setFont("Helvetica", 10)
+    for i, li in enumerate(inv.get("line_items", [])):
+        if i % 2 == 1:
+            c.setFillColor(rowbg); c.rect(L, y - 6, R - L, 20, fill=1, stroke=0)
+        c.setFillColor(ink); c.setFont("Helvetica", 10)
+        c.drawString(L + 10, y, str(li.get("description", ""))[:64])
+        c.drawRightString(R - 10, y, _money(li.get("line_total", 0) * factor))
+        y -= 20
+        if y < 200:
+            c.showPage(); y = H - 80; c.setFont("Helvetica", 10)
+
+    net_sub = round(sub_raw - disc, 2)
+    c.setStrokeColor(colors.HexColor("#E5E7EB")); c.setLineWidth(1); c.line(R - 240, y + 4, R, y + 4); y -= 14
+    for label, val, bold in [("Subtotal", net_sub, False), (f"Tax ({inv.get('tax_rate', 0)}%)", inv.get("tax_amount", 0), False),
+                             ("Total", total, True), ("Amount paid", paid, False), ("Balance due", bal, True)]:
+        c.setFont("Helvetica-Bold" if bold else "Helvetica", 10)
+        c.setFillColor(ink if bold else soft); c.drawRightString(R - 120, y, label)
+        c.setFillColor(ink); c.drawRightString(R - 10, y, _money(val)); y -= 16
+    y -= 16
+
+    # Payment records
+    if y < 140:
+        c.showPage(); y = H - 80
+    c.setFillColor(cyan); c.setFont("Helvetica-Bold", 11); c.drawString(L, y, "PAYMENT RECORDS"); y -= 8
+    c.setStrokeColor(cyan); c.setLineWidth(1); c.line(L, y, R, y); y -= 24
+    if not payments:
+        c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawString(L, y, "No payments recorded for this invoice."); y -= 20
+    for p in payments:
+        rows = [("Date", str(p.get("date") or "")[:19].replace("T", " ")),
+                ("Amount", _money(p.get("amount")))]
+        if p.get("payment_intent_id"):
+            rows.append(("Type", "Stripe card payment"))
+            rows.append(("Payment intent", str(p.get("payment_intent_id"))))
+            if p.get("surcharge"):
+                rows.append(("Card surcharge (txn)", _money(p.get("surcharge"))))
+            if p.get("charged"):
+                rows.append(("Total charged (txn)", _money(p.get("charged"))))
+            if p.get("currency"):
+                rows.append(("Currency", str(p.get("currency")).upper()))
+        else:
+            rows.append(("Type", f"Manual — {p.get('method') or ''}"))
+            if p.get("reference"):
+                rows.append(("Reference", str(p.get("reference"))))
+            if p.get("recorded_by"):
+                rows.append(("Recorded by", str(p.get("recorded_by"))))
+        if p.get("notes"):
+            rows.append(("Notes", str(p.get("notes"))))
+        box_h = 16 * len(rows) + 12
+        if y - box_h < 60:
+            c.showPage(); y = H - 80
+        c.setStrokeColor(colors.HexColor("#E5E7EB")); c.setLineWidth(1)
+        c.rect(L, y - box_h + 10, R - L, box_h, stroke=1, fill=0)
+        yy = y - 4
+        for k, v in rows:
+            c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L + 10, yy, k.upper())
+            c.setFillColor(ink); c.setFont("Helvetica", 10); c.drawString(L + 170, yy, str(v)[:66]); yy -= 16
+        y = y - box_h - 6
+
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 46, f"{cname} · Accounting record generated {now_iso()[:10]}")
+    c.showPage(); c.save(); buf.seek(0)
+    return buf.getvalue()
+
+
 def build_work_order_pdf(wo: dict, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
     co = company or {}
     W, H = letter
@@ -3375,6 +3474,38 @@ async def _staff_pdf(collection, doc_id: str, label: str, inline: bool = False) 
 @api_router.get("/invoices/{iid}/pdf")
 async def invoice_pdf(iid: str, inline: bool = False, user: dict = Depends(require_staff)):
     return await _staff_pdf(db.invoices, iid, "Invoice", inline)
+
+
+async def _accounting_payments_for_invoice(iid: str) -> list:
+    out = []
+    recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", 1).to_list(2000)
+    for rec in recs:
+        base = {
+            "date": rec.get("updated_at") or rec.get("created_at"),
+            "method": rec.get("method") or ("Card (Stripe)" if rec.get("payment_intent_id") else "Payment"),
+            "reference": rec.get("reference"), "notes": rec.get("notes"),
+            "payment_intent_id": rec.get("payment_intent_id"), "surcharge": rec.get("surcharge"),
+            "charged": rec.get("charged"), "currency": rec.get("currency"), "recorded_by": rec.get("recorded_by"),
+        }
+        if rec.get("invoice_id") == iid:
+            out.append({**base, "amount": rec.get("amount")})
+        for a in (rec.get("allocations") or []):
+            if a.get("invoice_id") == iid:
+                out.append({**base, "amount": a.get("amount")})
+    out.sort(key=lambda x: x["date"] or "")
+    return out
+
+
+@api_router.get("/invoices/{iid}/accounting-pdf")
+async def invoice_accounting_pdf(iid: str, inline: bool = False, user: dict = Depends(require_staff)):
+    inv = await get_or_404(db.invoices, iid, "Invoice")
+    cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
+    payments = await _accounting_payments_for_invoice(iid)
+    pdf = build_accounting_pdf(clean(inv), clean(cust) if cust else None, payments, await get_settings(), await get_logo_bytes())
+    disp = "inline" if inline else "attachment"
+    fname = f"Accounting-{inv.get('number', 'invoice')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'{disp}; filename="{fname}"', "Cache-Control": "no-store"})
 
 
 @api_router.get("/estimates/{eid}/pdf")
