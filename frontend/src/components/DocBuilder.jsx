@@ -174,7 +174,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     });
   };
 
-  const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.65fr_0.6fr_0.8fr_0.3fr]";
+  const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.6fr_0.8fr_0.3fr]";
 
   return (
     <>
@@ -210,7 +210,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           <div className="border border-border overflow-x-auto min-w-0 w-full">
             <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[1000px]`}>
               <div>Category</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
-              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Sell/sqft</div><div className="text-right">Cost/sqft</div><div className="text-right">Extra hrs</div>
+              <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Sell/sqft</div><div className="text-right">Extra hrs</div>
               <div className="text-right">Total</div><div></div>
             </div>
             {form.line_items.map((li, i) => {
@@ -228,7 +228,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </select>
                 {isShip ? (
                 <>
-                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
+                <div style={{ gridColumn: "span 7" }} className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Shipping cost $</span>
                   <input type="number" value={li.cost_per_sqft} onChange={(e) => setItem(i, "cost_per_sqft", e.target.value)} data-testid={`item-cost-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap">+ 30% markup</span>
@@ -246,7 +246,6 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <Cell value={li.quantity} onChange={(v) => setItem(i, "quantity", v)} testid={`item-qty-${i}`} />
                 <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
                 <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
-                <Cell value={li.cost_per_sqft} onChange={(v) => setItem(i, "cost_per_sqft", v)} testid={`item-cost-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
                 <input type="number" value={(li.line_total_override !== "" && li.line_total_override != null) ? li.line_total_override : Number(lineTotal(li).toFixed(2))} onChange={(e) => setItem(i, "line_total_override", e.target.value)} data-testid={`item-line-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                 </>
