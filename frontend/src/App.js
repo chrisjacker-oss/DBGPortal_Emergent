@@ -23,6 +23,7 @@ import WorkOrders from "@/pages/WorkOrders";
 import ForcePasswordChange from "@/pages/ForcePasswordChange";
 import PublicPay from "@/pages/PublicPay";
 import Reports from "@/pages/Reports";
+import TimeClock from "@/pages/TimeClock";
 
 function Loading() {
   return (
@@ -72,11 +73,12 @@ function App() {
                 </Protected>
               }
             />
-            {(() => { const A = ["admin"], AS = ["admin", "salesman"]; return [
+            {(() => { const A = ["admin"], AS = ["admin", "salesman"], ASI = ["admin", "salesman", "installer"]; return [
               ["/dashboard", <Dashboard />, A],
               ["/reports", <Reports />, A],
               ["/customers", <Customers />, AS],
               ["/work-orders", <WorkOrders />, ["admin", "installer"]],
+              ["/time-clock", <TimeClock />, ASI],
               ["/portal-accounts", <PortalAccounts />, A],
               ["/materials", <Materials />, A],
               ["/estimates", <Estimates />, AS],

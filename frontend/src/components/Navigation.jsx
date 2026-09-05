@@ -18,6 +18,7 @@ import {
   UsersThree,
   IdentificationBadge,
   Wrench,
+  Timer,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
@@ -29,6 +30,7 @@ const adminLinks = [
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/work-orders", label: "Work Orders", icon: Wrench },
+  { to: "/time-clock", label: "Time Clock", icon: Timer },
   { to: "/materials", label: "Materials", icon: Stack },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/portal-accounts", label: "Portal Accounts", icon: IdentificationBadge },
@@ -47,10 +49,12 @@ const salesmanLinks = [
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/commissions", label: "Commissions", icon: Percent },
+  { to: "/time-clock", label: "Time Clock", icon: Timer },
 ];
 
 const installerLinks = [
   { to: "/work-orders", label: "Work Orders", icon: Wrench },
+  { to: "/time-clock", label: "Time Clock", icon: Timer },
 ];
 
 export const Navigation = () => {

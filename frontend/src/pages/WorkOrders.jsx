@@ -13,12 +13,13 @@ import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 const EQUIPMENT = ["Trailer", "Box Truck", "Vehicle", "Tractor", "Outside Sign", "Other"];
 const CUSTOMERS = ["J.B. Hunt", "Duval", "Hotline", "Target Trailer", "JetEx", "Deep Blue Commercial", "Avid", "Milestone", "AER", "DSV"];
 const today = () => new Date().toISOString().slice(0, 10);
-const empty = () => ({ customer_name: "", date: today(), work_performed: "", unit_vin: "", equipment_type: "Trailer", equipment_other: "", mileage_start: "", mileage_end: "" });
+const empty = () => ({ customer_name: "", date: today(), work_performed: "", unit_vin: "", equipment_type: "Trailer", equipment_other: "", mileage_start: "", mileage_end: "", worker_id: "" });
 
 export default function WorkOrders() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState([]);
+  const [installers, setInstallers] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty());
@@ -27,19 +28,23 @@ export default function WorkOrders() {
   const [fTo, setFTo] = useState("");
   const [fCust, setFCust] = useState("");
   const [fVin, setFVin] = useState("");
+  const [fWorker, setFWorker] = useState("");
   const [delRow, setDelRow] = useState(null);
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = () => api.get("/work-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.get("/installers").then((r) => setInstallers(r.data)).catch(() => {}); }, []);
 
   const custOptions = Array.from(new Set(rows.map((r) => r.customer_name).filter(Boolean))).sort();
+  const workerOptions = Array.from(new Set([...rows.map((r) => r.worker_name).filter(Boolean), ...installers.map((u) => u.name)])).sort();
   const visible = rows.filter((r) =>
     (!fFrom || (r.date || "") >= fFrom) &&
     (!fTo || (r.date || "") <= fTo) &&
     (!fCust || r.customer_name === fCust) &&
-    (!fVin || String(r.unit_vin || "").toLowerCase().includes(fVin.toLowerCase()))
+    (!fVin || String(r.unit_vin || "").toLowerCase().includes(fVin.toLowerCase())) &&
+    (!fWorker || r.worker_name === fWorker)
   );
   const selIds = Object.keys(sel).filter((k) => sel[k]);
   const allChecked = visible.length > 0 && visible.every((r) => sel[r.id]);
@@ -65,6 +70,7 @@ export default function WorkOrders() {
       equipment_other: form.equipment_type === "Other" ? form.equipment_other : "",
       mileage_start: form.mileage_start === "" ? null : Number(form.mileage_start),
       mileage_end: form.mileage_end === "" ? null : Number(form.mileage_end),
+      worker_id: form.worker_id || null,
     };
     try {
       if (editing) await api.put(`/work-orders/${editing}`, payload);
@@ -109,7 +115,14 @@ export default function WorkOrders() {
             </select></label>
           <label className="block"><span className="overline text-muted-foreground">Unit / VIN</span>
             <input type="text" value={fVin} onChange={(e) => setFVin(e.target.value)} data-testid="wo-filter-vin" placeholder="Search unit / VIN" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" /></label>
-          {(fFrom || fTo || fCust || fVin) && <Btn variant="outline" onClick={() => { setFFrom(""); setFTo(""); setFCust(""); setFVin(""); }} data-testid="wo-filter-clear">Clear</Btn>}
+          {isAdmin && (
+            <label className="block"><span className="overline text-muted-foreground">Installer</span>
+              <select value={fWorker} onChange={(e) => setFWorker(e.target.value)} data-testid="wo-filter-installer" className="mt-1 block border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="">All installers</option>
+                {workerOptions.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select></label>
+          )}
+          {(fFrom || fTo || fCust || fVin || fWorker) && <Btn variant="outline" onClick={() => { setFFrom(""); setFTo(""); setFCust(""); setFVin(""); setFWorker(""); }} data-testid="wo-filter-clear">Clear</Btn>}
           <div className="ml-auto text-sm text-muted-foreground font-mono self-center">{visible.length} of {rows.length}</div>
         </div>
         <div className="border border-border bg-card overflow-x-auto">
@@ -174,6 +187,13 @@ export default function WorkOrders() {
               )}
             </div>
             <Inp label="Date" type="date" value={form.date} onChange={set("date")} testid="wo-date" />
+            <label className="block">
+              <span className="overline text-muted-foreground">Installer / performed by</span>
+              <select value={form.worker_id || ""} onChange={set("worker_id")} data-testid="wo-installer" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="">{editing ? "Keep current" : "Me (default)"}</option>
+                {installers.map((u) => <option key={u.id} value={u.id}>{u.name}{u.role === "admin" ? " (admin)" : ""}</option>)}
+              </select>
+            </label>
             <label className="block">
               <span className="overline text-muted-foreground">Work performed</span>
               <textarea value={form.work_performed} onChange={set("work_performed")} data-testid="wo-work" rows={3} className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />

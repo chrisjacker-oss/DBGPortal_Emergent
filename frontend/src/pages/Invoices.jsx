@@ -349,6 +349,7 @@ export default function Invoices() {
           </div>
           <DialogFooter>
             <Btn variant="outline" onClick={() => setXeroOpen(false)}>Cancel</Btn>
+            <Btn variant="outline" onClick={async () => { setXeroBusy(true); try { await downloadFile(`/export/invoices-csv?month=${xeroMonth}`, `Invoices-${xeroMonth}.csv`, "text/csv"); setXeroOpen(false); } catch { toast.error(`No invoices found for ${xeroMonth}`); } setXeroBusy(false); }} disabled={xeroBusy || !xeroMonth} data-testid="xero-export-csv-btn"><DownloadSimple size={16} weight="bold" /> Download CSV</Btn>
             <Btn onClick={exportInvoicesPdf} disabled={xeroBusy || !xeroMonth} data-testid="xero-export-download-btn"><DownloadSimple size={16} weight="bold" /> {xeroBusy ? "Preparing…" : "Download PDF"}</Btn>
           </DialogFooter>
         </DialogContent>

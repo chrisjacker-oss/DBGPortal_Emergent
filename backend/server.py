@@ -279,6 +279,7 @@ class WorkOrderInput(BaseModel):
     equipment_other: Optional[str] = ""
     mileage_start: Optional[float] = None
     mileage_end: Optional[float] = None
+    worker_id: Optional[str] = None
 
 
 class DeleteConfirm(BaseModel):
@@ -838,6 +839,21 @@ async def enrich_work_order(d: dict) -> dict:
     return d
 
 
+@api_router.get("/installers")
+async def list_installers(user: dict = Depends(require_worker)):
+    docs = await db.users.find({"role": {"$in": ["installer", "admin"]}}).sort("name", 1).to_list(1000)
+    return [{"id": str(d["_id"]), "name": d.get("name"), "role": d.get("role")} for d in docs]
+
+
+async def _resolve_worker(payload: WorkOrderInput, fallback: dict) -> tuple:
+    """Return (worker_id, worker_name) from the selected installer, or the fallback user."""
+    if payload.worker_id and ObjectId.is_valid(payload.worker_id):
+        u = await db.users.find_one({"_id": oid(payload.worker_id)})
+        if u:
+            return str(u["_id"]), u.get("name")
+    return fallback.get("id"), fallback.get("name")
+
+
 @api_router.get("/work-orders")
 async def list_work_orders(user: dict = Depends(require_worker)):
     q = {} if user["role"] == "admin" else {"worker_id": user["id"]}
@@ -848,8 +864,8 @@ async def list_work_orders(user: dict = Depends(require_worker)):
 @api_router.post("/work-orders")
 async def create_work_order(payload: WorkOrderInput, user: dict = Depends(require_worker)):
     doc = payload.model_dump()
-    doc["worker_id"] = user["id"]
-    doc["worker_name"] = user.get("name")
+    doc.pop("worker_id", None)
+    doc["worker_id"], doc["worker_name"] = await _resolve_worker(payload, user)
     doc["number"] = await next_number("WO", "work_orders", db.work_orders)
     doc["created_at"] = now_iso()
     res = await db.work_orders.insert_one(doc)
@@ -861,7 +877,10 @@ async def update_work_order(wid: str, payload: WorkOrderInput, user: dict = Depe
     wo = await get_or_404(db.work_orders, wid, "Work order")
     if user["role"] != "admin" and wo.get("worker_id") != user["id"]:
         raise HTTPException(status_code=403, detail="You can only edit your own work orders")
-    await db.work_orders.update_one({"_id": oid(wid)}, {"$set": payload.model_dump()})
+    doc = payload.model_dump()
+    doc.pop("worker_id", None)
+    doc["worker_id"], doc["worker_name"] = await _resolve_worker(payload, {"id": wo.get("worker_id"), "name": wo.get("worker_name")})
+    await db.work_orders.update_one({"_id": oid(wid)}, {"$set": doc})
     return await enrich_work_order(await db.work_orders.find_one({"_id": oid(wid)}))
 
 
@@ -891,6 +910,143 @@ async def work_order_pdf(wid: str, user: dict = Depends(require_worker)):
     pdf = build_work_order_pdf(clean(wo), await get_settings(), await get_logo_bytes())
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{wo.get("number", "work-order")}.pdf"'})
+
+
+# ---------------------------------------------------------------------------
+# Time clock (installers + salesmen clock in/out; admins manage everyone)
+# ---------------------------------------------------------------------------
+class TimeEntryInput(BaseModel):
+    user_id: str
+    clock_in: str
+    clock_out: Optional[str] = None
+    commission_note: Optional[str] = ""
+
+
+class TimeEntryEdit(BaseModel):
+    clock_in: Optional[str] = None
+    clock_out: Optional[str] = None
+    commission_note: Optional[str] = None
+
+
+def _entry_hours(clock_in: Optional[str], clock_out: Optional[str]) -> Optional[float]:
+    if not clock_in or not clock_out:
+        return None
+    try:
+        a = datetime.fromisoformat(str(clock_in).replace("Z", "+00:00"))
+        b = datetime.fromisoformat(str(clock_out).replace("Z", "+00:00"))
+        return round(max(0.0, (b - a).total_seconds() / 3600.0), 2)
+    except ValueError:
+        return None
+
+
+def time_entry_out(d: dict) -> dict:
+    return {
+        "id": str(d["_id"]), "user_id": d.get("user_id"), "user_name": d.get("user_name"),
+        "user_role": d.get("user_role"), "clock_in": d.get("clock_in"), "clock_out": d.get("clock_out"),
+        "date": d.get("date"), "hours": _entry_hours(d.get("clock_in"), d.get("clock_out")),
+        "commission_note": d.get("commission_note") or "", "manual": bool(d.get("manual")),
+    }
+
+
+@api_router.get("/timeclock/status")
+async def timeclock_status(user: dict = Depends(get_current_user)):
+    open_entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    return {"clocked_in": bool(open_entry), "entry": time_entry_out(open_entry) if open_entry else None}
+
+
+@api_router.post("/timeclock/clock-in")
+async def timeclock_clock_in(user: dict = Depends(get_current_user)):
+    if user.get("role") not in ("installer", "salesman"):
+        raise HTTPException(status_code=403, detail="Only installers and salesmen can clock in")
+    existing = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    if existing:
+        raise HTTPException(status_code=400, detail="You are already clocked in")
+    now = now_iso()
+    doc = {"user_id": user["id"], "user_name": user.get("name"), "user_role": user.get("role"),
+           "clock_in": now, "clock_out": None, "date": now[:10], "commission_note": "", "manual": False,
+           "created_at": now}
+    res = await db.time_entries.insert_one(doc)
+    return time_entry_out(await db.time_entries.find_one({"_id": res.inserted_id}))
+
+
+@api_router.post("/timeclock/clock-out")
+async def timeclock_clock_out(user: dict = Depends(get_current_user)):
+    entry = await db.time_entries.find_one({"user_id": user["id"], "clock_out": None})
+    if not entry:
+        raise HTTPException(status_code=400, detail="You are not clocked in")
+    await db.time_entries.update_one({"_id": entry["_id"]}, {"$set": {"clock_out": now_iso()}})
+    return time_entry_out(await db.time_entries.find_one({"_id": entry["_id"]}))
+
+
+@api_router.get("/timeclock/entries")
+async def timeclock_entries(user_id: Optional[str] = None, start: Optional[str] = None,
+                            end: Optional[str] = None, user: dict = Depends(get_current_user)):
+    q: dict = {}
+    if user.get("role") == "admin":
+        if user_id:
+            q["user_id"] = user_id
+    else:
+        q["user_id"] = user["id"]
+    if start:
+        q["date"] = {"$gte": start}
+    if end:
+        q.setdefault("date", {})["$lte"] = end
+    docs = await db.time_entries.find(q).sort("clock_in", -1).to_list(5000)
+    return [time_entry_out(d) for d in docs]
+
+
+@api_router.post("/timeclock/entries")
+async def timeclock_add_entry(payload: TimeEntryInput, user: dict = Depends(require_admin)):
+    u = await db.users.find_one({"_id": oid(payload.user_id)})
+    if not u:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    doc = {"user_id": str(u["_id"]), "user_name": u.get("name"), "user_role": u.get("role"),
+           "clock_in": payload.clock_in, "clock_out": payload.clock_out, "date": str(payload.clock_in)[:10],
+           "commission_note": payload.commission_note or "", "manual": True, "created_at": now_iso()}
+    res = await db.time_entries.insert_one(doc)
+    return time_entry_out(await db.time_entries.find_one({"_id": res.inserted_id}))
+
+
+@api_router.put("/timeclock/entries/{eid}")
+async def timeclock_edit_entry(eid: str, payload: TimeEntryEdit, user: dict = Depends(require_admin)):
+    entry = await get_or_404(db.time_entries, eid, "Time entry")
+    upd = {}
+    if payload.clock_in is not None:
+        upd["clock_in"] = payload.clock_in; upd["date"] = str(payload.clock_in)[:10]
+    if payload.clock_out is not None:
+        upd["clock_out"] = payload.clock_out or None
+    if payload.commission_note is not None:
+        upd["commission_note"] = payload.commission_note
+    await db.time_entries.update_one({"_id": oid(eid)}, {"$set": upd})
+    return time_entry_out(await db.time_entries.find_one({"_id": oid(eid)}))
+
+
+@api_router.delete("/timeclock/entries/{eid}")
+async def timeclock_delete_entry(eid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    await get_or_404(db.time_entries, eid, "Time entry")
+    await db.time_entries.delete_one({"_id": oid(eid)})
+    return {"message": "deleted"}
+
+
+@api_router.get("/timeclock/export")
+async def timeclock_export(start: Optional[str] = None, end: Optional[str] = None,
+                           user_id: Optional[str] = None, user: dict = Depends(require_admin)):
+    q: dict = {}
+    if user_id:
+        q["user_id"] = user_id
+    if start:
+        q["date"] = {"$gte": start}
+    if end:
+        q.setdefault("date", {})["$lte"] = end
+    docs = await db.time_entries.find(q).sort("clock_in", 1).to_list(10000)
+    rows = [["Employee", "Role", "Date", "Clock in", "Clock out", "Hours", "Commission note"]]
+    for d in docs:
+        e = time_entry_out(d)
+        rows.append([e["user_name"] or "", e["user_role"] or "", e["date"] or "",
+                     str(e["clock_in"] or "")[:19].replace("T", " "), str(e["clock_out"] or "")[:19].replace("T", " "),
+                     "" if e["hours"] is None else f'{e["hours"]:.2f}', e["commission_note"]])
+    return csv_response(rows, "timeclock.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -2047,6 +2203,16 @@ async def delete_user(uid: str, payload: DeleteConfirm, user: dict = Depends(req
     return {"message": "deleted"}
 
 
+@api_router.post("/users/bulk-delete")
+async def bulk_delete_users(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i) and i != user["id"]]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No team members selected")
+    res = await db.users.delete_many({"_id": {"$in": [oid(i) for i in ids]}, "role": {"$in": ["admin", "salesman", "installer"]}})
+    return {"deleted": res.deleted_count}
+
+
 # ---------------------------------------------------------------------------
 # Customer portal accounts (admin: add / suspend / delete)
 # ---------------------------------------------------------------------------
@@ -2542,9 +2708,7 @@ async def export_accounting_month_pdf(month: str, user: dict = Depends(require_s
                     headers={"Content-Disposition": f'attachment; filename="Accounting-{month}.pdf"', "Cache-Control": "no-store"})
 
 
-@api_router.get("/export/invoices-pdf")
-async def export_invoices_month_pdf(month: str, user: dict = Depends(require_staff)):
-    """One-line-per-invoice summary PDF for every invoice created in the given month (YYYY-MM)."""
+async def _invoices_for_month(month: str) -> list:
     try:
         start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
     except ValueError:
@@ -2565,12 +2729,34 @@ async def export_invoices_month_pdf(month: str, user: dict = Depends(require_sta
             dt = dt.replace(tzinfo=timezone.utc)
         if start <= dt < end:
             out.append(await enrich_customer(clean(inv)))
+    return out
+
+
+@api_router.get("/export/invoices-pdf")
+async def export_invoices_month_pdf(month: str, user: dict = Depends(require_staff)):
+    """One-line-per-invoice summary PDF for every invoice created in the given month (YYYY-MM)."""
+    out = await _invoices_for_month(month)
     if not out:
         raise HTTPException(status_code=404, detail=f"No invoices found for {month}.")
-    label = start.strftime("%B %Y")
+    label = datetime.strptime(month, "%Y-%m").strftime("%B %Y")
     pdf = build_invoices_list_pdf(out, label, await get_settings(), await get_logo_bytes())
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="Invoices-{month}.pdf"', "Cache-Control": "no-store"})
+
+
+@api_router.get("/export/invoices-csv")
+async def export_invoices_month_csv(month: str, user: dict = Depends(require_staff)):
+    """One-row-per-invoice CSV for every invoice created in the given month (YYYY-MM), for Xero import."""
+    out = await _invoices_for_month(month)
+    if not out:
+        raise HTTPException(status_code=404, detail=f"No invoices found for {month}.")
+    rows = [["Invoice", "Date", "Customer", "Total", "Paid", "Balance", "Status"]]
+    for inv in out:
+        total = float(inv.get("total") or 0); paid = float(inv.get("amount_paid") or 0)
+        status = "VOID" if inv.get("voided") else ((inv.get("status") or "").upper() or "OPEN")
+        rows.append([inv.get("number", ""), str(inv.get("created_at", ""))[:10], inv.get("customer_name", "") or "",
+                     f"{total:.2f}", f"{paid:.2f}", f"{round(total - paid, 2):.2f}", status])
+    return csv_response(rows, f"Invoices-{month}.csv")
 
 
 # ---------------------------------------------------------------------------

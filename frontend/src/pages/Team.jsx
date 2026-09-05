@@ -7,18 +7,27 @@ import { Inp } from "@/pages/Customers";
 import { Plus, PencilSimple, Trash } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
+import { useAuth } from "@/context/AuthContext";
 
 const empty = { name: "", email: "", password: "", role: "salesman", commission_rate: 10 };
 
 export default function Team() {
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [editing, setEditing] = useState(null);
   const [delRow, setDelRow] = useState(null);
+  const [sel, setSel] = useState({});
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const load = () => api.get("/users").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+
+  const selectable = rows.filter((r) => r.id !== user?.id);
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const allChecked = selectable.length > 0 && selectable.every((r) => sel[r.id]);
+  const toggleAll = () => { if (allChecked) setSel({}); else { const n = {}; selectable.forEach((r) => { n[r.id] = true; }); setSel(n); } };
 
   const openNew = () => { setForm(empty); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, password: "" }); setEditing(r.id); setOpen(true); };
@@ -39,10 +48,17 @@ export default function Team() {
       toast.success("Team member removed"); setDelRow(null); load(); return true;
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
+  const bulkDelete = async (password) => {
+    try {
+      const { data } = await api.post("/users/bulk-delete", { ids: selIds, password });
+      toast.success(`Removed ${data.deleted} team member(s)`); setBulkOpen(false); setSel({}); load(); return true;
+    } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
+  };
 
   return (
     <div>
       <PageHeader overline="Administration" title="Team & Roles">
+        {selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-users-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn onClick={openNew} data-testid="add-user-btn"><Plus size={16} weight="bold" /> Add Member</Btn>
       </PageHeader>
 
@@ -51,6 +67,7 @@ export default function Team() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
+                <th className="px-6 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="users-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>
                 <th className="px-6 py-3 font-mono">Name</th>
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono">Role</th>
@@ -61,6 +78,7 @@ export default function Team() {
             <tbody data-testid="users-table">
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                  <td className="px-6 py-3">{r.id !== user?.id && <input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`user-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" />}</td>
                   <td className="px-6 py-3 font-medium">{r.name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.email}</td>
                   <td className="px-6 py-3">
@@ -75,7 +93,7 @@ export default function Team() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">No team members.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">No team members.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -111,6 +129,7 @@ export default function Team() {
       </Dialog>
 
       <AdminDeleteDialog open={!!delRow} label={`team member ${delRow?.name || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
+      <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected team member(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
     </div>
   );
 }
