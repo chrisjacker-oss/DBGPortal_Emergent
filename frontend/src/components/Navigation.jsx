@@ -5,6 +5,7 @@ import { SearchBar } from "@/components/SearchBar";
 const LOGO_URL = `${process.env.REACT_APP_BACKEND_URL}/api/pub/logo`;
 import {
   Gauge,
+  ChartBar,
   Users,
   Stack,
   FileText,
@@ -23,6 +24,7 @@ import {
 
 const adminLinks = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
+  { to: "/reports", label: "Reports", icon: ChartBar },
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },

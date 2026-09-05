@@ -415,6 +415,9 @@ export default function Invoices() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
+                {!detailInv.voided && (
+                  <Btn variant="outline" onClick={() => { const inv = detailInv; setDetailInv(null); setEditing(inv); setOpen(true); }} data-testid="detail-edit-btn"><PencilSimple size={16} weight="bold" /> Edit invoice</Btn>
+                )}
                 {isAdmin && Number(detailInv.commission_amount || 0) > 0 && (
                   <Btn variant="outline" onClick={genCommissionPO} data-testid="generate-po-btn"><Receipt size={16} weight="bold" /> Generate Commission PO</Btn>
                 )}

@@ -1723,6 +1723,56 @@ async def _pub_doc_from_token(token: str):
     return coll, doc
 
 
+@api_router.get("/reports/sales")
+async def sales_report(user: dict = Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    cy, py = now.year, now.year - 1
+    cur = [0.0] * 12
+    prev = [0.0] * 12
+    cur_paid = [0.0] * 12
+    cur_cnt = [0] * 12
+    async for inv in db.invoices.find({"voided": {"$ne": True}}):
+        raw = inv.get("created_at") or inv.get("issued_at")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        total = float(inv.get("total") or 0)
+        paid = float(inv.get("amount_paid") or 0)
+        m = dt.month - 1
+        if dt.year == cy:
+            cur[m] += total
+            cur_paid[m] += paid
+            cur_cnt[m] += 1
+        elif dt.year == py:
+            prev[m] += total
+    rnd = lambda arr: [round(x, 2) for x in arr]
+    mi = now.month - 1
+    ytd = round(sum(cur[: mi + 1]), 2)
+    prev_ytd = round(sum(prev[: mi + 1]), 2)
+    prev_full = round(sum(prev), 2)
+    this_month = round(cur[mi], 2)
+    last_month = round(cur[mi - 1], 2) if mi > 0 else round(prev[11], 2)
+    this_month_ly = round(prev[mi], 2)
+    pct = lambda a, b: round((a - b) / b * 100, 1) if b else (100.0 if a else 0.0)
+    return {
+        "year": cy, "prev_year": py,
+        "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+        "current_year_sales": rnd(cur), "prev_year_sales": rnd(prev), "current_year_paid": rnd(cur_paid),
+        "current_year_counts": cur_cnt,
+        "kpis": {
+            "this_month_label": now.strftime("%b %Y"),
+            "ytd": ytd, "prev_ytd": prev_ytd, "ytd_change_pct": pct(ytd, prev_ytd),
+            "prev_year_full": prev_full, "current_year_total": round(sum(cur), 2),
+            "this_month": this_month, "last_month": last_month, "mom_change_pct": pct(this_month, last_month),
+            "this_month_ly": this_month_ly, "yoy_month_change_pct": pct(this_month, this_month_ly),
+            "invoice_count_ytd": sum(cur_cnt[: mi + 1]),
+        },
+    }
+
+
 @api_router.get("/pub/pay/{token}")
 async def pub_pay_info(token: str):
     coll, doc = await _pub_doc_from_token(token)

@@ -22,6 +22,7 @@ import PortalAccounts from "@/pages/PortalAccounts";
 import WorkOrders from "@/pages/WorkOrders";
 import ForcePasswordChange from "@/pages/ForcePasswordChange";
 import PublicPay from "@/pages/PublicPay";
+import Reports from "@/pages/Reports";
 
 function Loading() {
   return (
@@ -73,6 +74,7 @@ function App() {
             />
             {(() => { const A = ["admin"], AS = ["admin", "salesman"]; return [
               ["/dashboard", <Dashboard />, A],
+              ["/reports", <Reports />, A],
               ["/customers", <Customers />, AS],
               ["/work-orders", <WorkOrders />, ["admin", "installer"]],
               ["/portal-accounts", <PortalAccounts />, A],
