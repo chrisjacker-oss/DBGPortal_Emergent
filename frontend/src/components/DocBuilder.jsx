@@ -8,7 +8,7 @@ import { Plus, Trash } from "@phosphor-icons/react";
 import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: 0, height_in: 0, quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -241,8 +241,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <option value="">— select material —</option>
                   {matOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
-                <Cell value={li.width_in} onChange={(v) => setItem(i, "width_in", v)} testid={`item-w-${i}`} />
-                <Cell value={li.height_in} onChange={(v) => setItem(i, "height_in", v)} testid={`item-h-${i}`} />
+                <Cell value={li.width_in} onChange={(v) => setItem(i, "width_in", v)} testid={`item-w-${i}`} blankZero />
+                <Cell value={li.height_in} onChange={(v) => setItem(i, "height_in", v)} testid={`item-h-${i}`} blankZero />
                 <Cell value={li.quantity} onChange={(v) => setItem(i, "quantity", v)} testid={`item-qty-${i}`} />
                 <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
                 <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
@@ -359,8 +359,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   );
 }
 
-function Cell({ value, onChange, testid }) {
-  return <input type="number" value={value} onChange={(e) => onChange(e.target.value)} data-testid={testid} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />;
+function Cell({ value, onChange, testid, blankZero }) {
+  const shown = blankZero && (value === 0 || value === "0") ? "" : value;
+  return <input type="number" value={shown} onChange={(e) => onChange(e.target.value)} data-testid={testid} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />;
 }
 
 function Row({ label, value, bold, muted }) {
