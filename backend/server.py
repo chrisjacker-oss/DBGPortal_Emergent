@@ -250,7 +250,6 @@ class SettingsInput(BaseModel):
     machine_rate_per_hr: float = 35.0
     machine_sqft_per_hr: float = 150.0
     default_markup: float = 2.0
-    accounting_email: str = ""
     default_tax_rate: float = 0.0
     card_surcharge_enabled: bool = False
     card_surcharge_pct: float = 0.0
@@ -314,7 +313,7 @@ def clean(doc: dict) -> dict:
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 2.0,
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0,
-                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": "", "accounting_email": ""}
+                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "Shipping"]
@@ -1527,7 +1526,6 @@ async def _apply_amount_to_invoice(invoice_id: str, amount: float) -> None:
         await _send_payment_receipt({**inv, **upd}, float(amount or 0))
     except Exception as e:  # never let a receipt failure break payment
         logger.error(f"Payment receipt email failed: {e}")
-    await _maybe_auto_accounting({**inv, **upd})
 
 
 async def _apply_amount_to_so(so_id: str, amount: float) -> None:
@@ -1651,87 +1649,6 @@ async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
     return out
 
 
-class AccountingEmailInput(BaseModel):
-    email: Optional[str] = None
-
-
-@api_router.post("/invoices/{iid}/email-accounting")
-async def email_invoice_accounting(iid: str, payload: AccountingEmailInput, user: dict = Depends(require_admin)):
-    inv = await db.invoices.find_one({"_id": oid(iid)})
-    if not inv:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    s = await get_settings()
-    to = (payload.email or s.get("accounting_email") or "").strip()
-    if not to:
-        raise HTTPException(status_code=400, detail="No accounting email set. Add one in Settings or enter one here.")
-    count = await _send_accounting_record(inv, to)
-    return {"sent_to": to, "payments": count}
-
-
-async def _send_accounting_record(inv: dict, to: str) -> int:
-    s = await get_settings()
-    iid = str(inv.get("_id") or inv.get("id"))
-    pays = []
-    recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", -1).to_list(2000)
-    for rec in recs:
-        when = rec.get("updated_at") or rec.get("created_at")
-        method = rec.get("method") or "Card (Stripe)"
-        if rec.get("reference"):
-            method = f"{method} #{rec['reference']}"
-        if rec.get("invoice_id") == iid:
-            pays.append({"amount": rec.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
-        for a in (rec.get("allocations") or []):
-            if a.get("invoice_id") == iid:
-                pays.append({"amount": a.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
-    pays.sort(key=lambda x: x["date"] or "", reverse=True)
-    cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
-    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
-    total = float(inv.get("total") or 0)
-    paid = float(inv.get("amount_paid") or 0)
-    bal = round(total - paid, 2)
-    rows = "".join(
-        f'<tr><td style="padding:4px 10px;border-bottom:1px solid #eee">{str(p["date"])[:10]}</td>'
-        f'<td style="padding:4px 10px;border-bottom:1px solid #eee">{escape(str(p.get("method") or ""))}'
-        + (f'<div style="color:#888;font-size:11px">{escape(str(p.get("notes")))}</div>' if p.get("notes") else "")
-        + f'</td><td style="padding:4px 10px;border-bottom:1px solid #eee" align="right">{_money(p.get("amount") or 0)}</td></tr>'
-        for p in pays
-    ) or '<tr><td colspan="3" style="padding:6px 10px;color:#888">No recorded payments.</td></tr>'
-    pdf_link = await _invoice_pdf_link(iid)
-    html = (
-        '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">'
-        f'<h2 style="margin:0 0 4px">Invoice {escape(str(inv.get("number", "")))} — Accounting Record</h2>'
-        f'<div style="color:#555;font-size:13px;margin-bottom:14px">Customer: {escape(cname)}</div>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">'
-        f'<tr><td style="padding:3px 0">Invoice total</td><td align="right">{_money(total)}</td></tr>'
-        f'<tr><td style="padding:3px 0">Amount paid</td><td align="right">{_money(paid)}</td></tr>'
-        f'<tr><td style="padding:3px 0;font-weight:bold">Balance due</td><td align="right" style="font-weight:bold">{_money(bal)}</td></tr>'
-        f'<tr><td style="padding:3px 0">Status</td><td align="right">{"PAID IN FULL" if bal <= 0.005 else "OPEN"}</td></tr>'
-        '</table>'
-        '<div style="font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#0E7490;margin:12px 0 6px">Payments</div>'
-        '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead>'
-        '<tr style="text-align:left;color:#888;font-size:11px"><th style="padding:4px 10px">Date</th><th style="padding:4px 10px">Type</th><th style="padding:4px 10px" align="right">Amount</th></tr>'
-        f'</thead><tbody>{rows}</tbody></table>'
-        f'<div style="margin-top:20px"><a href="{pdf_link}" style="display:inline-block;background:#0E7490;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:6px;font-size:13px;font-weight:bold">Download invoice PDF</a></div>'
-        f'<div style="color:#888;font-size:11px;margin-top:10px">Click the button above to download the full invoice PDF for your records.</div></div>'
-    )
-    await send_email(to=to, subject=f"[Accounting] Invoice {inv.get('number', '')} — {cname}", html=html)
-    return len(pays)
-
-
-async def _maybe_auto_accounting(inv_after: dict) -> None:
-    """Auto-email the accounting record when an invoice is fully paid (recipient from Settings)."""
-    if inv_after.get("status") != "paid":
-        return
-    s = await get_settings()
-    to = (s.get("accounting_email") or "").strip()
-    if not to:
-        return
-    try:
-        await _send_accounting_record(inv_after, to)
-    except Exception as e:
-        logger.error(f"Auto accounting email failed: {e}")
-
-
 class ManualPaymentInput(BaseModel):
     amount: Optional[float] = None
     method: str = "Check"  # Check, ACH, Wire, Cash, Card, Other
@@ -1773,7 +1690,6 @@ async def record_manual_payment(iid: str, payload: ManualPaymentInput, user: dic
         await _send_payment_receipt(fresh, amount)
     except Exception as e:
         logger.error(f"Manual payment receipt email failed: {e}")
-    await _maybe_auto_accounting(fresh)
     return await enrich_customer(clean(fresh))
 
 
