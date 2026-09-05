@@ -15,7 +15,9 @@ function Delta({ pct }) {
 
 export default function Reports() {
   const [data, setData] = useState(null);
+  const [team, setTeam] = useState(null);
   useEffect(() => { api.get("/reports/sales").then((r) => setData(r.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get("/reports/salespeople").then((r) => setTeam(r.data)).catch(() => {}); }, []);
 
   if (!data) return <div className="p-8 text-muted-foreground">Loading…</div>;
   const k = data.kpis;
@@ -93,6 +95,58 @@ export default function Reports() {
           </tbody>
         </table>
       </div>
+
+      {team && team.salespeople.length > 0 && (
+        <div className="mt-10" data-testid="salesperson-report">
+          <div className="overline text-muted-foreground mb-4">Sales by salesperson · {team.year} YTD</div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="border border-border bg-card p-5" data-testid="salesperson-chart">
+              <ResponsiveContainer width="100%" height={Math.max(220, team.salespeople.length * 54)}>
+                <BarChart data={team.salespeople} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                  <YAxis type="category" dataKey="salesman_name" tick={{ fontSize: 12 }} width={110} />
+                  <Tooltip formatter={(v) => currency(v)} />
+                  <Legend />
+                  <Bar dataKey="ytd_sales" name="Sales" fill="#06B6D4" radius={[0, 2, 2, 0]} />
+                  <Bar dataKey="ytd_commission" name="Commission" fill="#F59E0B" radius={[0, 2, 2, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="border border-border bg-card overflow-x-auto" data-testid="salesperson-table">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border text-left overline text-muted-foreground">
+                  <th className="px-4 py-3">Salesperson</th>
+                  <th className="px-4 py-3 text-right font-mono">Invoices</th>
+                  <th className="px-4 py-3 text-right font-mono">Sales</th>
+                  <th className="px-4 py-3 text-right font-mono">Collected</th>
+                  <th className="px-4 py-3 text-right font-mono">Commission</th>
+                </tr></thead>
+                <tbody>
+                  {team.salespeople.map((s) => (
+                    <tr key={s.salesman_name} className="border-b border-border last:border-0" data-testid={`salesperson-row-${s.salesman_name}`}>
+                      <td className="px-4 py-2 font-medium">{s.salesman_name}</td>
+                      <td className="px-4 py-2 text-right font-mono">{s.invoice_count}</td>
+                      <td className="px-4 py-2 text-right font-mono">{currency(s.ytd_sales)}</td>
+                      <td className="px-4 py-2 text-right font-mono text-[#16A34A]">{currency(s.ytd_collected)}</td>
+                      <td className="px-4 py-2 text-right font-mono text-[#B45309]">{currency(s.ytd_commission)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-border font-semibold">
+                  <td className="px-4 py-3">Total</td>
+                  <td className="px-4 py-3 text-right font-mono">{team.totals.invoice_count}</td>
+                  <td className="px-4 py-3 text-right font-mono">{currency(team.totals.sales)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-[#16A34A]">{currency(team.totals.collected)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-[#B45309]">{currency(team.totals.commission)}</td>
+                </tr></tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

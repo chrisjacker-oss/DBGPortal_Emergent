@@ -1838,6 +1838,55 @@ async def _pub_doc_from_token(token: str):
     return coll, doc
 
 
+@api_router.get("/reports/salespeople")
+async def salespeople_report(user: dict = Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    cy, py = now.year, now.year - 1
+    agg: dict = {}
+
+    def _row(name):
+        return agg.setdefault(name, {
+            "salesman_name": name, "invoice_count": 0,
+            "ytd_sales": 0.0, "ytd_collected": 0.0, "ytd_commission": 0.0,
+            "prev_year_sales": 0.0,
+        })
+
+    async for inv in db.invoices.find({"voided": {"$ne": True}}):
+        raw = inv.get("created_at") or inv.get("issued_at")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        name = inv.get("salesman_name") or "Unassigned"
+        total = float(inv.get("total") or 0)
+        paid = float(inv.get("amount_paid") or 0)
+        comm = float(inv.get("commission_amount") or 0)
+        if dt.year == cy:
+            r = _row(name)
+            r["invoice_count"] += 1
+            r["ytd_sales"] += total
+            r["ytd_collected"] += paid
+            r["ytd_commission"] += comm
+        elif dt.year == py:
+            _row(name)["prev_year_sales"] += total
+
+    rows = []
+    for r in agg.values():
+        for kk in ("ytd_sales", "ytd_collected", "ytd_commission", "prev_year_sales"):
+            r[kk] = round(r[kk], 2)
+        rows.append(r)
+    rows.sort(key=lambda x: x["ytd_sales"], reverse=True)
+    totals = {
+        "sales": round(sum(r["ytd_sales"] for r in rows), 2),
+        "collected": round(sum(r["ytd_collected"] for r in rows), 2),
+        "commission": round(sum(r["ytd_commission"] for r in rows), 2),
+        "invoice_count": sum(r["invoice_count"] for r in rows),
+    }
+    return {"year": cy, "prev_year": py, "salespeople": rows, "totals": totals}
+
+
 @api_router.get("/reports/sales")
 async def sales_report(user: dict = Depends(require_admin)):
     now = datetime.now(timezone.utc)
