@@ -3091,6 +3091,13 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         if y < 170:
             c.showPage(); y = H - 90; c.setFont("Helvetica", 10)
 
+    # Anchor the totals/balance block near the bottom of the page
+    amt_paid = float(doc.get("amount_paid") or 0)
+    totals_top = 260 if (kind_label == "Invoice" and amt_paid > 0) else 200
+    if y < totals_top:
+        c.showPage()
+    y = totals_top
+
     # Totals (discount hidden; subtotal shown net of any discount so it reconciles)
     net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
     c.setStrokeColor(grayline); c.setLineWidth(1); c.line(ax - 230, y + 2, R, y + 2); y -= 16
@@ -3105,7 +3112,6 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFont("Helvetica-Bold", 14); c.drawRightString(ax - 10, y + 1, _money(doc.get("total", 0)))
 
     # Payment details (invoices with payments applied)
-    amt_paid = float(doc.get("amount_paid") or 0)
     if kind_label == "Invoice" and amt_paid > 0:
         bal = round(float(doc.get("total") or 0) - amt_paid, 2)
         y -= 26
