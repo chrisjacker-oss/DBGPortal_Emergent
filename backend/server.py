@@ -3017,16 +3017,18 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     rule_y = min(ciy - 2, H - 176)
     c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, rule_y, R, rule_y)
 
-    # PAID IN FULL stamp
+    # PAID IN FULL badge (small, top-right under the document number)
     if doc.get("status") == "paid":
-        c.saveState()
-        c.translate(W / 2, H / 2 + 40)
-        c.rotate(16)
         green = colors.HexColor("#16A34A")
-        c.setStrokeColor(green); c.setFillColor(green); c.setLineWidth(4)
-        c.roundRect(-168, -36, 336, 72, 12, stroke=1, fill=0)
-        c.setFont("Helvetica-Bold", 36)
-        c.drawCentredString(0, -13, "PAID IN FULL")
+        c.saveState()
+        c.setFont("Helvetica-Bold", 10)
+        txt = "PAID IN FULL"
+        tw = c.stringWidth(txt, "Helvetica-Bold", 10)
+        bx1, by1 = R - tw - 16, H - 122
+        c.setStrokeColor(green); c.setFillColor(green); c.setLineWidth(1.2)
+        c.roundRect(bx1, by1, tw + 16, 18, 4, stroke=1, fill=0)
+        c.setFillColor(green)
+        c.drawRightString(R - 8, by1 + 5, txt)
         c.restoreState()
 
     y = rule_y - 30
