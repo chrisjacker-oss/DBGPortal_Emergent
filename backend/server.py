@@ -2455,6 +2455,28 @@ async def export_xero_bills(user: dict = Depends(require_staff)):
     return csv_response(rows, "xero_bills.csv")
 
 
+@api_router.get("/export/customers")
+async def export_customers(user: dict = Depends(require_staff)):
+    header = ["Type", "Company", "Name", "Title", "Email", "Phone", "Address", "Tier", "Net Terms", "Portal", "Notes"]
+    rows = [header]
+    customers = await db.customers.find().sort("company", 1).to_list(5000)
+    all_contacts = await db.contacts.find().to_list(20000)
+    by_cust: dict = {}
+    for ct in all_contacts:
+        by_cust.setdefault(str(ct.get("customer_id")), []).append(ct)
+    for c in customers:
+        c = clean(c)
+        rows.append(["Customer", c.get("company") or "", c.get("name") or "", c.get("title") or "",
+                     c.get("email") or "", c.get("phone") or "", c.get("address") or "",
+                     "" if c.get("tier") is None else c.get("tier"), c.get("net_terms") or "",
+                     "Yes" if c.get("portal_enabled") else "No", c.get("notes") or ""])
+        for ct in by_cust.get(c.get("id"), []):
+            ct = clean(ct)
+            rows.append(["Contact", c.get("company") or c.get("name") or "", ct.get("name") or "",
+                         ct.get("title") or "", ct.get("email") or "", ct.get("phone") or "", "", "", "", "", ""])
+    return csv_response(rows, "customers_contacts.csv")
+
+
 # ---------------------------------------------------------------------------
 # Customer portal
 # ---------------------------------------------------------------------------

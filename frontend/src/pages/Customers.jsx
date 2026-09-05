@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple } from "@phosphor-icons/react";
+import { downloadCsv } from "@/lib/download";
 import {
   Dialog,
   DialogContent,
@@ -123,6 +124,7 @@ export default function Customers() {
         {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn variant="outline" onClick={() => openImport("customers")} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
         <Btn variant="outline" onClick={() => openImport("contacts")} data-testid="import-contacts-btn"><UploadSimple size={16} weight="bold" /> Import Contacts</Btn>
+        <Btn variant="outline" onClick={() => downloadCsv("/export/customers", "customers_contacts.csv")} data-testid="export-customers-btn"><DownloadSimple size={16} weight="bold" /> Export CSV</Btn>
         <Btn onClick={openNew} data-testid="add-customer-btn"><Plus size={16} weight="bold" /> New Customer</Btn>
       </PageHeader>
 
