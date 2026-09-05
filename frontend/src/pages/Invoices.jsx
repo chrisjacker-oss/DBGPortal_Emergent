@@ -35,6 +35,10 @@ export default function Invoices() {
   const [savingNote, setSavingNote] = useState(false);
   const [tab, setTab] = useState("active");
   const [lowThreshold, setLowThreshold] = useState(0);
+  const [acctEmail, setAcctEmail] = useState("");
+  const [xeroInv, setXeroInv] = useState(null);
+  const [xeroTo, setXeroTo] = useState("");
+  const [xeroBusy, setXeroBusy] = useState(false);
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
   const [sortKey, setSortKey] = useState("");
@@ -44,7 +48,17 @@ export default function Invoices() {
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
-  useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
+  useEffect(() => { api.get("/settings").then((r) => { setLowThreshold(Number(r.data.low_margin_threshold || 0)); setAcctEmail(r.data.accounting_email || ""); }).catch(() => {}); }, []);
+  const openXero = (r) => { setXeroInv(r); setXeroTo(acctEmail || ""); };
+  const sendXero = async () => {
+    setXeroBusy(true);
+    try {
+      const { data } = await api.post(`/invoices/${xeroInv.id}/email-accounting`, { email: xeroTo || null });
+      toast.success(`Sent invoice + payment record to ${data.sent_to}`);
+      setXeroInv(null);
+    } catch (e) { toast.error(e.response?.data?.detail || "Could not send"); }
+    setXeroBusy(false);
+  };
 
   const openHistory = async (r) => {
     try {
@@ -288,6 +302,7 @@ export default function Invoices() {
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
                         { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
                         { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" },
+                        { label: "Email to accounting (Xero)", icon: <EnvelopeSimple size={16} />, onClick: () => openXero(r), testid: `xero-invoice-${r.id}` },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided },
                         { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-invoice-${r.id}`, hidden: !isAdmin || r.voided },
                         { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-invoice-${r.id}`, hidden: !isAdmin || !r.voided },
@@ -309,6 +324,25 @@ export default function Invoices() {
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected invoice(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
+
+      <Dialog open={!!xeroInv} onOpenChange={(o) => !o && setXeroInv(null)}>
+        <DialogContent className="rounded-none max-w-md" data-testid="xero-email-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Email to accounting (Xero)</DialogTitle>
+            <DialogDescription className="font-mono text-xs">Sends invoice {xeroInv?.number} with its payment record (date, type, amount) and the PDF for record keeping.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="overline text-muted-foreground">Recipient email</label>
+            <input value={xeroTo} onChange={(e) => setXeroTo(e.target.value)} placeholder="accounting@company.com" data-testid="xero-email-input"
+              className="w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+            {!acctEmail && <div className="text-xs text-muted-foreground">Tip: set a default in Settings → Accounting / Xero email.</div>}
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setXeroInv(null)}>Cancel</Btn>
+            <Btn onClick={sendXero} disabled={xeroBusy || !xeroTo} data-testid="xero-send-btn"><EnvelopeSimple size={16} weight="bold" /> {xeroBusy ? "Sending…" : "Send"}</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!histInv} onOpenChange={(o) => !o && setHistInv(null)}>
         <DialogContent className="rounded-none max-w-md" data-testid="payment-history-dialog">

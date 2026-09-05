@@ -34,6 +34,7 @@ export default function Settings() {
         company_phone: form.company_phone || "",
         company_web: form.company_web || "",
         company_email: form.company_email || "",
+        accounting_email: form.accounting_email || "",
       });
       toast.success("Shop settings saved");
     } catch { toast.error("Save failed"); }
@@ -83,6 +84,8 @@ export default function Settings() {
             <Inp label="Email" value={form.company_email || ""} onChange={set("company_email")} testid="set-company-email" />
           </div>
           <Inp label="Web address" value={form.company_web || ""} onChange={set("company_web")} testid="set-company-web" />
+          <Inp label="Accounting / Xero email" value={form.accounting_email || ""} onChange={set("accounting_email")} testid="set-accounting-email" />
+          <div className="text-xs text-muted-foreground -mt-2">Default recipient when you send an invoice + payment record to accounting.</div>
         </div>
 
         <div className="border border-border bg-card p-8 space-y-5">

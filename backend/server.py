@@ -250,6 +250,7 @@ class SettingsInput(BaseModel):
     machine_rate_per_hr: float = 35.0
     machine_sqft_per_hr: float = 150.0
     default_markup: float = 2.0
+    accounting_email: str = ""
     default_tax_rate: float = 0.0
     card_surcharge_enabled: bool = False
     card_surcharge_pct: float = 0.0
@@ -313,7 +314,7 @@ def clean(doc: dict) -> dict:
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 2.0,
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0,
-                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
+                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": "", "accounting_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "Shipping"]
@@ -1616,6 +1617,72 @@ async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
                 out.append({"amount": a.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
     out.sort(key=lambda x: x["date"] or "", reverse=True)
     return out
+
+
+class AccountingEmailInput(BaseModel):
+    email: Optional[str] = None
+
+
+@api_router.post("/invoices/{iid}/email-accounting")
+async def email_invoice_accounting(iid: str, payload: AccountingEmailInput, user: dict = Depends(require_admin)):
+    inv = await db.invoices.find_one({"_id": oid(iid)})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    s = await get_settings()
+    to = (payload.email or s.get("accounting_email") or "").strip()
+    if not to:
+        raise HTTPException(status_code=400, detail="No accounting email set. Add one in Settings or enter one here.")
+    pays = []
+    recs = await db.payment_transactions.find({"payment_status": "paid"}).sort("updated_at", -1).to_list(2000)
+    for rec in recs:
+        when = rec.get("updated_at") or rec.get("created_at")
+        method = rec.get("method") or "Card (Stripe)"
+        if rec.get("reference"):
+            method = f"{method} #{rec['reference']}"
+        if rec.get("invoice_id") == iid:
+            pays.append({"amount": rec.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
+        for a in (rec.get("allocations") or []):
+            if a.get("invoice_id") == iid:
+                pays.append({"amount": a.get("amount"), "date": when, "method": method, "notes": rec.get("notes")})
+    pays.sort(key=lambda x: x["date"] or "", reverse=True)
+    cust = await db.customers.find_one({"_id": oid(inv["customer_id"])}) if inv.get("customer_id") else None
+    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+    total = float(inv.get("total") or 0)
+    paid = float(inv.get("amount_paid") or 0)
+    bal = round(total - paid, 2)
+    rows = "".join(
+        f'<tr><td style="padding:4px 10px;border-bottom:1px solid #eee">{str(p["date"])[:10]}</td>'
+        f'<td style="padding:4px 10px;border-bottom:1px solid #eee">{escape(str(p.get("method") or ""))}'
+        + (f'<div style="color:#888;font-size:11px">{escape(str(p.get("notes")))}</div>' if p.get("notes") else "")
+        + f'</td><td style="padding:4px 10px;border-bottom:1px solid #eee" align="right">{_money(p.get("amount") or 0)}</td></tr>'
+        for p in pays
+    ) or '<tr><td colspan="3" style="padding:6px 10px;color:#888">No recorded payments.</td></tr>'
+    html = (
+        '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#111">'
+        f'<h2 style="margin:0 0 4px">Invoice {escape(str(inv.get("number", "")))} — Accounting Record</h2>'
+        f'<div style="color:#555;font-size:13px;margin-bottom:14px">Customer: {escape(cname)}</div>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">'
+        f'<tr><td style="padding:3px 0">Invoice total</td><td align="right">{_money(total)}</td></tr>'
+        f'<tr><td style="padding:3px 0">Amount paid</td><td align="right">{_money(paid)}</td></tr>'
+        f'<tr><td style="padding:3px 0;font-weight:bold">Balance due</td><td align="right" style="font-weight:bold">{_money(bal)}</td></tr>'
+        f'<tr><td style="padding:3px 0">Status</td><td align="right">{"PAID IN FULL" if bal <= 0.005 else "OPEN"}</td></tr>'
+        '</table>'
+        '<div style="font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;color:#0E7490;margin:12px 0 6px">Payments</div>'
+        '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead>'
+        '<tr style="text-align:left;color:#888;font-size:11px"><th style="padding:4px 10px">Date</th><th style="padding:4px 10px">Type</th><th style="padding:4px 10px" align="right">Amount</th></tr>'
+        f'</thead><tbody>{rows}</tbody></table>'
+        f'<div style="color:#888;font-size:11px;margin-top:16px">The full invoice PDF is attached for your records.</div></div>'
+    )
+    attachments = None
+    try:
+        pdf = build_doc_pdf("Invoice", clean(inv), clean(cust) if cust else None, await get_logo_bytes(), s)
+        date_str = (str(inv.get("paid_at"))[:10] if inv.get("paid_at") else now_iso()[:10])
+        attachments = [{"filename": f"{date_str}.{inv.get('number', 'invoice')}.pdf",
+                        "content": base64.b64encode(pdf).decode("ascii"), "content_type": "application/pdf"}]
+    except Exception as e:
+        logger.error(f"Accounting email PDF build failed: {e}")
+    await send_email(to=to, subject=f"[Accounting] Invoice {inv.get('number', '')} — {cname}", html=html, attachments=attachments)
+    return {"sent_to": to, "payments": len(pays)}
 
 
 class ManualPaymentInput(BaseModel):
