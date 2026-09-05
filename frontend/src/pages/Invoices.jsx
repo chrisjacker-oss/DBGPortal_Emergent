@@ -11,9 +11,9 @@ import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
-import { downloadCsv, downloadFile } from "@/lib/download";
+import { downloadFile } from "@/lib/download";
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt } from "@phosphor-icons/react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 export default function Invoices() {
   const { user } = useAuth();
@@ -42,6 +42,17 @@ export default function Invoices() {
   const [pFrom, setPFrom] = useState("");
   const [pTo, setPTo] = useState("");
   const [acctMonth, setAcctMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [xeroOpen, setXeroOpen] = useState(false);
+  const [xeroMonth, setXeroMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [xeroBusy, setXeroBusy] = useState(false);
+  const exportInvoicesPdf = async () => {
+    setXeroBusy(true);
+    try {
+      await downloadFile(`/export/invoices-pdf?month=${xeroMonth}`, `Invoices-${xeroMonth}.pdf`, "application/pdf");
+      setXeroOpen(false);
+    } catch { toast.error(`No invoices found for ${xeroMonth}`); }
+    setXeroBusy(false);
+  };
   useEffect(() => { setSortKey(""); setPFrom(""); setPTo(""); setSel({}); }, [tab]);
 
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
@@ -197,7 +208,7 @@ export default function Invoices() {
     <div>
       <PageHeader overline="Billing" title="Invoices">
         {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-invoices-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
-        <Btn variant="outline" onClick={() => downloadCsv("/export/xero/invoices", "xero_invoices.csv")} data-testid="export-xero-invoices-btn">
+        <Btn variant="outline" onClick={() => setXeroOpen(true)} data-testid="export-xero-invoices-btn">
           <DownloadSimple size={16} weight="bold" /> Export to Xero
         </Btn>
         <Btn onClick={() => { setEditing(null); setOpen(true); }} data-testid="add-invoice-btn"><Plus size={16} weight="bold" /> New Invoice</Btn>
@@ -324,6 +335,24 @@ export default function Invoices() {
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected invoice(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
+
+      <Dialog open={xeroOpen} onOpenChange={(o) => !o && setXeroOpen(false)}>
+        <DialogContent className="rounded-none max-w-md" data-testid="xero-export-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Export invoices to Xero</DialogTitle>
+            <DialogDescription className="font-mono text-xs">Downloads a PDF list of all invoices for the selected month (invoice #, date, customer, total, paid, balance, status).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="overline text-muted-foreground">Month</label>
+            <input type="month" value={xeroMonth} onChange={(e) => setXeroMonth(e.target.value)} data-testid="xero-export-month"
+              className="w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setXeroOpen(false)}>Cancel</Btn>
+            <Btn onClick={exportInvoicesPdf} disabled={xeroBusy || !xeroMonth} data-testid="xero-export-download-btn"><DownloadSimple size={16} weight="bold" /> {xeroBusy ? "Preparing…" : "Download PDF"}</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!histInv} onOpenChange={(o) => !o && setHistInv(null)}>
         <DialogContent className="rounded-none max-w-md" data-testid="payment-history-dialog">

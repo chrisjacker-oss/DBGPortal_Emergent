@@ -2542,6 +2542,37 @@ async def export_accounting_month_pdf(month: str, user: dict = Depends(require_s
                     headers={"Content-Disposition": f'attachment; filename="Accounting-{month}.pdf"', "Cache-Control": "no-store"})
 
 
+@api_router.get("/export/invoices-pdf")
+async def export_invoices_month_pdf(month: str, user: dict = Depends(require_staff)):
+    """One-line-per-invoice summary PDF for every invoice created in the given month (YYYY-MM)."""
+    try:
+        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+    end = (start.replace(year=start.year + 1, month=1) if start.month == 12
+           else start.replace(month=start.month + 1))
+    out = []
+    invs = await db.invoices.find().sort("created_at", 1).to_list(10000)
+    for inv in invs:
+        raw = inv.get("created_at") or inv.get("issued_at")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if start <= dt < end:
+            out.append(await enrich_customer(clean(inv)))
+    if not out:
+        raise HTTPException(status_code=404, detail=f"No invoices found for {month}.")
+    label = start.strftime("%B %Y")
+    pdf = build_invoices_list_pdf(out, label, await get_settings(), await get_logo_bytes())
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Invoices-{month}.pdf"', "Cache-Control": "no-store"})
+
+
 # ---------------------------------------------------------------------------
 # Customer portal
 # ---------------------------------------------------------------------------
@@ -3334,6 +3365,70 @@ def build_accounting_bulk_pdf(items: list, company: Optional[dict] = None, logo_
         _draw_accounting(c, W, H, inv, customer, payments, company, logo_bytes)
         c.showPage()
     c.save(); buf.seek(0)
+    return buf.getvalue()
+
+
+def build_invoices_list_pdf(invoices: list, period_label: str, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+    """A one-line-per-invoice summary report (for accounting / Xero)."""
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    W, H = letter
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    L, R = 40, W - 40
+    ink = colors.HexColor("#0A0A0A"); soft = colors.HexColor("#6B7280"); cyan = colors.HexColor("#06B6D4")
+    rowbg = colors.HexColor("#F7F7F8")
+    cx = {"num": L + 4, "date": L + 92, "cust": L + 168, "total": R - 240, "paid": R - 150, "bal": R - 66, "status": R - 58}
+
+    def header(y):
+        c.setFillColor(ink); c.rect(L, y - 6, R - L, 22, fill=1, stroke=0)
+        c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8)
+        c.drawString(cx["num"], y + 1, "INVOICE"); c.drawString(cx["date"], y + 1, "DATE")
+        c.drawString(cx["cust"], y + 1, "CUSTOMER")
+        c.drawRightString(cx["total"], y + 1, "TOTAL"); c.drawRightString(cx["paid"], y + 1, "PAID")
+        c.drawRightString(cx["bal"], y + 1, "BALANCE"); c.drawString(cx["status"] + 6, y + 1, "STATUS")
+        return y - 26
+
+    y = H - 60
+    if logo_bytes:
+        try:
+            c.drawImage(ImageReader(io.BytesIO(logo_bytes)), L, y - 30, width=130, height=70, preserveAspectRatio=True, mask="auto")
+        except Exception:
+            pass
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 18); c.drawRightString(R, y, "INVOICE REPORT")
+    c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 15, period_label)
+    y -= 54
+    c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 24
+    y = header(y)
+    tot = paid_sum = bal_sum = 0.0
+    c.setFont("Helvetica", 9)
+    for i, inv in enumerate(invoices):
+        total = float(inv.get("total") or 0); paid = float(inv.get("amount_paid") or 0)
+        bal = round(total - paid, 2)
+        tot += total; paid_sum += paid; bal_sum += bal
+        status = "VOID" if inv.get("voided") else ((inv.get("status") or "").upper() or "OPEN")
+        if i % 2 == 1:
+            c.setFillColor(rowbg); c.rect(L, y - 5, R - L, 18, fill=1, stroke=0)
+        c.setFillColor(ink); c.setFont("Helvetica", 9)
+        c.drawString(cx["num"], y, str(inv.get("number", ""))[:14])
+        c.setFillColor(soft); c.drawString(cx["date"], y, str(inv.get("created_at", ""))[:10])
+        c.setFillColor(ink); c.drawString(cx["cust"], y, str(inv.get("customer_name", "") or "")[:38])
+        c.drawRightString(cx["total"], y, _money(total))
+        c.setFillColor(colors.HexColor("#16A34A")); c.drawRightString(cx["paid"], y, _money(paid))
+        c.setFillColor(ink); c.drawRightString(cx["bal"], y, _money(bal))
+        c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(cx["status"] + 6, y, status)
+        y -= 18
+        if y < 70:
+            c.showPage(); y = H - 60; y = header(y); c.setFont("Helvetica", 9)
+    c.setStrokeColor(ink); c.setLineWidth(1); c.line(L, y + 3, R, y + 3); y -= 14
+    c.setFillColor(ink); c.setFont("Helvetica-Bold", 9)
+    c.drawString(cx["num"], y, f"{len(invoices)} invoice(s)")
+    c.drawRightString(cx["total"], y, _money(tot))
+    c.drawRightString(cx["paid"], y, _money(paid_sum))
+    c.drawRightString(cx["bal"], y, _money(bal_sum))
+    c.setFillColor(soft); c.setFont("Helvetica", 8)
+    c.drawString(L, 40, f"{cname} · Generated {now_iso()[:10]}")
+    c.showPage(); c.save(); buf.seek(0)
     return buf.getvalue()
 
 
