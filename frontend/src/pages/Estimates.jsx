@@ -10,8 +10,15 @@ import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
-import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye, Printer } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+const printDoc = (path) => {
+  const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+  if (!w) { toast.error("Please allow pop-ups to print"); return; }
+  const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+  w.addEventListener?.("load", go);
+  setTimeout(go, 1200);
+};
 
 export default function Estimates() {
   const { user } = useAuth();
@@ -119,6 +126,7 @@ export default function Estimates() {
                     <div className="flex justify-end">
                       <ActionsMenu testid={`estimate-actions-${r.id}`} items={[
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}`, hidden: isSalesman },
+                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
                         { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" || isSalesman },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },

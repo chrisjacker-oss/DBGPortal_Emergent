@@ -85,6 +85,13 @@ export default function Invoices() {
 
   const paidOf = (inv) => (inv?.status === "paid" ? Number(inv?.total || 0) : Number(inv?.amount_paid || 0));
   const viewPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+  const printDoc = (path) => {
+    const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+    if (!w) { toast.error("Please allow pop-ups to print"); return; }
+    const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+    w.addEventListener?.("load", go);
+    setTimeout(go, 1200);
+  };
   const genCommissionPO = async () => {
     try {
       const { data } = await api.post(`/invoices/${detailInv.id}/commission-po`);
@@ -309,6 +316,7 @@ export default function Invoices() {
                     <div className="flex justify-end">
                       <ActionsMenu testid={`invoice-actions-${r.id}`} items={[
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}`, hidden: isSalesman },
+                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/invoices/${r.id}/pdf`), testid: `print-invoice-${r.id}`, hidden: isSalesman },
                         { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}`, hidden: isSalesman },
                         { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },

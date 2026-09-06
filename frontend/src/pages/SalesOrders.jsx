@@ -10,8 +10,15 @@ import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
-import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye } from "@phosphor-icons/react";
+import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye, Printer } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+const printDoc = (path) => {
+  const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
+  if (!w) { toast.error("Please allow pop-ups to print"); return; }
+  const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+  w.addEventListener?.("load", go);
+  setTimeout(go, 1200);
+};
 
 const NEXT = { open: "in_production", in_production: "fulfilled" };
 
@@ -133,6 +140,7 @@ export default function SalesOrders() {
                     <div className="flex justify-end">
                       <ActionsMenu testid={`so-actions-${r.id}`} items={[
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}`, hidden: isSalesman },
+                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/sales-orders/${r.id}/pdf`), testid: `print-so-${r.id}`, hidden: isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
                         { label: NEXT[r.status] ? `Advance → ${NEXT[r.status].replace("_", " ")}` : "", icon: <ArrowCounterClockwise size={16} />, onClick: () => advance(r), testid: `advance-so-${r.id}`, hidden: r.voided || !NEXT[r.status] || isSalesman },
                         { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id || isSalesman },
