@@ -1,0 +1,28 @@
+{
+  "summary": "Regression tested the three post-code-quality flows requested. All three targets PASS. (1) DocBuilder line-item stable keys: on a New Estimate, added 3 rows, typed distinct Width values (11/22/33), deleted middle row and confirmed remaining rows retained their own values (row0=11, row1=33) — no state bleed. (2) Invoice print via Blob URL: created a TEST invoice (INV-29523) with a line item, opened the invoice detail dialog and clicked 'Print / Save as PDF' — a popup opened with URL blob:https://signshop-crm.preview.emergentagent.com/... and page title 'INV-29523' and body containing 'INVOICE' — window.open(blobUrl) path works, no blank page, no document.write, no errors. Toast-on-blocked-popup path is present in code (line 152). (3) PayNowDialog Stripe Elements: opened Pay-now on INV-29523, clicked 'Continue to card', Stripe Elements mounted (13 stripe iframes) and 'Pay $5.35' submit button is present and enabled. Console.warn on status-sync catch is in place at PayNowDialog.jsx L21 and PublicPay.jsx L20 (code-reviewed). Did NOT complete a real charge. TEST invoice cleaned up after testing (DELETE /api/invoices/{id} 200).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "DocBuilder category select", "issue": "React warning 'Encountered two children with the same key: Shipping' still fires ~19 times on estimate/invoice open — carried over from iteration 11, still not fixed. Root cause: categories list contains 'Shipping' plus catOptions merge in DocBuilder.jsx ~L220 can prepend an already-present value; also 'Shipping' likely appears twice in material-categories or is added by both defaults and DB.", "selector": "[data-testid^=\"item-cat-\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "De-duplicate the category options in DocBuilder.jsx (~L220): `const catOptions = Array.from(new Set([cat, ...categories].filter(Boolean)))` or filter duplicates in the /material-categories seed — the 'Shipping' duplicate-key warning has now survived two iterations."
+  ],
+  "critical_code_review_comments": [
+    "DocBuilder.jsx line-item key handling looks correct: newItem() assigns _key via uid(), map uses key={li._key}, submit strips _key by explicit-field mapping (L168-174). Verified no state bleed on delete-middle.",
+    "Invoices.jsx printInvoice (L95-154) correctly uses Blob URL + window.open + URL.revokeObjectURL(url) after 60s, and toasts 'Please allow pop-ups to print' plus revokes the URL when the popup is blocked. XSS surface: descriptions/notes are manually .replace(/</g,'&lt;')-escaped, but quotes are NOT escaped and content is embedded in HTML attributes indirectly — low risk since content is authenticated staff-authored, but consider a shared escapeHtml() util that also encodes >, \", ', &.",
+    "PayNowDialog.jsx L21 & PublicPay.jsx L20 empty-catch now console.warn — matches request. Note: on a failed Stripe confirmPayment, the code correctly toast.error()s error.message and does NOT hit the status-sync path (early return on L19), so the console.warn is unreachable on the declined-payment branch; that's fine but worth noting."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% of tested flows (3/3)"},
+  "test_credentials": "admin sales@dbgsigns.com / 10297099",
+  "seed_data_creation": "Created TEST_PRINT_INV (INV-29523) as admin with a $5.20 line item to enable print/pay testing, then deleted it via DELETE /api/invoices/{id} with admin password. DB is clean.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "New Invoice requires a customer selection; the SearchSelect on doc-customer doesn't expose data-testid on its options, so tests that create an invoice may land with customer_name='Unknown' (the API accepts it). To create a payable invoice programmatically, login (cookie) then POST /api/invoices with {customer_id, title, line_items:[{...width_in,height_in,quantity,price_per_sqft...}], status:'unpaid', tax_rate:0}. Print popup is a blob: URL — use page.expect_popup() to capture it. PayNowDialog needs 'Continue to card' click before Stripe Elements mount (~3-4s wait).",
+  "rca_of_the_issue": "N/A — no regressions found in the three tested flows. The only outstanding issue is the pre-existing 'Shipping' duplicate React key warning in DocBuilder select options, already reported in iteration_11 and still present."
+}

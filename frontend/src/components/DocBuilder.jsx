@@ -217,7 +217,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             </div>
             {form.line_items.map((li, i) => {
               const cat = li.category || catOfMaterial(li.material_id);
-              const catOptions = categories.includes(cat) || !cat ? categories : [cat, ...categories];
+              const baseCats = categories.includes(cat) || !cat ? categories : [cat, ...categories];
+              const catOptions = Array.from(new Set(baseCats));
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               const isShip = String(cat).trim().toLowerCase() === "shipping";
               return (
