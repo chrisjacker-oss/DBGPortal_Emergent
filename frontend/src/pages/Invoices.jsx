@@ -316,7 +316,7 @@ export default function Invoices() {
                     <div className="flex justify-end">
                       <ActionsMenu testid={`invoice-actions-${r.id}`} items={[
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}`, hidden: isSalesman },
-                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/invoices/${r.id}/pdf`), testid: `print-invoice-${r.id}`, hidden: isSalesman },
+                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/invoices/${r.id}/pdf`), testid: `print-invoice-${r.id}` },
                         { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}`, hidden: isSalesman },
                         { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
