@@ -147,9 +147,10 @@ export default function Invoices() {
       <table><thead><tr><th>Date</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody>${paysHtml}</tbody></table>
       <script>window.onload=function(){window.print();}</script>
       </body></html>`;
-    const w = window.open("", "_blank", "width=820,height=900");
-    if (!w) { toast.error("Please allow pop-ups to print"); return; }
-    w.document.open(); w.document.write(html); w.document.close();
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const w = window.open(url, "_blank", "width=820,height=900");
+    if (!w) { toast.error("Please allow pop-ups to print"); URL.revokeObjectURL(url); return; }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 
   const save = async (payload) => {

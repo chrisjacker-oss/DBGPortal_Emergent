@@ -9,6 +9,8 @@ import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
+const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+const newItem = () => ({ ...emptyItem, _key: uid() });
 
 const areaOf = (li) => {
   const w = Number(li.width_in || 0), h = Number(li.height_in || 0), q = Number(li.quantity || 0);
@@ -50,9 +52,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       if (isAdmin) api.get("/users").then((r) => setSalesmen(r.data.filter((u) => u.role === "salesman"))).catch(() => {});
       setForm(
         initial
-          ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li })) }
+          ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
-              customer_id: "", contact_id: "", title: "", line_items: [{ ...emptyItem }], tax_rate: 0, notes: "",
+              customer_id: "", contact_id: "", title: "", line_items: [newItem()], tax_rate: 0, notes: "",
               status: statusOptions[0], due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -93,7 +95,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     }
     setForm({ ...form, line_items: items });
   };
-  const addItem = () => setForm({ ...form, line_items: [...form.line_items, { ...emptyItem }] });
+  const addItem = () => setForm({ ...form, line_items: [...form.line_items, newItem()] });
   const rmItem = (i) => setForm({ ...form, line_items: form.line_items.filter((_, x) => x !== i) });
   const createCategoryFor = async (i) => {
     const name = window.prompt("New category name:");
@@ -219,7 +221,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               const isShip = String(cat).trim().toLowerCase() === "shipping";
               return (
-              <div key={i} className="border-b border-border last:border-0 min-w-[1000px]">
+              <div key={li._key} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
                 <select value={cat} onChange={(e) => e.target.value === "__new__" ? createCategoryFor(i) : setItem(i, "category", e.target.value)} data-testid={`item-cat-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
                   <option value="">All categories</option>

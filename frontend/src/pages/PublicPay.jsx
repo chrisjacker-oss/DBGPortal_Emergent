@@ -17,7 +17,7 @@ function CardForm({ amount, surcharge, onDone }) {
     const { error, paymentIntent } = await stripe.confirmPayment({ elements, redirect: "if_required" });
     if (error) { toast.error(error.message || "Payment failed"); setBusy(false); return; }
     if (paymentIntent && paymentIntent.status === "succeeded") {
-      try { await api.get(`/pub/pay/status/${paymentIntent.id}`); } catch { /* best-effort */ }
+      try { await api.get(`/pub/pay/status/${paymentIntent.id}`); } catch (e) { console.warn("Payment status sync failed (payment already succeeded):", e); }
       onDone();
     } else {
       toast.message("Payment is processing. You'll receive a receipt once it clears.");
