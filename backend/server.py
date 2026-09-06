@@ -4137,10 +4137,23 @@ async def shutdown_db_client():
 
 app.include_router(api_router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000"), "http://localhost:3000"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_origins = os.environ.get("CORS_ORIGINS", "").strip()
+if _cors_origins == "*":
+    # Credentialed CORS cannot use a literal "*"; reflect the request origin instead.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origin_regex=".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    _origins = [x.strip() for x in _cors_origins.split(",") if x.strip()] or \
+        [os.environ.get("FRONTEND_URL", "http://localhost:3000"), "http://localhost:3000"]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )

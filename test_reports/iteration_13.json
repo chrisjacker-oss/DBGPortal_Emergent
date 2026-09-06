@@ -1,0 +1,29 @@
+{
+  "summary": "Post-CORS-change auth regression smoke test (frontend only). Admin & salesman login, protected route navigation, refresh persistence, logout & redirect all verified working. No CORS or unexpected 401 errors observed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_details": {
+    "admin_login": "PASS - sales@dbgsigns.com logged in, landed on /dashboard, saw 370 Customers / 21 Materials / 0 invoices (data loaded, no 401/CORS).",
+    "cookies_set": "access_token & refresh_token both httpOnly=true, secure=true, sameSite=None. Correct for cross-site credentialed auth.",
+    "protected_routes": "/invoices, /customers, /reports all loaded with zero API errors while authenticated.",
+    "session_persistence": "Reload on /customers kept user authenticated (no redirect to /login, no API errors).",
+    "logout": "'Sign out' button worked; /customers after logout redirected to /login.",
+    "salesman_login": "sam@dbgsigns.com logged in, landed on /estimates with 'Welcome, Sam Salesman' toast; no 401/CORS errors during login or navigation.",
+    "cors_console_errors": "None. No cross-origin / CORS messages in browser console.",
+    "expected_401s": "Initial /api/auth/me call before login and after logout returns 401 (expected auth-check behavior, not a regression)."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "Admin sales@dbgsigns.com / 10297099; Salesman sam@dbgsigns.com / Sales2026! - both valid",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "CORS middleware change (regex + credentials) is safe; auth cookies flow works end-to-end same-origin. If deploying cross-origin, verify browser accepts SameSite=None cookies and that allow_origin_regex reflects the actual frontend host."
+}
