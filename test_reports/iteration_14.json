@@ -1,0 +1,20 @@
+{
+  "summary": "Post-startup-seeding-change auth regression smoke (frontend only). Verified both admin (sales@dbgsigns.com) and salesman (sam@dbgsigns.com) can log in, land on their correct pages, protected pages load without 401 errors, session persists across reload, and logout redirects protected routes back to /login. No regressions from the create-only admin seed change.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "100%"},
+  "test_credentials": "Admin sales@dbgsigns.com / 10297099 (works); Salesman sam@dbgsigns.com / Sales2026! (works)",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth is stable after startup() change to create-only admin seed. Detailed results: (1) Admin login POST /api/auth/login -> 200, redirected to /dashboard. (2) /customers loaded with ~370 rows, no 401. (3) /invoices loaded (empty list, expected). (4) Reload on /invoices preserved session. (5) 'Sign out' button worked, subsequent nav to /customers redirected to /login. (6) Salesman login redirected to /estimates with 'Welcome, Sam Salesman' toast, no 401. (7) Only 401s observed were the expected /api/auth/me probes on unauthenticated states (initial page load + immediately after logout) — these are normal AuthContext bootstrap checks and not regressions.",
+  "rca of the issue": "N/A - no issues found"
+}

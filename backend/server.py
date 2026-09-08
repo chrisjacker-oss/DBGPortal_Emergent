@@ -4109,8 +4109,8 @@ async def startup():
             "name": "Shop Owner", "role": "admin", "created_at": now_iso(),
         })
         logger.info("Seeded admin user")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
+    # NOTE: never auto-overwrite an existing admin's password on restart — that would
+    # wipe a password the admin set through the UI. Seeding is idempotent (create-only).
     # seed a demo salesman
     sm_email = "sam@dbgsigns.com"
     if await db.users.find_one({"email": sm_email}) is None:
