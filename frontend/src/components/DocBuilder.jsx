@@ -91,7 +91,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     if (k === "category") {
       const m = materials.find((x) => x.id === items[i].material_id);
       if (!m || m.category !== v) { items[i].material_id = ""; items[i].price_per_sqft = 0; items[i].cost_per_sqft = 0; items[i].description = ""; }
-      if (String(v).trim().toLowerCase() === "shipping") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Shipping"; }
+      const cv = String(v).trim().toLowerCase();
+      if (cv === "shipping") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Shipping"; }
+      if (cv === "installation") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Installation"; }
     }
     setForm({ ...form, line_items: items });
   };
@@ -123,11 +125,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const breakdown = (li) => {
     const area = areaOf(li);
     const material = Number(li.price_per_sqft || 0) * area;
-    const isShip = String(li.category || "").trim().toLowerCase() === "shipping";
+    const flat = ["shipping", "installation"].includes(String(li.category || "").trim().toLowerCase());
     const machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
-    const machine = isShip ? 0 : machineH * settings.machine_rate_per_hr;
+    const machine = flat ? 0 : machineH * settings.machine_rate_per_hr;
     const laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
-    const labor = isShip ? 0 : laborH * settings.shop_rate_per_hr;
+    const labor = flat ? 0 : laborH * settings.shop_rate_per_hr;
     return { area, material, machine, labor, total: material + machine + labor };
   };
   const lineTotal = (li) => {
@@ -221,6 +223,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const catOptions = Array.from(new Set(baseCats));
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               const isShip = String(cat).trim().toLowerCase() === "shipping";
+              const isInstall = String(cat).trim().toLowerCase() === "installation";
               return (
               <div key={li._key} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
@@ -235,6 +238,14 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Shipping cost $</span>
                   <input type="number" value={li.cost_per_sqft} onChange={(e) => setItem(i, "cost_per_sqft", e.target.value)} data-testid={`item-cost-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap">+ 30% markup</span>
+                </div>
+                <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
+                </>
+                ) : isInstall ? (
+                <>
+                <div style={{ gridColumn: "span 7" }} className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Installation cost $</span>
+                  <input type="number" value={li.price_per_sqft} onChange={(e) => setItem(i, "price_per_sqft", e.target.value)} data-testid={`item-install-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 </>
