@@ -155,12 +155,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const totMarginPct = subtotal > 0 ? (totMargin / subtotal) * 100 : 0;
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
-  const laminatorCost = form.line_items.reduce((s, li) => {
-    const flat = ["shipping", "installation", "cnc router time"].includes(String(li.category || "").trim().toLowerCase());
-    if (flat || !(settings.laminator_sqft_per_hr > 0)) return s;
-    return s + (areaOf(li) / settings.laminator_sqft_per_hr) * (settings.laminator_rate_per_hr || 0);
-  }, 0);
-  const commissionBase = totMargin - laminatorCost;
+  const commissionBase = totMargin;
   const commission = commissionBase * (Number(form.commission_rate || 0) / 100);
 
   const submit = () => {
@@ -322,9 +317,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   )}
                   <Inp label="Commission rate (%)" type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} testid="doc-commission-rate" />
                   <div className="border-t border-border pt-2 space-y-1 text-xs font-mono text-muted-foreground">
-                    <div className="flex justify-between"><span>Gross profit</span><span>{currency(totMargin)}</span></div>
-                    <div className="flex justify-between" data-testid="commission-laminator"><span>− Laminator cost</span><span>−{currency(laminatorCost)}</span></div>
-                    <div className="flex justify-between text-foreground"><span>Commission base</span><span>{currency(commissionBase)}</span></div>
+                    <div className="flex justify-between text-foreground"><span>Commission base (gross profit)</span><span>{currency(commissionBase)}</span></div>
                   </div>
                   <div className="text-sm font-mono flex justify-between" data-testid="commission-preview">
                     <span>{currency(commissionBase)} × {Number(form.commission_rate || 0)}%</span>

@@ -1230,22 +1230,9 @@ async def apply_commission(doc: dict, user: dict) -> dict:
     base = 0.0
     for li in doc.get("line_items", []):
         base += float(li.get("material_margin") or 0)
-    # Laminator machine cost is deducted from the commission base only (not the customer price),
-    # applied to physical sqft at the laminator throughput/rate from Settings.
-    s = await get_settings()
-    lam_sqft = float(s.get("laminator_sqft_per_hr") or 0)
-    lam_rate = float(s.get("laminator_rate_per_hr") or 0)
-    lam_cost = 0.0
-    if lam_sqft and lam_rate:
-        for li in doc.get("line_items", []):
-            if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time"):
-                continue
-            lam_cost += (float(li.get("area_sqft") or 0) / lam_sqft) * lam_rate
-    lam_cost = round(lam_cost, 2)
-    base = round(base - lam_cost, 2)
+    base = round(base, 2)
     doc["commission_rate"] = rate
     doc["commission_base"] = base
-    doc["commission_laminator_cost"] = lam_cost
     doc["commission_amount"] = round(base * rate / 100.0, 2)
     return doc
 
