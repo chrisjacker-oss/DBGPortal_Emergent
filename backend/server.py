@@ -2809,9 +2809,8 @@ async def portal_statement_pdf(user: dict = Depends(get_current_user)):
                     headers={"Content-Disposition": 'inline; filename="statement.pdf"'})
 
 
-@api_router.get("/customers/{cid}/statement/pdf")
-async def customer_statement_pdf(cid: str, month: str, user: dict = Depends(require_staff)):
-    """Monthly statement PDF for a customer: their invoices and balances for the given month (YYYY-MM)."""
+async def _statement_data(cid: str, month: str):
+    """Return (customer_doc, [invoices for the month], 'Month YYYY' label) for a statement."""
     cust = await get_or_404(db.customers, cid, "Customer")
     try:
         start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
@@ -2833,11 +2832,60 @@ async def customer_statement_pdf(cid: str, month: str, user: dict = Depends(requ
             dt = dt.replace(tzinfo=timezone.utc)
         if start <= dt < end:
             out.append(clean(inv))
-    label = start.strftime("%B %Y")
+    return cust, out, start.strftime("%B %Y")
+
+
+@api_router.get("/customers/{cid}/statement/pdf")
+async def customer_statement_pdf(cid: str, month: str, user: dict = Depends(require_staff)):
+    """Monthly statement PDF for a customer: their invoices and balances for the given month (YYYY-MM)."""
+    cust, out, label = await _statement_data(cid, month)
     pdf = build_statement_pdf(clean(cust), out, await get_settings(), await get_logo_bytes(), period_label=label)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(cust.get("company") or cust.get("name") or "customer"))
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="Statement-{safe}-{month}.pdf"', "Cache-Control": "no-store"})
+
+
+@api_router.get("/pub/statement/{token}")
+async def public_statement_pdf(token: str):
+    rec = await db.statement_tokens.find_one({"token": token})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Link is invalid or has expired")
+    try:
+        created = datetime.fromisoformat(str(rec.get("created_at")).replace("Z", "+00:00"))
+        if (datetime.now(timezone.utc) - created).days > 90:
+            raise HTTPException(status_code=404, detail="This link has expired")
+    except (ValueError, TypeError):
+        pass
+    cust, out, label = await _statement_data(rec["customer_id"], rec["month"])
+    pdf = build_statement_pdf(clean(cust), out, await get_settings(), await get_logo_bytes(), period_label=label)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="Statement-{rec["month"]}.pdf"', "Cache-Control": "no-store"})
+
+
+@api_router.post("/customers/{cid}/statement/email")
+async def email_customer_statement(cid: str, month: str, user: dict = Depends(require_staff)):
+    """Email the monthly statement to the customer, with a blind copy to the shop."""
+    cust, out, label = await _statement_data(cid, month)
+    to = cust.get("email")
+    if not to:
+        ct = await db.contacts.find_one({"customer_id": cid, "email": {"$nin": [None, ""]}})
+        if ct:
+            to = ct.get("email")
+    if not to:
+        raise HTTPException(status_code=400, detail="No email on file for this customer")
+    token = secrets.token_urlsafe(16)
+    await db.statement_tokens.insert_one({"token": token, "customer_id": cid, "month": month, "created_at": now_iso()})
+    pdf_url = f"{PUBLIC_BASE_URL}/api/pub/statement/{token}"
+    company = await get_settings()
+    cname = cust.get("company") or cust.get("name") or "Customer"
+    total_due = round(sum(float(i.get("total") or 0) - float(i.get("amount_paid") or 0) for i in out), 2)
+    html = render_statement_email(cname, label, out, total_due, pdf_url, company)
+    await send_email(to=to, subject=f"Your statement from DBG Signs, Inc. — {label}", html=html)
+    try:
+        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Statement — {cname} — {label}", html=html)
+    except Exception as e:
+        logger.warning(f"BCC statement copy to {BCC_COPY_EMAIL} failed: {e}")
+    return {"status": "sent", "to": to}
 
 
 @api_router.post("/portal/reorder")
@@ -3084,6 +3132,69 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'</div></td></tr>'
         f'{_disclaimer_html()}'
         f'</table></div>{pixel}'
+    )
+
+
+def render_statement_email(customer_name: str, period_label: str, invoices: list, total_due: float, pdf_url: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
+    contact = " &nbsp;·&nbsp; ".join([escape(str(x)) for x in contact_bits if x])
+    contact_html = f'<div style="color:#6B7280;font-size:11px;margin-top:6px">{contact}</div>' if contact else ""
+    rows = ""
+    for i, inv in enumerate(invoices):
+        bal = round(float(inv.get("total") or 0) - float(inv.get("amount_paid") or 0), 2)
+        bg = "#F7F7F8" if i % 2 else "#ffffff"
+        dt = str(inv.get("due_date") or str(inv.get("created_at", ""))[:10])
+        rows += (
+            f'<tr style="background:{bg}">'
+            f'<td style="padding:9px 14px;border-bottom:1px solid #eee">{escape(str(inv.get("number", "")))}</td>'
+            f'<td style="padding:9px 14px;border-bottom:1px solid #eee;color:#6B7280">{escape(dt)}</td>'
+            f'<td align="right" style="padding:9px 14px;border-bottom:1px solid #eee">{_money(inv.get("total", 0))}</td>'
+            f'<td align="right" style="padding:9px 14px;border-bottom:1px solid #eee">{_money(bal)}</td></tr>'
+        )
+    if not invoices:
+        rows = f'<tr><td colspan="4" style="padding:14px;color:#6B7280">No invoices for {escape(period_label)}.</td></tr>'
+    dl_btn = (
+        f'<tr><td style="padding:20px 32px 0" align="center">'
+        f'<a href="{pdf_url}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:13px 32px;font-weight:bold;letter-spacing:1px;font-size:13px">DOWNLOAD STATEMENT (PDF) →</a>'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Download a PDF copy of this statement for your records.</div>'
+        f'</td></tr>'
+    )
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">STATEMENT</div>'
+        f'<div style="color:#6B7280;font-size:13px">{escape(period_label)}</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Account</div>'
+        f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
+        f'<p style="margin:16px 0 0">Please find your account statement for <strong>{escape(period_label)}</strong> below.</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
+        f'<tr style="background:#0A0A0A;color:#fff">'
+        f'<th align="left" style="padding:10px 14px;font-size:11px;letter-spacing:1px">INVOICE</th>'
+        f'<th align="left" style="padding:10px 14px;font-size:11px;letter-spacing:1px">DATE</th>'
+        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">TOTAL</th>'
+        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">BALANCE</th></tr>'
+        f'{rows}'
+        f'<tr><td></td><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">TOTAL DUE</td>'
+        f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(total_due)}</td></tr>'
+        f'</table></td></tr>'
+        f'{dl_btn}'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px">Questions about this statement? Just reply to this email.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'{contact_html}'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
     )
 
 

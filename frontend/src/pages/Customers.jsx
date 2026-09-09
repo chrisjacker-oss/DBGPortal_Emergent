@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending, FileText } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending, FileText, EnvelopeSimple } from "@phosphor-icons/react";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import {
   Dialog,
@@ -50,6 +50,19 @@ export default function Customers() {
       setStmtCust(null);
     } catch {
       toast.error(`No invoices for ${stmtCust.company || stmtCust.name} in ${stmtMonth}`);
+    }
+    setStmtBusy(false);
+  };
+
+  const emailStatement = async () => {
+    if (!stmtCust) return;
+    setStmtBusy(true);
+    try {
+      const { data } = await api.post(`/customers/${stmtCust.id}/statement/email?month=${stmtMonth}`);
+      toast.success(`Statement emailed to ${data.to} (copy to sales@dbgsigns.com)`);
+      setStmtCust(null);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not email statement");
     }
     setStmtBusy(false);
   };
@@ -333,6 +346,7 @@ export default function Customers() {
           </label>
           <DialogFooter>
             <Btn variant="outline" onClick={() => setStmtCust(null)} data-testid="statement-cancel-btn">Cancel</Btn>
+            <Btn variant="outline" onClick={emailStatement} disabled={stmtBusy || !stmtMonth} data-testid="statement-email-btn"><EnvelopeSimple size={16} weight="bold" /> {stmtBusy ? "Sending…" : "Email to customer"}</Btn>
             <Btn onClick={downloadStatement} disabled={stmtBusy || !stmtMonth} data-testid="statement-download-btn"><DownloadSimple size={16} weight="bold" /> {stmtBusy ? "Preparing…" : "Download PDF"}</Btn>
           </DialogFooter>
         </DialogContent>
