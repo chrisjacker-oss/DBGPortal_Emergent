@@ -4,8 +4,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending } from "@phosphor-icons/react";
-import { downloadCsv } from "@/lib/download";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending, FileText } from "@phosphor-icons/react";
+import { downloadCsv, downloadFile } from "@/lib/download";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,22 @@ export default function Customers() {
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
   const [sortDir, setSortDir] = useState("az");
+  const [stmtCust, setStmtCust] = useState(null);
+  const [stmtMonth, setStmtMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [stmtBusy, setStmtBusy] = useState(false);
+
+  const downloadStatement = async () => {
+    if (!stmtCust) return;
+    setStmtBusy(true);
+    try {
+      const safe = String(stmtCust.company || stmtCust.name || "customer").replace(/\s+/g, "_");
+      await downloadFile(`/customers/${stmtCust.id}/statement/pdf?month=${stmtMonth}`, `Statement-${safe}-${stmtMonth}.pdf`, "application/pdf");
+      setStmtCust(null);
+    } catch {
+      toast.error(`No invoices for ${stmtCust.company || stmtCust.name} in ${stmtMonth}`);
+    }
+    setStmtBusy(false);
+  };
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
@@ -164,6 +180,7 @@ export default function Customers() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-2">
                       <Btn variant="outline" onClick={() => openContacts(r)} data-testid={`contacts-customer-${r.id}`} title="View contacts under this company"><UsersThree size={16} weight="bold" /> Contacts</Btn>
+                      <Btn variant="outline" onClick={() => { setStmtCust(r); setStmtMonth(new Date().toISOString().slice(0, 7)); }} data-testid={`statement-customer-${r.id}`} title="Download a monthly statement of invoices & balances"><FileText size={16} weight="bold" /> Statement</Btn>
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-customer-${r.id}`}><PencilSimple size={16} /></Btn>
                       {isAdmin && <Btn variant="ghost" onClick={() => remove(r)} data-testid={`delete-customer-${r.id}`}><Trash size={16} /></Btn>}
                     </div>
@@ -302,6 +319,24 @@ export default function Customers() {
       </Dialog>
 
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected customer(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
+
+      <Dialog open={!!stmtCust} onOpenChange={(o) => !o && setStmtCust(null)}>
+        <DialogContent className="rounded-none max-w-md" data-testid="statement-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Monthly Statement</DialogTitle>
+            <DialogDescription className="font-mono text-xs">{stmtCust?.company || stmtCust?.name} — invoices &amp; balances for the selected month.</DialogDescription>
+          </DialogHeader>
+          <label className="block">
+            <span className="overline text-muted-foreground">Statement month</span>
+            <input type="month" value={stmtMonth} onChange={(e) => setStmtMonth(e.target.value)} data-testid="statement-month-input"
+              className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setStmtCust(null)} data-testid="statement-cancel-btn">Cancel</Btn>
+            <Btn onClick={downloadStatement} disabled={stmtBusy || !stmtMonth} data-testid="statement-download-btn"><DownloadSimple size={16} weight="bold" /> {stmtBusy ? "Preparing…" : "Download PDF"}</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

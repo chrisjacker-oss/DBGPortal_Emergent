@@ -2809,6 +2809,37 @@ async def portal_statement_pdf(user: dict = Depends(get_current_user)):
                     headers={"Content-Disposition": 'inline; filename="statement.pdf"'})
 
 
+@api_router.get("/customers/{cid}/statement/pdf")
+async def customer_statement_pdf(cid: str, month: str, user: dict = Depends(require_staff)):
+    """Monthly statement PDF for a customer: their invoices and balances for the given month (YYYY-MM)."""
+    cust = await get_or_404(db.customers, cid, "Customer")
+    try:
+        start = datetime.strptime(month, "%Y-%m").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="month must be in YYYY-MM format")
+    end = (start.replace(year=start.year + 1, month=1) if start.month == 12
+           else start.replace(month=start.month + 1))
+    invs = await db.invoices.find({"customer_id": cid, "voided": {"$ne": True}}).sort("created_at", 1).to_list(5000)
+    out = []
+    for inv in invs:
+        raw = inv.get("created_at") or inv.get("issued_at")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        if start <= dt < end:
+            out.append(clean(inv))
+    label = start.strftime("%B %Y")
+    pdf = build_statement_pdf(clean(cust), out, await get_settings(), await get_logo_bytes(), period_label=label)
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(cust.get("company") or cust.get("name") or "customer"))
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="Statement-{safe}-{month}.pdf"', "Cache-Control": "no-store"})
+
+
 @api_router.post("/portal/reorder")
 async def portal_reorder(payload: ReorderInput, user: dict = Depends(get_current_user)):
     cust = await current_customer(user)
@@ -3702,7 +3733,7 @@ def build_work_order_pdf(wo: dict, company: Optional[dict] = None, logo_bytes: O
     return buf.getvalue()
 
 
-def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None) -> bytes:
+def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = None, logo_bytes: Optional[bytes] = None, period_label: Optional[str] = None) -> bytes:
     co = company or {}
     W, H = letter
     buf = io.BytesIO()
@@ -3717,6 +3748,8 @@ def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = No
             pass
     c.setFillColor(ink); c.setFont("Helvetica-Bold", 22); c.drawRightString(R, y, "STATEMENT")
     c.setFillColor(soft); c.setFont("Helvetica", 10); c.drawRightString(R, y - 16, datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+    if period_label:
+        c.setFillColor(ink); c.setFont("Helvetica-Bold", 10); c.drawRightString(R, y - 32, period_label)
     y -= 70
     c.setStrokeColor(cyan); c.setLineWidth(3); c.line(L, y, R, y); y -= 26
     c.setFillColor(soft); c.setFont("Helvetica", 8); c.drawString(L, y, "ACCOUNT")
@@ -3743,7 +3776,8 @@ def build_statement_pdf(cust: dict, invoices: list, company: Optional[dict] = No
         if y < 120:
             c.showPage(); y = H - 90; c.setFont("Helvetica", 10)
     if not invoices:
-        c.setFillColor(soft); c.drawString(L + 10, y, "No open invoices — your account is all paid up. Thank you!"); y -= 22
+        msg = f"No invoices for {period_label}." if period_label else "No open invoices — your account is all paid up. Thank you!"
+        c.setFillColor(soft); c.drawString(L + 10, y, msg); y -= 22
     c.setStrokeColor(colors.HexColor("#D1D5DB")); c.setLineWidth(1); c.line(R - 260, y + 4, R, y + 4); y -= 18
     c.setFillColor(ink); c.rect(R - 260, y - 7, 260, 28, fill=1, stroke=0)
     c.setFillColor(cyan); c.rect(R - 260, y - 7, 5, 28, fill=1, stroke=0)

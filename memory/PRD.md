@@ -26,8 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Removed laminator cost from commission calculation entirely (backend + frontend). Commission base = gross profit. Verified via API; estimates counter reset to 29499.
-- Role-based laminator display (admin-only) — superseded by full removal above.
+- **June 2026**: Per-customer monthly statement — new "Statement" button on each Customers row opens a month-picker dialog and downloads a PDF of that customer's invoices & balances for the chosen month. Backend: `GET /api/customers/{cid}/statement/pdf?month=YYYY-MM` (staff), reuses `build_statement_pdf` (now takes a period label).
+- **June 2026**: Estimate/Sales Order/Invoice emails now include a customer "DOWNLOAD (PDF)" link (via `/api/pub/pdf/{token}`) and send a blind copy to sales@dbgsigns.com (separate send — managed email has no bcc field; copy omits tracking pixel).
+- **June 2026**: Removed laminator cost from commission calculation entirely. Commission base = gross profit.
 
 ## Backlog / P1-P2
 - Admin dashboard "clocked-in today" widget.
