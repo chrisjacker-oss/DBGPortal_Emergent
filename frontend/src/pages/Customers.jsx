@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending } from "@phosphor-icons/react";
 import { downloadCsv } from "@/lib/download";
 import {
   Dialog,
@@ -36,9 +36,13 @@ export default function Customers() {
   const [importKind, setImportKind] = useState("customers"); // customers | contacts
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [sortDir, setSortDir] = useState("az");
 
   const load = () => api.get("/customers").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
+
+  const sortKey = (r) => (r.company || r.name || "").trim().toLowerCase();
+  const sortedRows = [...rows].sort((a, b) => sortDir === "az" ? sortKey(a).localeCompare(sortKey(b)) : sortKey(b).localeCompare(sortKey(a)));
 
   const loadContacts = (cid) => api.get(`/customers/${cid}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
   const openContacts = async (r) => { setContactCust(r); setCForm({ name: "", email: "", phone: "", title: "" }); await loadContacts(r.id); };
@@ -121,6 +125,9 @@ export default function Customers() {
   return (
     <div>
       <PageHeader overline="CRM" title="Customers">
+        <Btn variant="outline" onClick={() => setSortDir((d) => (d === "az" ? "za" : "az"))} data-testid="sort-customers-btn" title="Sort by company / name">
+          {sortDir === "az" ? <SortAscending size={16} weight="bold" /> : <SortDescending size={16} weight="bold" />} Sort {sortDir === "az" ? "A–Z" : "Z–A"}
+        </Btn>
         {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn variant="outline" onClick={() => openImport("customers")} data-testid="import-customers-btn"><UploadSimple size={16} weight="bold" /> Import CSV</Btn>
         <Btn variant="outline" onClick={() => openImport("contacts")} data-testid="import-contacts-btn"><UploadSimple size={16} weight="bold" /> Import Contacts</Btn>
@@ -145,7 +152,7 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody data-testid="customers-table">
-              {rows.map((r) => (
+              {sortedRows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`customer-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-medium">{r.name}{r.title && <span className="block text-xs text-muted-foreground">{r.title}</span>}</td>
@@ -156,7 +163,7 @@ export default function Customers() {
                   <td className="px-6 py-3">{r.portal_enabled ? <span className="text-[#16A34A] text-xs font-mono">● On</span> : <span className="text-muted-foreground text-xs font-mono">Off</span>}</td>
                   <td className="px-6 py-3">
                     <div className="flex justify-end gap-2">
-                      <Btn variant="ghost" onClick={() => openContacts(r)} data-testid={`contacts-customer-${r.id}`} title="Contacts"><UsersThree size={16} /></Btn>
+                      <Btn variant="outline" onClick={() => openContacts(r)} data-testid={`contacts-customer-${r.id}`} title="View contacts under this company"><UsersThree size={16} weight="bold" /> Contacts</Btn>
                       <Btn variant="ghost" onClick={() => openEdit(r)} data-testid={`edit-customer-${r.id}`}><PencilSimple size={16} /></Btn>
                       {isAdmin && <Btn variant="ghost" onClick={() => remove(r)} data-testid={`delete-customer-${r.id}`}><Trash size={16} /></Btn>}
                     </div>
