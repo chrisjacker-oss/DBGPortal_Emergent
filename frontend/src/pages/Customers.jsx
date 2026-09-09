@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
-const empty = { name: "", company: "", email: "", phone: "", address: "", notes: "", tier: "", title: "", net_terms: "Net 15", portal_enabled: false };
+const empty = { name: "", company: "", email: "", phone: "", address: "", notes: "", tier: "", title: "", net_terms: "Net 15", tax_exempt: false, tax_exempt_number: "", portal_enabled: false };
 const TIER_PCT = { 1: "35%", 2: "25%", 3: "15%" };
 
 export default function Customers() {
@@ -94,7 +94,7 @@ export default function Customers() {
   };
 
   const openNew = () => { setForm(empty); setEditing(null); setOpen(true); };
-  const openEdit = (r) => { setForm({ ...empty, ...r, tier: r.tier ?? "", title: r.title ?? "", net_terms: r.net_terms ?? "Net 15", portal_enabled: !!r.portal_enabled }); setEditing(r.id); setOpen(true); };
+  const openEdit = (r) => { setForm({ ...empty, ...r, tier: r.tier ?? "", title: r.title ?? "", net_terms: r.net_terms ?? "Net 15", tax_exempt: !!r.tax_exempt, tax_exempt_number: r.tax_exempt_number ?? "", portal_enabled: !!r.portal_enabled }); setEditing(r.id); setOpen(true); };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const save = async () => {
@@ -240,6 +240,13 @@ export default function Customers() {
             </div>
             <Inp label="Address" value={form.address} onChange={set("address")} testid="cust-address" />
             <Inp label="Notes" value={form.notes} onChange={set("notes")} testid="cust-notes" />
+            <label className="flex items-center gap-2 cursor-pointer select-none" data-testid="cust-tax-exempt-label">
+              <input type="checkbox" checked={form.tax_exempt} onChange={(e) => setForm({ ...form, tax_exempt: e.target.checked })} data-testid="cust-tax-exempt" className="h-4 w-4 accent-[#0A0A0A]" />
+              <span className="text-sm">Tax exempt (removes sales tax on this customer's documents)</span>
+            </label>
+            {form.tax_exempt && (
+              <Inp label="Tax exempt number" value={form.tax_exempt_number} onChange={set("tax_exempt_number")} testid="cust-tax-exempt-number" placeholder="e.g. 3-12345-6789-0" />
+            )}
             <label className="flex items-center gap-2 cursor-pointer select-none" data-testid="cust-portal-label">
               <input type="checkbox" checked={form.portal_enabled} onChange={(e) => setForm({ ...form, portal_enabled: e.target.checked })} data-testid="cust-portal" className="h-4 w-4 accent-[#0A0A0A]" />
               <span className="text-sm">Enable customer portal access</span>

@@ -47,7 +47,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       api.get("/material-categories").then((r) => setCategories(r.data.all || [])).catch(() => {});
       api.get("/settings").then((r) => {
         setSettings(r.data);
-        if (!initial) setForm((f) => (f ? { ...f, tax_rate: r.data.default_tax_rate ?? 0 } : f));
+        if (!initial) setForm((f) => (f ? { ...f, tax_rate: (customers.find((c) => c.id === f.customer_id)?.tax_exempt ? 0 : (r.data.default_tax_rate ?? 0)) } : f));
       });
       if (isAdmin) api.get("/users").then((r) => setSalesmen([...r.data].sort((a, b) => (a.name || "").localeCompare(b.name || "")))).catch(() => {});
       setForm(
@@ -199,7 +199,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
                 options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
-                onChange={(v) => setForm({ ...form, customer_id: v, contact_id: "" })} />
+                onChange={(v) => { const c = customers.find((x) => x.id === v); setForm({ ...form, customer_id: v, contact_id: "", tax_rate: c?.tax_exempt ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0) }); }} />
             </div>
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Contact (Attn)</span>
@@ -293,7 +293,14 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
-              <Inp label="Tax rate (%)" type="number" value={form.tax_rate} onChange={(e) => set("tax_rate", e.target.value)} testid="doc-tax" />
+              <div>
+                <Inp label="Tax rate (%)" type="number" value={form.tax_rate} onChange={(e) => set("tax_rate", e.target.value)} testid="doc-tax" />
+                {selCust?.tax_exempt && (
+                  <div className="mt-1 text-xs font-mono text-emerald-600" data-testid="tax-exempt-note">
+                    Tax-exempt customer{selCust.tax_exempt_number ? ` · #${selCust.tax_exempt_number}` : ""} — tax removed
+                  </div>
+                )}
+              </div>
               {isInvoice && <Inp label="Due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />}
               <label className="block">
                 <span className="overline text-muted-foreground">Status</span>

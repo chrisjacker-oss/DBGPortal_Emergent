@@ -179,6 +179,8 @@ class CustomerInput(BaseModel):
     tier: Optional[int] = None  # 1=35%, 2=25%, 3=15% discount
     title: Optional[str] = None
     net_terms: Optional[str] = "Net 15"  # COD, 50/50, Net 10, Net 15
+    tax_exempt: bool = False
+    tax_exempt_number: Optional[str] = None
     portal_enabled: bool = False
 
 
@@ -3564,7 +3566,11 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setStrokeColor(grayline); c.setLineWidth(1); c.line(ax - 230, y + 2, R, y + 2); y -= 16
     c.setFont("Helvetica", 10); c.setFillColor(soft); c.drawRightString(ax - 100, y, "Subtotal")
     c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(net_subtotal)); y -= 16
-    c.setFillColor(soft); c.drawRightString(ax - 100, y, f"Tax ({doc.get('tax_rate', 0)}%)")
+    if customer and customer.get("tax_exempt"):
+        _tax_lbl = "Tax Exempt" + (f" · {customer.get('tax_exempt_number')}" if customer.get("tax_exempt_number") else "")
+    else:
+        _tax_lbl = f"Tax ({doc.get('tax_rate', 0)}%)"
+    c.setFillColor(soft); c.drawRightString(ax - 100, y, _tax_lbl)
     c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(doc.get("tax_amount", 0))); y -= 26
     label = "AMOUNT DUE" if kind_label == "Invoice" else "TOTAL"
     c.setFillColor(ink); c.rect(ax - 230, y - 7, 230, 28, fill=1, stroke=0)
