@@ -198,6 +198,7 @@ class EstimateInput(BaseModel):
     customer_id: str
     contact_id: Optional[str] = None
     title: str
+    customer_po: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     notes: Optional[str] = None
@@ -211,6 +212,7 @@ class InvoiceInput(BaseModel):
     customer_id: str
     contact_id: Optional[str] = None
     title: str
+    customer_po: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     notes: Optional[str] = None
@@ -1284,6 +1286,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "customer_id": est["customer_id"],
         "contact_id": est.get("contact_id"),
         "title": est["title"],
+        "customer_po": est.get("customer_po"),
         "line_items": est.get("line_items", []),
         "tax_rate": est.get("tax_rate", 0),
         "subtotal": est.get("subtotal", 0),
@@ -1384,6 +1387,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "customer_id": so["customer_id"],
         "contact_id": so.get("contact_id"),
         "title": so["title"],
+        "customer_po": so.get("customer_po"),
         "line_items": so.get("line_items", []),
         "tax_rate": so.get("tax_rate", 0),
         "subtotal": so.get("subtotal", 0),
@@ -3070,6 +3074,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
     label = "Amount Due" if kind_label == "Invoice" else "Total"
     due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
+    po_html = f'<div style="color:#6B7280;font-size:12px">Your PO: {escape(str(doc.get("customer_po")))}</div>' if doc.get("customer_po") else ""
     attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
     pay_btn = ""
     if kind_label in ("Invoice", "Sales Order") and not doc.get("voided"):
@@ -3095,7 +3100,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
         f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
         f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">{escape(kind_label.upper())}</div>'
-        f'<div style="color:#6B7280;font-size:13px">#{escape(str(doc.get("number", "")))}</div>{due}</td>'
+        f'<div style="color:#6B7280;font-size:13px">#{escape(str(doc.get("number", "")))}</div>{po_html}{due}</td>'
         f'</tr></table></td></tr>'
         f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
         # Greeting + bill to
@@ -3488,6 +3493,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     y = rule_y - 30
     # Meta (right)
     meta = [("Date", str(doc.get("created_at", ""))[:10])]
+    if doc.get("customer_po"):
+        meta.append(("Customer PO", str(doc.get("customer_po"))))
     if doc.get("due_date"):
         meta.append(("Due Date", str(doc.get("due_date"))))
     terms = (customer or {}).get("net_terms")

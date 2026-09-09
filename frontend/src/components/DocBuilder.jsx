@@ -54,7 +54,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
-              customer_id: "", contact_id: "", title: "", line_items: [newItem()], tax_rate: 0, notes: "",
+              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, notes: "",
               status: statusOptions[0], due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -162,6 +162,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     onSave({
       ...form,
       contact_id: form.contact_id || null,
+      customer_po: form.customer_po || "",
       tax_rate: Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
@@ -193,7 +194,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         </DialogHeader>
 
         <div className="space-y-4 min-w-0">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <div className="block min-w-0">
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
@@ -210,6 +211,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               </select>
             </label>
             <Inp label="Title / Job" value={form.title} onChange={(e) => set("title", e.target.value)} testid="doc-title" />
+            <Inp label="Customer PO" value={form.customer_po || ""} onChange={(e) => set("customer_po", e.target.value)} testid="doc-customer-po" placeholder="Optional" />
           </div>
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">

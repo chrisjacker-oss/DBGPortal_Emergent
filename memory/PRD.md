@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Email monthly statement — statement dialog now has an "Email to customer" button that emails the statement (with a blind copy to sales@dbgsigns.com). Backend: `POST /api/customers/{cid}/statement/email?month=YYYY-MM`; email carries a "Download statement (PDF)" link via new public route `GET /api/pub/statement/{token}` (90-day expiry). Shared `_statement_data` helper + `render_statement_email` template.
+- **June 2026**: Customer PO field — optional "Customer PO" text box on Estimate/Sales Order/Invoice builder (`customer_po` on EstimateInput/InvoiceInput). Carried over on estimate→SO approve and SO→invoice convert. Shown on the customer PDF (meta block) and emailed doc ("Your PO:" under the number).
+- **June 2026**: Email monthly statement — statement dialog "Email to customer" button, `POST /api/customers/{cid}/statement/email`, blind copy to sales@dbgsigns.com, download link via `GET /api/pub/statement/{token}`.
 - **June 2026**: Per-customer monthly statement — "Statement" button on each Customers row opens a month-picker dialog and downloads a PDF of that customer's invoices & balances. Backend: `GET /api/customers/{cid}/statement/pdf?month=YYYY-MM`.
 - **June 2026**: Estimate/Sales Order/Invoice emails now include a customer "DOWNLOAD (PDF)" link (via `/api/pub/pdf/{token}`) and send a blind copy to sales@dbgsigns.com (separate send — managed email has no bcc field; copy omits tracking pixel).
 - **June 2026**: Removed laminator cost from commission calculation entirely. Commission base = gross profit.
