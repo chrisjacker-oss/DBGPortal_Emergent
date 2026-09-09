@@ -600,7 +600,8 @@ async def refresh(request: Request, response: Response):
 # ---------------------------------------------------------------------------
 @api_router.get("/customers")
 async def list_customers(user: dict = Depends(require_worker)):
-    docs = await db.customers.find().sort("created_at", -1).to_list(1000)
+    docs = await db.customers.find().to_list(2000)
+    docs.sort(key=lambda d: (d.get("company") or d.get("name") or "").strip().lower())
     return [clean(d) for d in docs]
 
 
