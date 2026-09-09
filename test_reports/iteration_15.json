@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only testing of three new features on DBG Signs CRM: (1) Customers page search, (2) DocBuilder tax-exempt on Estimates/SOs/Invoices, (3) 'Create a copy' Actions on Estimates, Sales Orders, and Invoices. All three features work end-to-end. Login OK with sales@dbgsigns.com. Customer search (data-testid=customer-search) filters live: 272 rows → 196 with 'a' → 0 with 'zzznomatchxyz' showing 'No customers match'. DocBuilder tax-exempt: checking doc-tax-exempt zeroes doc-tax value to 0, reveals doc-tax-exempt-number input, and live Tax total in summary becomes $0.00 (Total updated from $109.24 preview to $100.90 with tax=$0.00 on subtotal $100.90). Duplicate action verified on all three entities: Estimate → toast 'Copied → EST-29501' and new row 'TEST_TaxExempt Estimate (Copy)'; Sales Order → toast 'Copied → SO-29503' and new '(Copy)' row (status open); Invoice → toast 'Copied → INV-29501' and new '(Copy)' row with status=unpaid, no payments. All 6 test docs cleaned up via admin DELETE endpoints after testing.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DocBuilder summary panel", "issues": ["When Tax exempt is checked, the Tax line label still shows the old default rate e.g. 'Tax (8.25%) $0.00' instead of 'Tax (0%) $0.00' or 'Tax (exempt) $0.00'. Amount is correctly $0.00 so functional impact is minor, but the (8.25%) label is misleading. Consider changing the label to 'Tax (exempt)' when form.tax_exempt is true."]},
+      {"screen": "Estimate/SO/Invoice list Total column", "issues": ["Original and duplicated rows show Total $0.00 in list even though builder summary showed $100.90 / $50.xx during save. Likely list Total column depends on accepted/finalized totals rather than draft subtotals. Pre-existing behavior, not introduced by this change, but worth confirming."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Minor: When tax_exempt=true, update the DocBuilder summary tax label to 'Tax (exempt)' instead of the stale 'Tax (8.25%)' to avoid confusion. Amount is already correct ($0.00)."
+  ],
+  "critical_code_review_comments": [
+    "DocBuilder tax rate input is not visibly disabled when tax_exempt is checked (its value is set to 0 but the field remains enabled). Consider adding the disabled attribute so users cannot edit a rate that will be ignored."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (3/3 features verified)"},
+  "test_credentials": "sales@dbgsigns.com / 10297099 (admin)",
+  "seed_data_creation": "Created 6 test docs (2 estimates, 2 SOs, 2 invoices with TEST_ prefix). All deleted at end of testing via /api/{estimates,sales-orders,invoices}/{id} DELETE with admin password.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Duplicate document numbers advanced to EST-29501, SO-29503, INV-29501 during test. Test docs cleaned up. Feature testids: customer-search, doc-tax-exempt, doc-tax-exempt-label, doc-tax-exempt-number, doc-tax, estimate-actions-<id>, duplicate-estimate-<id>, so-actions-<id>, duplicate-so-<id>, invoice-actions-<id>, duplicate-invoice-<id>."
+}

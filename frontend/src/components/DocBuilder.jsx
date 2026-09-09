@@ -54,7 +54,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
-              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, notes: "",
+              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
               status: statusOptions[0], due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -148,7 +148,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const discRate = selCust?.tier ? ({ 1: 35, 2: 25, 3: 15 }[selCust.tier] || 0) : 0;
   const discount = subtotal * (discRate / 100);
   const taxable = subtotal - discount;
-  const tax = taxable * (Number(form.tax_rate || 0) / 100);
+  const tax = form.tax_exempt ? 0 : taxable * (Number(form.tax_rate || 0) / 100);
   const total = taxable + tax;
   const totMaterial = form.line_items.reduce((s, li) => s + breakdown(li).material, 0);
   const totMargin = form.line_items.reduce((s, li) => s + lineMargin(li), 0);
@@ -163,7 +163,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       ...form,
       contact_id: form.contact_id || null,
       customer_po: form.customer_po || "",
-      tax_rate: Number(form.tax_rate || 0),
+      tax_rate: form.tax_exempt ? 0 : Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
       salesman_id: form.salesman_id || null,
@@ -199,7 +199,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
                 options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
-                onChange={(v) => { const c = customers.find((x) => x.id === v); setForm({ ...form, customer_id: v, contact_id: "", tax_rate: c?.tax_exempt ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0) }); }} />
+                onChange={(v) => { const c = customers.find((x) => x.id === v); const ex = !!c?.tax_exempt; setForm({ ...form, customer_id: v, contact_id: "", tax_exempt: ex || form.tax_exempt, tax_exempt_number: ex ? (c.tax_exempt_number || form.tax_exempt_number || "") : form.tax_exempt_number, tax_rate: (ex || form.tax_exempt) ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0) }); }} />
             </div>
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Contact (Attn)</span>
@@ -294,11 +294,13 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
               <div>
-                <Inp label="Tax rate (%)" type="number" value={form.tax_rate} onChange={(e) => set("tax_rate", e.target.value)} testid="doc-tax" />
-                {selCust?.tax_exempt && (
-                  <div className="mt-1 text-xs font-mono text-emerald-600" data-testid="tax-exempt-note">
-                    Tax-exempt customer{selCust.tax_exempt_number ? ` · #${selCust.tax_exempt_number}` : ""} — tax removed
-                  </div>
+                <Inp label="Tax rate (%)" type="number" value={form.tax_exempt ? 0 : form.tax_rate} onChange={(e) => set("tax_rate", e.target.value)} testid="doc-tax" disabled={form.tax_exempt} />
+                <label className="mt-2 flex items-center gap-2 cursor-pointer select-none" data-testid="doc-tax-exempt-label">
+                  <input type="checkbox" checked={!!form.tax_exempt} onChange={(e) => setForm({ ...form, tax_exempt: e.target.checked, tax_rate: e.target.checked ? 0 : (settings.default_tax_rate || 0) })} data-testid="doc-tax-exempt" className="h-4 w-4 accent-[#0A0A0A]" />
+                  <span className="text-xs font-mono text-muted-foreground">Tax exempt (no sales tax)</span>
+                </label>
+                {form.tax_exempt && (
+                  <Inp label="Tax exempt #" value={form.tax_exempt_number || ""} onChange={(e) => set("tax_exempt_number", e.target.value)} testid="doc-tax-exempt-number" placeholder="Optional" />
                 )}
               </div>
               {isInvoice && <Inp label="Due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />}
@@ -351,7 +353,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <span className="font-mono text-[#16A34A]">-{currency(discount)}</span>
                 </div>
               )}
-              <Row label={`Tax (${form.tax_rate || 0}%)`} value={tax} muted />
+              <Row label={form.tax_exempt ? "Tax (exempt)" : `Tax (${form.tax_rate || 0}%)`} value={tax} muted />
               <div className="border-t border-border mt-2 pt-2"><Row label="Total" value={total} bold /></div>
               {hasCommission && Number(form.commission_rate || 0) > 0 && (
                 <div className="mt-3 pt-3 border-t border-dashed border-border text-xs font-mono text-muted-foreground space-y-1">

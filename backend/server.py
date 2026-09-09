@@ -203,6 +203,8 @@ class EstimateInput(BaseModel):
     customer_po: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
+    tax_exempt: bool = False
+    tax_exempt_number: Optional[str] = None
     notes: Optional[str] = None
     status: str = "draft"  # draft, sent, approved, rejected
     commission_rate: float = 0.0
@@ -217,6 +219,8 @@ class InvoiceInput(BaseModel):
     customer_po: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
+    tax_exempt: bool = False
+    tax_exempt_number: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[str] = None
     status: str = "unpaid"  # unpaid, paid, partial, overdue
@@ -1292,6 +1296,8 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "contact_id": est.get("contact_id"),
         "title": est["title"],
         "customer_po": est.get("customer_po"),
+        "tax_exempt": est.get("tax_exempt", False),
+        "tax_exempt_number": est.get("tax_exempt_number"),
         "line_items": est.get("line_items", []),
         "tax_rate": est.get("tax_rate", 0),
         "subtotal": est.get("subtotal", 0),
@@ -1393,6 +1399,8 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "contact_id": so.get("contact_id"),
         "title": so["title"],
         "customer_po": so.get("customer_po"),
+        "tax_exempt": so.get("tax_exempt", False),
+        "tax_exempt_number": so.get("tax_exempt_number"),
         "line_items": so.get("line_items", []),
         "tax_rate": so.get("tax_rate", 0),
         "subtotal": so.get("subtotal", 0),
@@ -1466,6 +1474,43 @@ async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(r
     doc.update(totals)
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": doc})
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
+
+
+_DUP_STRIP = {
+    "_id", "id", "number", "created_at", "updated_at",
+    "email_status", "email_to", "email_sent_at", "email_opened_at", "email_token", "email_id",
+    "sales_order_id", "estimate_id", "invoice_id", "converted_invoice_id", "from_estimate",
+    "paid_at", "amount_paid", "balance_due", "payments", "stripe_payment_intent_id", "stripe_session_id",
+    "commission_po", "commission_po_number", "commission_paid_at", "commission_paid",
+    "voided", "voided_at", "voided_by", "voided_reason", "fulfilled_at",
+    "customer_name", "salesman_name", "contact_name", "internal_notes",
+}
+
+
+async def _duplicate_document(collection, source_id: str, kind: str, prefix: str, counter_key: str, status: str):
+    src = await get_or_404(collection, source_id, kind)
+    doc = {k: v for k, v in src.items() if k not in _DUP_STRIP}
+    doc["title"] = ((src.get("title") or "").strip() + " (Copy)").strip()
+    doc["status"] = status
+    doc["number"] = await next_number(prefix, counter_key, collection, start=29500)
+    doc["created_at"] = now_iso()
+    res = await collection.insert_one(doc)
+    return await enrich_customer(clean(await collection.find_one({"_id": res.inserted_id})))
+
+
+@api_router.post("/estimates/{eid}/duplicate")
+async def duplicate_estimate(eid: str, user: dict = Depends(require_staff)):
+    return await _duplicate_document(db.estimates, eid, "Estimate", "EST", "estimates", "draft")
+
+
+@api_router.post("/sales-orders/{sid}/duplicate")
+async def duplicate_sales_order(sid: str, user: dict = Depends(require_staff)):
+    return await _duplicate_document(db.sales_orders, sid, "Sales order", "SO", "sales_orders", "open")
+
+
+@api_router.post("/invoices/{iid}/duplicate")
+async def duplicate_invoice(iid: str, user: dict = Depends(require_staff)):
+    return await _duplicate_document(db.invoices, iid, "Invoice", "INV", "invoices", "unpaid")
 
 
 class InternalNotesInput(BaseModel):
@@ -3569,8 +3614,9 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setStrokeColor(grayline); c.setLineWidth(1); c.line(ax - 230, y + 2, R, y + 2); y -= 16
     c.setFont("Helvetica", 10); c.setFillColor(soft); c.drawRightString(ax - 100, y, "Subtotal")
     c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(net_subtotal)); y -= 16
-    if customer and customer.get("tax_exempt"):
-        _tax_lbl = "Tax Exempt" + (f" · {customer.get('tax_exempt_number')}" if customer.get("tax_exempt_number") else "")
+    if (customer and customer.get("tax_exempt")) or doc.get("tax_exempt"):
+        _exnum = doc.get("tax_exempt_number") or (customer.get("tax_exempt_number") if customer else None)
+        _tax_lbl = "Tax Exempt" + (f" · {_exnum}" if _exnum else "")
     else:
         _tax_lbl = f"Tax ({doc.get('tax_rate', 0)}%)"
     c.setFillColor(soft); c.drawRightString(ax - 100, y, _tax_lbl)

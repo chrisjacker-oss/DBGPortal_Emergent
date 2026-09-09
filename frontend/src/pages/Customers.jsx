@@ -37,6 +37,7 @@ export default function Customers() {
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
   const [sortDir, setSortDir] = useState("az");
+  const [q, setQ] = useState("");
   const [stmtCust, setStmtCust] = useState(null);
   const [stmtMonth, setStmtMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [stmtBusy, setStmtBusy] = useState(false);
@@ -72,6 +73,11 @@ export default function Customers() {
 
   const sortKey = (r) => (r.company || r.name || "").trim().toLowerCase();
   const sortedRows = [...rows].sort((a, b) => sortDir === "az" ? sortKey(a).localeCompare(sortKey(b)) : sortKey(b).localeCompare(sortKey(a)));
+  const visibleRows = sortedRows.filter((r) => {
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    return [r.name, r.company, r.email, r.phone, r.tax_exempt_number].some((f) => String(f || "").toLowerCase().includes(s));
+  });
 
   const loadContacts = (cid) => api.get(`/customers/${cid}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
   const openContacts = async (r) => { setContactCust(r); setCForm({ name: "", email: "", phone: "", title: "" }); await loadContacts(r.id); };
@@ -166,6 +172,10 @@ export default function Customers() {
       </PageHeader>
 
       <div className="p-8">
+        <div className="mb-4">
+          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, company, email or phone…" data-testid="customer-search"
+            className="w-full max-w-md border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+        </div>
         <div className="border border-border bg-card">
           <table className="w-full text-sm">
             <thead>
@@ -181,7 +191,7 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody data-testid="customers-table">
-              {sortedRows.map((r) => (
+              {visibleRows.map((r) => (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`customer-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-medium">{r.name}{r.title && <span className="block text-xs text-muted-foreground">{r.title}</span>}</td>
@@ -202,6 +212,9 @@ export default function Customers() {
               ))}
               {rows.length === 0 && (
                 <tr><td colSpan={isAdmin ? 8 : 7} className="px-6 py-10 text-center text-muted-foreground">No customers yet.</td></tr>
+              )}
+              {rows.length > 0 && visibleRows.length === 0 && (
+                <tr><td colSpan={isAdmin ? 8 : 7} className="px-6 py-10 text-center text-muted-foreground">No customers match "{q}".</td></tr>
               )}
             </tbody>
           </table>
@@ -366,7 +379,7 @@ export function Inp({ label, testid, ...props }) {
   return (
     <label className="block">
       <span className="overline text-muted-foreground">{label}</span>
-      <input {...props} data-testid={testid} className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+      <input {...props} data-testid={testid} className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-secondary/40" />
     </label>
   );
 }

@@ -10,7 +10,7 @@ import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
-import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye, Printer } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye, Printer, CopySimple } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 const printDoc = (path) => {
   const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
@@ -64,6 +64,10 @@ export default function Estimates() {
       toast.success(`Emailed to ${data.to}`);
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
+  };
+  const duplicate = async (id) => {
+    try { const { data } = await api.post(`/estimates/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
   };
   const confirmDelete = async (password) => {
     try {
@@ -128,6 +132,7 @@ export default function Estimates() {
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
+                        { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-estimate-${r.id}` },
                         { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" || isSalesman },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
