@@ -49,7 +49,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         setSettings(r.data);
         if (!initial) setForm((f) => (f ? { ...f, tax_rate: r.data.default_tax_rate ?? 0 } : f));
       });
-      if (isAdmin) api.get("/users").then((r) => setSalesmen(r.data.filter((u) => u.role === "salesman"))).catch(() => {});
+      if (isAdmin) api.get("/users").then((r) => setSalesmen([...r.data].sort((a, b) => (a.name || "").localeCompare(b.name || "")))).catch(() => {});
       setForm(
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
@@ -295,10 +295,10 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   {isAdmin ? (
                     <label className="block">
                       <span className="overline text-muted-foreground">Salesman</span>
-                      <select value={form.salesman_id || ""} onChange={(e) => { const sid = e.target.value; const sm = salesmen.find((s) => s.id === sid); setForm({ ...form, salesman_id: sid, commission_rate: sm ? sm.commission_rate : form.commission_rate }); }} data-testid="doc-salesman"
+                      <select value={form.salesman_id || ""} onChange={(e) => { const sid = e.target.value; const sm = salesmen.find((s) => s.id === sid); setForm({ ...form, salesman_id: sid, commission_rate: sm ? (sm.commission_rate || 0) : form.commission_rate }); }} data-testid="doc-salesman"
                         className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
                         <option value="">— unassigned —</option>
-                        {salesmen.map((s) => <option key={s.id} value={s.id}>{`${s.name} (${s.commission_rate}%)`}</option>)}
+                        {salesmen.map((s) => <option key={s.id} value={s.id}>{`${s.name} (${s.commission_rate || 0}%)`}</option>)}
                       </select>
                     </label>
                   ) : (
