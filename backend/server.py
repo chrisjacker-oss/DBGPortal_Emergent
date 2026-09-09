@@ -2844,6 +2844,7 @@ async def set_reorder_status(rid: str, status: str, user: dict = Depends(require
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "DBG Signs, Inc.")
+BCC_COPY_EMAIL = "sales@dbgsigns.com"
 PUBLIC_BASE_URL = os.environ.get("FRONTEND_URL", "")
 LOGO_PATH = ROOT_DIR / "assets" / "dbg_logo.jpg"
 LOGO_URL = f"{PUBLIC_BASE_URL}/api/pub/logo"
@@ -2966,7 +2967,7 @@ def _dims_label(li: dict) -> str:
     return f"{area} sqft"
 
 
-def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None) -> str:
+def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None, pdf_url: Optional[str] = None, track: bool = True) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
@@ -2986,7 +2987,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{escape(_dims_label(li))}</td>'
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0) * factor)}</td></tr>'
         )
-    pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />'
+    pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />' if track else ""
     net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
     label = "Amount Due" if kind_label == "Invoice" else "Total"
     due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
@@ -2998,6 +2999,14 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
             f'<tr><td style="padding:22px 32px 0" align="center">'
             f'<a href="{pay_url}" style="display:inline-block;background:#06B6D4;color:#0A0A0A;text-decoration:none;padding:14px 36px;font-weight:bold;letter-spacing:1px;font-size:14px">PAY WITH CREDIT CARD →</a>'
             f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Click above to pay securely online by card. Powered by Stripe.</div>'
+            f'</td></tr>'
+        )
+    dl_btn = ""
+    if pdf_url:
+        dl_btn = (
+            f'<tr><td style="padding:20px 32px 0" align="center">'
+            f'<a href="{pdf_url}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:13px 32px;font-weight:bold;letter-spacing:1px;font-size:13px">DOWNLOAD {escape(kind_label.upper())} (PDF) →</a>'
+            f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Download a PDF copy of your {escape(kind_label.lower())} for your records.</div>'
             f'</td></tr>'
         )
     return (
@@ -3031,6 +3040,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
         f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>'
         f'</table></td></tr>'
+        f'{dl_btn}'
         f'{pay_btn}'
         # Footer
         f'<tr><td style="padding:22px 32px 28px">'
@@ -3059,9 +3069,19 @@ async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
         raise HTTPException(status_code=400, detail="No email on file for this customer or the selected contact")
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     token = secrets.token_urlsafe(16)
-    html = render_doc_email(kind_label, doc, cname, token, await get_settings())
+    pdf_token = secrets.token_urlsafe(16)
+    await db.pdf_tokens.insert_one({"token": pdf_token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
+    pdf_url = f"{PUBLIC_BASE_URL}/api/pub/pdf/{pdf_token}"
+    company = await get_settings()
+    html = render_doc_email(kind_label, doc, cname, token, company, pdf_url=pdf_url)
     email_id = await send_email(to=to, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
     await db.email_tracking.insert_one({"token": token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
+    # Blind copy to the shop so there is always an internal record of what was sent.
+    try:
+        copy_html = render_doc_email(kind_label, doc, cname, token, company, pdf_url=pdf_url, track=False)
+        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} sent to {cname}", html=copy_html)
+    except Exception as e:
+        logger.warning(f"BCC copy to {BCC_COPY_EMAIL} failed: {e}")
     await collection.update_one({"_id": oid(doc_id)}, {"$set": {
         "email_status": "sent", "email_to": to, "email_sent_at": now_iso(),
         "email_opened_at": None, "email_token": token, "email_id": email_id,
