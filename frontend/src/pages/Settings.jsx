@@ -24,6 +24,9 @@ export default function Settings() {
         shop_sqft_per_hr: Number(form.shop_sqft_per_hr),
         machine_rate_per_hr: Number(form.machine_rate_per_hr),
         machine_sqft_per_hr: Number(form.machine_sqft_per_hr),
+        laminator_rate_per_hr: Number(form.laminator_rate_per_hr),
+        laminator_sqft_per_hr: Number(form.laminator_sqft_per_hr),
+        cnc_rate_per_min: Number(form.cnc_rate_per_min),
         default_markup: Number(form.default_markup),
         default_tax_rate: Number(form.default_tax_rate),
         card_surcharge_enabled: !!form.card_surcharge_enabled,
@@ -92,6 +95,9 @@ export default function Settings() {
             <Inp label="Shop throughput (sqft/hr)" type="number" value={form.shop_sqft_per_hr} onChange={set("shop_sqft_per_hr")} testid="set-shop-sqft" />
             <Inp label="Machine rate ($/hr)" type="number" value={form.machine_rate_per_hr} onChange={set("machine_rate_per_hr")} testid="set-machine-rate" />
             <Inp label="Machine throughput (sqft/hr)" type="number" value={form.machine_sqft_per_hr} onChange={set("machine_sqft_per_hr")} testid="set-machine-sqft" />
+            <Inp label="Laminator rate ($/hr)" type="number" value={form.laminator_rate_per_hr} onChange={set("laminator_rate_per_hr")} testid="set-laminator-rate" />
+            <Inp label="Laminator throughput (sqft/hr)" type="number" value={form.laminator_sqft_per_hr} onChange={set("laminator_sqft_per_hr")} testid="set-laminator-sqft" />
+            <Inp label="CNC Router rate ($/min)" type="number" value={form.cnc_rate_per_min} onChange={set("cnc_rate_per_min")} testid="set-cnc-rate" />
           </div>
           <Inp label="Default material markup (× multiplier)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
           <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />
