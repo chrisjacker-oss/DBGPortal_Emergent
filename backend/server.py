@@ -167,7 +167,6 @@ class LineItem(BaseModel):
     cost_per_sqft: float = 0.0
     line_total_override: Optional[float] = None
     extra_labor_hours: float = 0.0
-    laminated: bool = False
 
 
 class CustomerInput(BaseModel):
@@ -361,16 +360,6 @@ def compute_line(li: dict, s: dict) -> dict:
     sh_sqft = float(s.get("shop_sqft_per_hr") or 0)
     labor_hours_raw = (area / sh_sqft if sh_sqft else 0.0) + float(li.get("extra_labor_hours") or 0)
     labor_cost = round(labor_hours_raw * float(s.get("shop_rate_per_hr") or 0), 2)
-    # Laminator pass (per line, optional): labor + machine time at laminator throughput
-    lam_labor_hours = lam_machine_hours = 0.0
-    if li.get("laminated"):
-        lam_sqft = float(s.get("laminator_sqft_per_hr") or 0)
-        lam_labor_hours = area / lam_sqft if lam_sqft else 0.0
-        lam_machine_hours = area / lam_sqft if lam_sqft else 0.0
-        labor_cost = round(labor_cost + lam_labor_hours * float(s.get("shop_rate_per_hr") or 0), 2)
-        machine_cost = round(machine_cost + lam_machine_hours * float(s.get("laminator_rate_per_hr") or 0), 2)
-        labor_hours_raw += lam_labor_hours
-        machine_hours_raw += lam_machine_hours
     # Shipping, Installation & CNC Router Time are flat charges — no shop/machine labor applied
     if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time"):
         labor_cost = 0.0
@@ -1241,9 +1230,22 @@ async def apply_commission(doc: dict, user: dict) -> dict:
     base = 0.0
     for li in doc.get("line_items", []):
         base += float(li.get("material_margin") or 0)
-    base = round(base, 2)
+    # Laminator machine cost is deducted from the commission base only (not the customer price),
+    # applied to physical sqft at the laminator throughput/rate from Settings.
+    s = await get_settings()
+    lam_sqft = float(s.get("laminator_sqft_per_hr") or 0)
+    lam_rate = float(s.get("laminator_rate_per_hr") or 0)
+    lam_cost = 0.0
+    if lam_sqft and lam_rate:
+        for li in doc.get("line_items", []):
+            if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time"):
+                continue
+            lam_cost += (float(li.get("area_sqft") or 0) / lam_sqft) * lam_rate
+    lam_cost = round(lam_cost, 2)
+    base = round(base - lam_cost, 2)
     doc["commission_rate"] = rate
     doc["commission_base"] = base
+    doc["commission_laminator_cost"] = lam_cost
     doc["commission_amount"] = round(base * rate / 100.0, 2)
     return doc
 
