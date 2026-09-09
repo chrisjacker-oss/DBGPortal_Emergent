@@ -8,7 +8,7 @@ import { Plus, Trash } from "@phosphor-icons/react";
 import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0, laminated: false };
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 const newItem = () => ({ ...emptyItem, _key: uid() });
 
@@ -127,9 +127,13 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
     const area = areaOf(li);
     const material = Number(li.price_per_sqft || 0) * area;
     const flat = ["shipping", "installation", "cnc router time"].includes(String(li.category || "").trim().toLowerCase());
-    const machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
-    const machine = flat ? 0 : machineH * settings.machine_rate_per_hr;
-    const laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
+    let machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
+    let laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
+    if (li.laminated && !flat) {
+      const lamH = settings.laminator_sqft_per_hr > 0 ? area / settings.laminator_sqft_per_hr : 0;
+      laborH += lamH; machineH += lamH;
+    }
+    const machine = flat ? 0 : (settings.machine_sqft_per_hr > 0 ? (area / settings.machine_sqft_per_hr) * settings.machine_rate_per_hr : 0) + (li.laminated && settings.laminator_sqft_per_hr > 0 ? (area / settings.laminator_sqft_per_hr) * settings.laminator_rate_per_hr : 0);
     const labor = flat ? 0 : laborH * settings.shop_rate_per_hr;
     return { area, material, machine, labor, total: material + machine + labor };
   };
@@ -175,6 +179,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           cost_per_sqft: Number(li.cost_per_sqft || 0),
           line_total_override: (li.line_total_override === "" || li.line_total_override == null) ? null : Number(li.line_total_override),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
+          laminated: !!li.laminated,
         })),
     });
   };
@@ -279,6 +284,12 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </div>
                 <div className="px-3 pb-2 pt-1 flex items-center gap-3 min-w-[1000px]">
                   <input value={li.details || ""} onChange={(e) => setItem(i, "details", e.target.value)} placeholder="+ Additional details / specifics for this item (optional)" data-testid={`item-details-${i}`} className="flex-1 min-w-0 border border-input/60 bg-secondary/30 px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring" />
+                  {!(isShip || isInstall || isCnc) && (
+                    <label className="flex items-center gap-1.5 text-xs whitespace-nowrap cursor-pointer select-none" title="Adds laminator labor + machine time (area ÷ throughput)">
+                      <input type="checkbox" checked={!!li.laminated} onChange={(e) => setItem(i, "laminated", e.target.checked)} data-testid={`item-laminate-${i}`} className="h-3.5 w-3.5 accent-[#0A0A0A]" />
+                      Laminate
+                    </label>
+                  )}
                   <div className="text-xs font-mono whitespace-nowrap text-muted-foreground" data-testid={`item-margin-${i}`}>
                     Margin <span className="text-[#16A34A] font-semibold">{lineTotal(li) > 0 ? ((lineMargin(li) / lineTotal(li)) * 100).toFixed(0) : 0}%</span>
                   </div>
