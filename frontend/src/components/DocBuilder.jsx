@@ -155,7 +155,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const totMarginPct = subtotal > 0 ? (totMargin / subtotal) * 100 : 0;
   const totLabor = form.line_items.reduce((s, li) => s + breakdown(li).labor, 0);
   const totMachine = form.line_items.reduce((s, li) => s + breakdown(li).machine, 0);
-  const commissionBase = totMargin;
+  const commissionBase = form.line_items.reduce((s, li) => (String(li.category || "").trim().toLowerCase() === "installation" ? s : s + lineMargin(li)), 0);
   const commission = commissionBase * (Number(form.commission_rate || 0) / 100);
 
   const submit = () => {

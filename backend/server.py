@@ -1231,8 +1231,11 @@ async def apply_commission(doc: dict, user: dict) -> dict:
             rate = float(su.get("commission_rate") or 0)
     # Commission base = gross profit = sale − material cost − shop − machine.
     # Labor & machine are billed at cost, so this equals the sum of material margins.
+    # Installation lines are excluded — installation labor does not earn sales commission.
     base = 0.0
     for li in doc.get("line_items", []):
+        if str(li.get("category") or "").strip().lower() == "installation":
+            continue
         base += float(li.get("material_margin") or 0)
     base = round(base, 2)
     doc["commission_rate"] = rate
