@@ -13,6 +13,8 @@ export default function Portal() {
   const [data, setData] = useState({ invoices: [], reorders: [], customer: null });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ title: "", notes: "", source_invoice_id: "" });
+  const [reorderItems, setReorderItems] = useState([]);
+  const [reorderNum, setReorderNum] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [payAll, setPayAll] = useState(null);
   const [error, setError] = useState(null);
@@ -22,8 +24,8 @@ export default function Portal() {
     .catch((e) => setError(e.response?.data?.detail || "We couldn't load your orders. Please contact DBG Signs."));
   useEffect(() => { load(); }, []);
 
-  const reorderFrom = (inv) => { setForm({ title: inv.title, notes: "", source_invoice_id: inv.id }); setOpen(true); };
-  const openBlank = () => { setForm({ title: "", notes: "", source_invoice_id: "" }); setOpen(true); };
+  const reorderFrom = (inv) => { setForm({ title: inv.title, notes: "", source_invoice_id: inv.id }); setReorderItems(inv.line_items || []); setReorderNum(inv.number); setOpen(true); };
+  const openBlank = () => { setForm({ title: "", notes: "", source_invoice_id: "" }); setReorderItems([]); setReorderNum(null); setOpen(true); };
 
   const submit = async () => {
     try {
@@ -129,6 +131,26 @@ export default function Portal() {
         <DialogContent className="rounded-none max-w-lg">
           <DialogHeader><DialogTitle className="font-display">Request a Reorder</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            {reorderItems.length > 0 && (
+              <div className="border border-border bg-secondary/30" data-testid="reorder-source-items">
+                <div className="px-3 py-2 overline text-muted-foreground border-b border-border">Previously ordered{reorderNum ? ` · ${reorderNum}` : ""}</div>
+                <div className="divide-y divide-border">
+                  {reorderItems.map((li, idx) => (
+                    <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm" data-testid={`reorder-item-${idx}`}>
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{li.description || "Item"}</div>
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {(Number(li.width_in) > 0 && Number(li.height_in) > 0) ? `${li.width_in}" × ${li.height_in}" · ` : ""}Qty {li.quantity ?? 1}
+                          {li.details ? ` · ${li.details}` : ""}
+                        </div>
+                      </div>
+                      <div className="font-mono text-sm shrink-0 ml-3">{currency(li.line_total || 0)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border">These are the items from your previous order. Add any changes in the notes below.</div>
+              </div>
+            )}
             <Inp label="What do you need?" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} testid="reorder-title" />
             <label className="block">
               <span className="overline text-muted-foreground">Notes / changes</span>

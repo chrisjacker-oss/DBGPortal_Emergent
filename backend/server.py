@@ -2949,6 +2949,60 @@ async def email_customer_statement(cid: str, month: str, user: dict = Depends(re
     return {"status": "sent", "to": to}
 
 
+def render_reorder_processed_email(customer_name: str, item_title: str, so_number: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:22px 32px">'
+        f'<div style="font-size:20px;font-weight:bold">Your reorder is being processed</div>'
+        f'<p style="margin:14px 0 0">Hi {escape(customer_name)},</p>'
+        f'<p style="margin:12px 0 0">Good news — your reorder request <strong>{escape(item_title)}</strong> has been received and processed. '
+        f'We have created <strong>Sales Order {escape(str(so_number))}</strong> and our team is getting it into production.</p>'
+        f'<p style="margin:12px 0 0">We will keep you posted as your order progresses. Just reply to this email if you have any questions.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _create_so_from_reorder(reorder: dict, user: dict) -> dict:
+    cid = reorder["customer_id"]
+    src = None
+    if reorder.get("source_invoice_id") and ObjectId.is_valid(reorder["source_invoice_id"]):
+        src = await db.invoices.find_one({"_id": oid(reorder["source_invoice_id"])})
+    if src and src.get("line_items"):
+        line_items = [dict(li) for li in src["line_items"]]
+        tax_rate = float(src.get("tax_rate") or 0)
+        tax_exempt = bool(src.get("tax_exempt"))
+        tax_exempt_number = src.get("tax_exempt_number")
+    else:
+        line_items = [{"description": reorder.get("title") or "Reorder", "quantity": 1, "category": None}]
+        tax_rate, tax_exempt, tax_exempt_number = 0.0, False, None
+    disc = await customer_discount(cid)
+    totals = await compute_totals(line_items, tax_rate, disc)
+    doc = {
+        "customer_id": cid, "contact_id": None,
+        "title": (reorder.get("title") or "Reorder") + " (Reorder)",
+        "customer_po": None, "tax_rate": tax_rate,
+        "tax_exempt": tax_exempt, "tax_exempt_number": tax_exempt_number,
+        "line_items": line_items, "notes": reorder.get("notes") or "",
+        "status": "open", "reorder_id": str(reorder["_id"]),
+        "source_invoice_id": reorder.get("source_invoice_id"),
+    }
+    doc.update(totals)
+    await apply_commission(doc, user)
+    doc["number"] = await next_number("SO", "sales_orders", db.sales_orders, start=29500)
+    doc["created_at"] = now_iso()
+    res = await db.sales_orders.insert_one(doc)
+    return await db.sales_orders.find_one({"_id": res.inserted_id})
+
+
 @api_router.post("/portal/reorder")
 async def portal_reorder(payload: ReorderInput, user: dict = Depends(get_current_user)):
     cust = await current_customer(user)
@@ -2966,15 +3020,44 @@ async def portal_reorder(payload: ReorderInput, user: dict = Depends(get_current
 @api_router.get("/reorders")
 async def list_reorders(user: dict = Depends(require_staff)):
     docs = await db.reorders.find().sort("created_at", -1).to_list(1000)
-    return [clean(d) for d in docs]
+    out = []
+    for d in docs:
+        r = clean(d)
+        if r.get("source_invoice_id") and ObjectId.is_valid(r["source_invoice_id"]):
+            inv = await db.invoices.find_one({"_id": oid(r["source_invoice_id"])}, {"number": 1})
+            r["source_invoice_number"] = inv.get("number") if inv else None
+        out.append(r)
+    return out
 
 
 @api_router.patch("/reorders/{rid}/status")
 async def set_reorder_status(rid: str, status: str, user: dict = Depends(require_staff)):
     if status not in ("requested", "processing", "completed"):
         raise HTTPException(status_code=400, detail="Invalid status")
-    await get_or_404(db.reorders, rid, "Reorder")
-    await db.reorders.update_one({"_id": oid(rid)}, {"$set": {"status": status}})
+    r = await get_or_404(db.reorders, rid, "Reorder")
+    update = {"status": status}
+    if status == "processing" and not r.get("sales_order_id"):
+        so = await _create_so_from_reorder(r, user)
+        update["sales_order_id"] = str(so["_id"])
+        update["sales_order_number"] = so.get("number")
+        try:
+            cust = await db.customers.find_one({"_id": oid(r["customer_id"])}) if ObjectId.is_valid(r["customer_id"]) else None
+            to = cust.get("email") if cust else None
+            if not to:
+                ct = await db.contacts.find_one({"customer_id": r["customer_id"], "email": {"$nin": [None, ""]}})
+                to = ct.get("email") if ct else None
+            if to:
+                company = await get_settings()
+                cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+                html = render_reorder_processed_email(cname, r.get("title") or "your order", so.get("number"), company)
+                await send_email(to=to, subject=f"Your reorder is being processed — {so.get('number')}", html=html)
+                try:
+                    await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Reorder processing — {cname} — {so.get('number')}", html=html)
+                except Exception as e:
+                    logger.warning(f"BCC reorder copy failed: {e}")
+        except Exception as e:
+            logger.warning(f"Reorder processed email failed: {e}")
+    await db.reorders.update_one({"_id": oid(rid)}, {"$set": update})
     return clean(await db.reorders.find_one({"_id": oid(rid)}))
 
 
