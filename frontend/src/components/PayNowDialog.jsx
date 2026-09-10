@@ -44,7 +44,7 @@ function CardForm({ amount, surcharge, onPaid, onClose }) {
   );
 }
 
-export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid }) {
+export default function PayNowDialog({ open, invoice, payAll, paySelected, onClose, onPaid }) {
   const [step, setStep] = useState("amount");
   const [amount, setAmount] = useState("");
   const [chargeAmount, setChargeAmount] = useState(0);
@@ -80,19 +80,33 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
     setBusy(false);
   };
 
+  const startSelected = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post("/payments/create-intent-selected", { invoice_ids: paySelected.invoice_ids });
+      beginCard(data);
+    } catch (e) {
+      setError(e.response?.data?.detail || "Unable to start payment. Please try again.");
+    }
+    setBusy(false);
+  };
+
   useEffect(() => {
     if (open) {
       setClientSecret(null); setStripePromise(null); setError(null); setBusy(false);
       if (payAll) {
         setStep("loading");
         startAll();
+      } else if (paySelected) {
+        setStep("loading");
+        startSelected();
       } else {
         setStep("amount");
         setAmount(String(balance.toFixed(2)));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, invoice, payAll]);
+  }, [open, invoice, payAll, paySelected]);
 
   const startPayment = async () => {
     const amt = Number(amount);
@@ -108,9 +122,11 @@ export default function PayNowDialog({ open, invoice, payAll, onClose, onPaid })
     setBusy(false);
   };
 
-  const titleText = payAll ? "Pay all outstanding" : `Pay Invoice ${invoice?.number || ""}`;
+  const titleText = payAll ? "Pay all outstanding" : paySelected ? "Pay selected invoices" : `Pay Invoice ${invoice?.number || ""}`;
   const descText = payAll
     ? `${payAll.count || ""} invoice${payAll.count === 1 ? "" : "s"} · ${currency(payAll.total)}`
+    : paySelected
+    ? `${paySelected.count || ""} invoice${paySelected.count === 1 ? "" : "s"} · ${currency(paySelected.total)}`
     : `Balance due ${currency(balance)}${paidToDate > 0 ? ` · ${currency(paidToDate)} already paid` : ""}`;
 
   return (

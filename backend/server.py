@@ -1862,6 +1862,48 @@ async def create_payment_intent_all(user: dict = Depends(get_current_user)):
             "amount": total, "count": len(allocations), "surcharge": surcharge, "charged": charged}
 
 
+class PaySelectedInput(BaseModel):
+    invoice_ids: List[str] = []
+
+
+@api_router.post("/payments/create-intent-selected")
+async def create_payment_intent_selected(payload: PaySelectedInput, user: dict = Depends(get_current_user)):
+    if user.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="Selecting invoices to pay is available to portal customers only.")
+    cust = await current_customer(user)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    cid = str(cust["_id"])
+    ids = [i for i in payload.invoice_ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No invoices selected.")
+    invs = await db.invoices.find({"_id": {"$in": [ObjectId(i) for i in ids]}, "customer_id": cid, "voided": {"$ne": True}}).to_list(1000)
+    allocations, total = [], 0.0
+    for inv in invs:
+        bal = round(float(inv.get("total") or 0) - float(inv.get("amount_paid") or 0), 2)
+        if bal > 0:
+            allocations.append({"invoice_id": str(inv["_id"]), "amount": bal})
+            total = round(total + bal, 2)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="The selected invoices have no outstanding balance.")
+    s = await get_settings()
+    surcharge = round(total * float(s.get("card_surcharge_pct") or 0) / 100.0, 2) if s.get("card_surcharge_enabled") else 0.0
+    charged = round(total + surcharge, 2)
+    intent = stripe.PaymentIntent.create(
+        amount=int(round(charged * 100)), currency="usd", payment_method_types=["card"],
+        description="Pay selected invoices - DBG Signs, Inc.",
+        metadata={"customer_id": cid, "bulk": "true", "invoices": str(len(allocations))},
+    )
+    await db.payment_transactions.insert_one({
+        "payment_intent_id": intent.id, "invoice_id": None, "allocations": allocations,
+        "amount": total, "surcharge": surcharge, "charged": charged,
+        "currency": "usd", "status": "initiated", "payment_status": "pending",
+        "created_at": now_iso(), "updated_at": now_iso(),
+    })
+    return {"client_secret": intent.client_secret, "publishable_key": STRIPE_PUBLISHABLE_KEY,
+            "amount": total, "count": len(allocations), "surcharge": surcharge, "charged": charged}
+
+
 @api_router.get("/invoices/{iid}/payments")
 async def invoice_payments(iid: str, user: dict = Depends(get_current_user)):
     await _invoice_for_payment(iid, user)  # enforces customer-owns-invoice

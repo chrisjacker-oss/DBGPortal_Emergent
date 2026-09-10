@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Reorders upgrade — (1) portal reorder dialog shows the source invoice's previous line items; (2) admin Reorders list shows the source invoice number as a clickable link (opens invoice web view) via enriched `list_reorders`; (3) marking a reorder "processing" generates a new Sales Order from the source invoice's line items and emails the customer (blind copy to sales@dbgsigns.com), storing `sales_order_number` on the reorder. Helpers: `_create_so_from_reorder`, `render_reorder_processed_email`.
+- **June 2026**: Portal multi-invoice pay — customers can select specific unpaid invoices (checkboxes + select-all) and pay them together via "Pay selected". Backend `POST /api/payments/create-intent-selected` (customer-only, validates ownership, one Stripe PaymentIntent with per-invoice allocations). PayNowDialog gained a `paySelected` mode.
+- **June 2026**: Reorders upgrade (prior line items on portal, invoice link + SO generation + customer email on Mark processing).
 - **June 2026**: Contact portal checkbox + per-unit price box.
 - **June 2026**: "Create a copy" action + per-document tax exempt checkbox + customer search (tested iteration 15).
 - **June 2026**: Installation excluded from commission — commission base skips category "Installation".

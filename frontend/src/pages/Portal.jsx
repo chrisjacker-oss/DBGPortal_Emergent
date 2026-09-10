@@ -17,6 +17,8 @@ export default function Portal() {
   const [reorderNum, setReorderNum] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [payAll, setPayAll] = useState(null);
+  const [paySelected, setPaySelected] = useState(null);
+  const [sel, setSel] = useState({});
   const [error, setError] = useState(null);
 
   const load = () => api.get("/portal/orders")
@@ -36,6 +38,12 @@ export default function Portal() {
   };
 
   const outstanding = data.invoices.filter((i) => i.status !== "paid").reduce((s, i) => s + (Number(i.total || 0) - Number(i.amount_paid || 0)), 0);
+  const payableInvoices = data.invoices.filter((i) => i.status !== "paid" && (Number(i.total || 0) - Number(i.amount_paid || 0)) > 0.005);
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const selTotal = payableInvoices.filter((i) => sel[i.id]).reduce((s, i) => s + (Number(i.total || 0) - Number(i.amount_paid || 0)), 0);
+  const toggleSel = (id) => setSel((s) => ({ ...s, [id]: !s[id] }));
+  const allPayableChecked = payableInvoices.length > 0 && payableInvoices.every((i) => sel[i.id]);
+  const toggleAllPayable = () => { const n = {}; if (!allPayableChecked) payableInvoices.forEach((i) => (n[i.id] = true)); setSel(n); };
 
   if (error) {
     return (
@@ -57,6 +65,9 @@ export default function Portal() {
   return (
     <div>
       <PageHeader overline={data.customer?.company || data.customer?.name || "Welcome"} title="My Orders">
+        {selTotal > 0.005 && (
+          <Btn onClick={() => setPaySelected({ total: selTotal, count: selIds.length, invoice_ids: selIds })} data-testid="pay-selected-btn"><CreditCard size={16} weight="bold" /> Pay selected ({currency(selTotal)})</Btn>
+        )}
         {outstanding > 0.005 && (
           <Btn onClick={() => setPayAll({ total: outstanding, count: data.invoices.filter((i) => i.status !== "paid").length })} data-testid="pay-all-btn"><CreditCard size={16} weight="bold" /> Pay all ({currency(outstanding)})</Btn>
         )}
@@ -79,6 +90,7 @@ export default function Portal() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left overline text-muted-foreground">
+                  <th className="px-4 py-3 w-10">{payableInvoices.length > 0 && <input type="checkbox" checked={allPayableChecked} onChange={toggleAllPayable} data-testid="portal-select-all" className="h-4 w-4 accent-[#0A0A0A]" title="Select all unpaid" />}</th>
                   <th className="px-6 py-3 font-mono">#</th>
                   <th className="px-6 py-3 font-mono">Job</th>
                   <th className="px-6 py-3 font-mono">Status</th>
@@ -89,6 +101,11 @@ export default function Portal() {
               <tbody data-testid="portal-invoices-table">
                 {data.invoices.map((r) => (
                   <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                    <td className="px-4 py-3">
+                      {r.status !== "paid" && (Number(r.total || 0) - Number(r.amount_paid || 0)) > 0.005 && (
+                        <input type="checkbox" checked={!!sel[r.id]} onChange={() => toggleSel(r.id)} data-testid={`portal-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" />
+                      )}
+                    </td>
                     <td className="px-6 py-3 font-mono">{r.number}</td>
                     <td className="px-6 py-3 font-medium">{r.title}</td>
                     <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
@@ -106,7 +123,7 @@ export default function Portal() {
                     </td>
                   </tr>
                 ))}
-                {data.invoices.length === 0 && <tr><td colSpan={5} className="px-6 py-10 text-center text-muted-foreground">No orders yet. Once we invoice a job it will appear here.</td></tr>}
+                {data.invoices.length === 0 && <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">No orders yet. Once we invoice a job it will appear here.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -166,6 +183,7 @@ export default function Portal() {
       </Dialog>
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <PayNowDialog open={!!payAll} payAll={payAll} onClose={() => setPayAll(null)} onPaid={() => { setPayAll(null); load(); }} />
+      <PayNowDialog open={!!paySelected} paySelected={paySelected} onClose={() => setPaySelected(null)} onPaid={() => { setPaySelected(null); setSel({}); load(); }} />
     </div>
   );
 }
