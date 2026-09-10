@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Per-unit price box — "Unit $" field on each line item (Estimate/SO/Invoice). Line total = unit_price × quantity when set. `unit_price` on LineItem; compute_line precedence: line_total_override > unit_price×qty > computed sqft pricing.
+- **June 2026**: Contact portal checkbox — each customer contact now has a "Portal" checkbox in the Contacts dialog; checking it opens a password dialog and creates the contact's portal login (`POST /contacts/{id}/portal`), which also auto-enables the customer portal. Unchecking removes the login (admin-confirmed). Frontend-only; reuses existing portal-auth endpoints.
+- **June 2026**: Per-unit price box ("Unit $") on line items — line total = unit_price × quantity when set.
 - **June 2026**: "Create a copy" action + per-document tax exempt checkbox + customer search (tested iteration 15).
 - **June 2026**: Installation excluded from commission — commission base skips category "Installation".
 - **June 2026**: Tax exempt customers — checkbox + number on customer form; selecting an exempt customer auto-zeros doc tax; PDF shows "Tax Exempt · {number}".

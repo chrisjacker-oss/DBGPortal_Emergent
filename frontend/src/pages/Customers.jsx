@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
-import { Plus, PencilSimple, Trash, UsersThree, Key, UserMinus, UploadSimple, DownloadSimple, SortAscending, SortDescending, FileText, EnvelopeSimple } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, UsersThree, Key, UploadSimple, DownloadSimple, SortAscending, SortDescending, FileText, EnvelopeSimple } from "@phosphor-icons/react";
 import { downloadCsv, downloadFile } from "@/lib/download";
 import {
   Dialog,
@@ -28,6 +28,9 @@ export default function Customers() {
   const [editing, setEditing] = useState(null);
   const [contactCust, setContactCust] = useState(null);
   const [contacts, setContacts] = useState([]);
+  const [portalContact, setPortalContact] = useState(null);
+  const [portalPw, setPortalPw] = useState("");
+  const [portalBusy, setPortalBusy] = useState(false);
   const [cForm, setCForm] = useState({ name: "", email: "", phone: "", title: "" });
   const [del, setDel] = useState(null); // { url, label, after }
   const [importOpen, setImportOpen] = useState(false);
@@ -87,16 +90,24 @@ export default function Customers() {
     catch { toast.error("Could not add contact"); }
   };
   const delContact = (c) => setDel({ url: `/contacts/${c.id}`, label: `contact ${c.name}`, after: () => loadContacts(contactCust.id) });
-  const togglePortal = async (c) => {
-    if (c.has_portal) {
-      setDel({ url: `/contacts/${c.id}/portal`, label: `portal login for ${c.name}`, after: () => loadContacts(contactCust.id) });
-    } else {
+  const onPortalToggle = (c, checked) => {
+    if (checked) {
       if (!c.email) { toast.error("Add an email to this contact first"); return; }
-      const pw = window.prompt(`Set a portal password for ${c.name}:`);
-      if (!pw) return;
-      try { await api.post(`/contacts/${c.id}/portal`, { password: pw }); toast.success("Portal login created"); loadContacts(contactCust.id); }
-      catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+      setPortalPw(""); setPortalContact(c);
+    } else {
+      setDel({ url: `/contacts/${c.id}/portal`, label: `portal login for ${c.name}`, after: () => loadContacts(contactCust.id) });
     }
+  };
+  const createPortal = async () => {
+    if (!portalContact) return;
+    if (!portalPw || portalPw.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    setPortalBusy(true);
+    try {
+      await api.post(`/contacts/${portalContact.id}/portal`, { password: portalPw });
+      toast.success(`Portal access created for ${portalContact.name}`);
+      setPortalContact(null); setPortalPw(""); loadContacts(contactCust.id);
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to create portal access"); }
+    setPortalBusy(false);
   };
 
   const openNew = () => { setForm(empty); setEditing(null); setOpen(true); };
@@ -287,11 +298,12 @@ export default function Customers() {
                   <div className="text-xs text-muted-foreground font-mono truncate">{c.email || "no email"}{c.phone ? ` · ${c.phone}` : ""}</div>
                   {c.has_portal && <div className="text-[11px] text-[#16A34A] font-mono">● portal login</div>}
                 </div>
-                <div className="flex gap-1 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   {isAdmin && (
-                    <Btn variant="ghost" onClick={() => togglePortal(c)} data-testid={`toggle-portal-${c.id}`} title={c.has_portal ? "Remove portal login" : "Create portal login"}>
-                      {c.has_portal ? <UserMinus size={16} /> : <Key size={16} />}
-                    </Btn>
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Give this contact a customer portal login" data-testid={`portal-label-${c.id}`}>
+                      <input type="checkbox" checked={!!c.has_portal} onChange={(e) => onPortalToggle(c, e.target.checked)} data-testid={`portal-checkbox-${c.id}`} className="h-4 w-4 accent-[#0A0A0A]" />
+                      <span className="text-xs font-mono text-muted-foreground">Portal</span>
+                    </label>
                   )}
                   {isAdmin && <Btn variant="ghost" onClick={() => delContact(c)} data-testid={`delete-contact-${c.id}`}><Trash size={16} /></Btn>}
                 </div>
@@ -312,6 +324,25 @@ export default function Customers() {
           </div>
           <DialogFooter>
             <Btn variant="outline" onClick={() => setContactCust(null)}>Done</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!portalContact} onOpenChange={(o) => { if (!o) { setPortalContact(null); setPortalPw(""); } }}>
+        <DialogContent className="rounded-none max-w-md" data-testid="portal-setup-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Enable portal access</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              Create a customer portal login for <b>{portalContact?.name}</b> ({portalContact?.email}). They'll sign in with this email and the password you set below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Inp label="Portal password" type="password" value={portalPw} onChange={(e) => setPortalPw(e.target.value)} testid="portal-password-input" placeholder="At least 6 characters" />
+            <p className="text-xs text-muted-foreground">Share this password securely with the contact. Enabling this also turns on the customer's portal.</p>
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => { setPortalContact(null); setPortalPw(""); }} data-testid="portal-cancel-btn">Cancel</Btn>
+            <Btn onClick={createPortal} disabled={portalBusy || portalPw.length < 6} data-testid="portal-create-btn"><Key size={16} weight="bold" /> {portalBusy ? "Creating…" : "Create portal access"}</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>
