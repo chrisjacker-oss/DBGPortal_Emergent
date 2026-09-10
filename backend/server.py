@@ -729,6 +729,16 @@ async def bulk_delete_invoices(payload: BulkDeleteInput, user: dict = Depends(re
     return {"deleted": res.deleted_count}
 
 
+@api_router.post("/reorders/bulk-delete")
+async def bulk_delete_reorders(payload: BulkDeleteInput, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    ids = [i for i in payload.ids if ObjectId.is_valid(i)]
+    if not ids:
+        raise HTTPException(status_code=400, detail="No reorders selected")
+    res = await db.reorders.delete_many({"_id": {"$in": [oid(i) for i in ids]}})
+    return {"deleted": res.deleted_count}
+
+
 @api_router.post("/contacts/import")
 async def import_contacts(payload: CustomerImportInput, user: dict = Depends(require_worker)):
     import csv as _csv

@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Portal multi-invoice pay — customers can select specific unpaid invoices (checkboxes + select-all) and pay them together via "Pay selected". Backend `POST /api/payments/create-intent-selected` (customer-only, validates ownership, one Stripe PaymentIntent with per-invoice allocations). PayNowDialog gained a `paySelected` mode.
+- **June 2026**: Reorders bulk delete — admin-only checkboxes (+ select-all) on the Reorders page with a "Delete (N)" button; `POST /api/reorders/bulk-delete` (admin password confirmed).
+- **June 2026**: Portal multi-invoice pay — select invoices and pay together via "Pay selected".
 - **June 2026**: Reorders upgrade (prior line items on portal, invoice link + SO generation + customer email on Mark processing).
 - **June 2026**: Contact portal checkbox + per-unit price box.
 - **June 2026**: "Create a copy" action + per-document tax exempt checkbox + customer search (tested iteration 15).
