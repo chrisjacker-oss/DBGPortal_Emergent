@@ -8,7 +8,7 @@ import { Plus, Trash } from "@phosphor-icons/react";
 import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, line_total_override: "", extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, unit_price: "", line_total_override: "", extra_labor_hours: 0 };
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 const newItem = () => ({ ...emptyItem, _key: uid() });
 
@@ -136,6 +136,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const lineTotal = (li) => {
     const ov = li.line_total_override;
     if (ov !== "" && ov != null && Number(ov) > 0) return Number(ov);
+    const up = li.unit_price;
+    if (up !== "" && up != null && Number(up) > 0) return Number(up) * (Number(li.quantity) || 1);
     return breakdown(li).total;
   };
   const lineMargin = (li) => {
@@ -174,13 +176,14 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           width_in: Number(li.width_in || 0), height_in: Number(li.height_in || 0),
           quantity: Number(li.quantity || 0), price_per_sqft: Number(li.price_per_sqft || 0),
           cost_per_sqft: Number(li.cost_per_sqft || 0),
+          unit_price: (li.unit_price === "" || li.unit_price == null) ? null : Number(li.unit_price),
           line_total_override: (li.line_total_override === "" || li.line_total_override == null) ? null : Number(li.line_total_override),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
         })),
     });
   };
 
-  const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.6fr_0.8fr_0.3fr]";
+  const cols = "grid-cols-[1fr_1.2fr_0.5fr_0.5fr_0.5fr_0.55fr_0.65fr_0.6fr_0.65fr_0.8fr_0.3fr]";
 
   return (
     <>
@@ -218,7 +221,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             <div className={`grid ${cols} gap-2 px-3 py-2 border-b border-border overline text-muted-foreground bg-secondary/50 min-w-[1000px]`}>
               <div>Category</div><div>Material</div><div className="text-right">W(in)</div><div className="text-right">H(in)</div>
               <div className="text-right">Qty</div><div className="text-right">Sqft</div><div className="text-right">Sell/sqft</div><div className="text-right">Extra hrs</div>
-              <div className="text-right">Total</div><div></div>
+              <div className="text-right">Unit $</div><div className="text-right">Total</div><div></div>
             </div>
             {form.line_items.map((li, i) => {
               const cat = li.category || catOfMaterial(li.material_id);
@@ -238,7 +241,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </select>
                 {isShip ? (
                 <>
-                <div style={{ gridColumn: "span 7" }} className="flex items-center gap-2 min-w-0">
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Shipping cost $</span>
                   <input type="number" value={li.cost_per_sqft} onChange={(e) => setItem(i, "cost_per_sqft", e.target.value)} data-testid={`item-cost-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap">+ 30% markup</span>
@@ -247,7 +250,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </>
                 ) : isInstall ? (
                 <>
-                <div style={{ gridColumn: "span 7" }} className="flex items-center gap-2 min-w-0">
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Installation cost $</span>
                   <input type="number" value={li.price_per_sqft} onChange={(e) => setItem(i, "price_per_sqft", e.target.value)} data-testid={`item-install-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                 </div>
@@ -255,7 +258,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </>
                 ) : isCnc ? (
                 <>
-                <div style={{ gridColumn: "span 7" }} className="flex items-center gap-2 min-w-0">
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Minutes</span>
                   <input type="number" value={li.quantity} onChange={(e) => setItem(i, "quantity", e.target.value)} data-testid={`item-cnc-min-${i}`} className="w-28 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap">× {currency(li.price_per_sqft || 0)}/min</span>
@@ -274,6 +277,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <div className="text-right font-mono text-sm text-muted-foreground" data-testid={`item-sqft-${i}`}>{areaOf(li).toFixed(2)}</div>
                 <Cell value={li.price_per_sqft} onChange={(v) => setItem(i, "price_per_sqft", v)} testid={`item-price-${i}`} />
                 <Cell value={li.extra_labor_hours} onChange={(v) => setItem(i, "extra_labor_hours", v)} testid={`item-extra-${i}`} />
+                <Cell value={li.unit_price} onChange={(v) => setItem(i, "unit_price", v)} testid={`item-unit-${i}`} blankZero />
                 <input type="number" value={(li.line_total_override !== "" && li.line_total_override != null) ? li.line_total_override : Number(lineTotal(li).toFixed(2))} onChange={(e) => setItem(i, "line_total_override", e.target.value)} data-testid={`item-line-${i}`} className="w-full min-w-0 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                 </>
                 )}

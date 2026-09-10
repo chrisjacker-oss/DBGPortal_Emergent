@@ -165,6 +165,7 @@ class LineItem(BaseModel):
     quantity: float = 1
     price_per_sqft: float = 0.0
     cost_per_sqft: float = 0.0
+    unit_price: Optional[float] = None
     line_total_override: Optional[float] = None
     extra_labor_hours: float = 0.0
 
@@ -374,7 +375,13 @@ def compute_line(li: dict, s: dict) -> dict:
         machine_cost = 0.0
     computed_total = round(material_cost + labor_cost + machine_cost, 2)
     ov = li.get("line_total_override")
-    line_total = round(float(ov), 2) if (ov is not None and str(ov) != "" and float(ov) > 0) else computed_total
+    up = li.get("unit_price")
+    if ov is not None and str(ov) != "" and float(ov) > 0:
+        line_total = round(float(ov), 2)
+    elif up is not None and str(up) != "" and float(up) > 0:
+        line_total = round(float(up) * (qty if qty > 0 else 1), 2)
+    else:
+        line_total = computed_total
     # Gross profit = sale - material cost - shop - machine (labor/machine billed at cost)
     material_margin = round(line_total - material_buying_cost - labor_cost - machine_cost, 2)
     item = dict(li)

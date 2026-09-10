@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: "Create a copy" action on Estimates/Sales Orders/Invoices (backend `_duplicate_document` + `POST /api/{estimates|sales-orders|invoices}/{id}/duplicate`); per-document "Tax exempt" checkbox in DocBuilder (zeros tax, `tax_exempt`/`tax_exempt_number` on EstimateInput/InvoiceInput, shown on PDF); live customer search on Customers page. Tested by testing_agent iteration 15 (100%).
+- **June 2026**: Per-unit price box — "Unit $" field on each line item (Estimate/SO/Invoice). Line total = unit_price × quantity when set. `unit_price` on LineItem; compute_line precedence: line_total_override > unit_price×qty > computed sqft pricing.
+- **June 2026**: "Create a copy" action + per-document tax exempt checkbox + customer search (tested iteration 15).
 - **June 2026**: Installation excluded from commission — commission base skips category "Installation".
 - **June 2026**: Tax exempt customers — checkbox + number on customer form; selecting an exempt customer auto-zeros doc tax; PDF shows "Tax Exempt · {number}".
 - **June 2026**: Customer PO field — optional "Customer PO" on Estimate/SO/Invoice builder; shown on PDF + email; carried over on approve/convert.
