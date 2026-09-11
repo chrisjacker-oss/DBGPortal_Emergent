@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
@@ -98,6 +98,14 @@ export default function SalesOrders() {
       toast.success(`Deleted ${data.deleted} sales order(s)`); setBulkOpen(false); setSel({}); load(); return true;
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
+  const changeWork = async (r, status) => {
+    if (!status || status === r.work_status) return;
+    try {
+      const { data } = await api.patch(`/sales-orders/${r.id}/work-status`, null, { params: { status } });
+      toast.success(`Work status set · customer emailed`);
+      setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, work_status: data.work_status } : x)));
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to update work status"); }
+  };
 
   return (
     <div>
@@ -120,6 +128,7 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 font-mono">Job</th>
                 <th className="px-6 py-3 font-mono">From</th>
                 <th className="px-6 py-3 font-mono">Status</th>
+                <th className="px-6 py-3 font-mono">Work status</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
                 {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
@@ -137,6 +146,7 @@ export default function SalesOrders() {
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`so-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`so-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
@@ -160,7 +170,7 @@ export default function SalesOrders() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={8 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={9 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
             </tbody>
           </table>
         </div>

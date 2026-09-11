@@ -3069,6 +3069,75 @@ async def portal_reorder(payload: ReorderInput, user: dict = Depends(get_current
     return clean(await db.reorders.find_one({"_id": res.inserted_id}))
 
 
+WORK_STATUS_LABELS = {
+    "approved": "Approved",
+    "in_production": "In Production",
+    "in_finishing": "In Finishing",
+    "ready": "Ready for Pickup / Shipping",
+}
+
+
+def render_work_status_email(customer_name: str, doc_label: str, number: str, status_label: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:22px 32px">'
+        f'<div style="font-size:20px;font-weight:bold">Order status update</div>'
+        f'<p style="margin:14px 0 0">Hi {escape(customer_name)},</p>'
+        f'<p style="margin:12px 0 0">Your order <strong>{escape(doc_label)} {escape(str(number))}</strong> has a new status:</p>'
+        f'<div style="margin:16px 0;padding:14px 18px;background:#0A0A0A;color:#ffffff;text-align:center;font-size:16px;font-weight:bold;letter-spacing:1px">{escape(status_label)}</div>'
+        f'<p style="margin:12px 0 0">We will keep you posted as your order moves forward. Reply to this email with any questions.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _set_work_status(collection, doc_id: str, kind_label: str, status: str):
+    if status not in WORK_STATUS_LABELS:
+        raise HTTPException(status_code=400, detail="Invalid work status")
+    doc = await get_or_404(collection, doc_id, kind_label)
+    if doc.get("work_status") == status:
+        return clean(doc)
+    await collection.update_one({"_id": oid(doc_id)}, {"$set": {"work_status": status}})
+    try:
+        cid = str(doc.get("customer_id") or "")
+        cust = await db.customers.find_one({"_id": oid(cid)}) if ObjectId.is_valid(cid) else None
+        to = cust.get("email") if cust else None
+        if not to and cid:
+            ct = await db.contacts.find_one({"customer_id": cid, "email": {"$nin": [None, ""]}})
+            to = ct.get("email") if ct else None
+        if to:
+            company = await get_settings()
+            cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+            label = WORK_STATUS_LABELS[status]
+            html = render_work_status_email(cname, kind_label, doc.get("number", ""), label, company)
+            await send_email(to=to, subject=f"Order update — {doc.get('number', '')} is now {label}", html=html)
+            try:
+                await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} — {label}", html=html)
+            except Exception as e:
+                logger.warning(f"BCC work-status copy failed: {e}")
+    except Exception as e:
+        logger.warning(f"Work status email failed: {e}")
+    return clean(await collection.find_one({"_id": oid(doc_id)}))
+
+
+@api_router.patch("/sales-orders/{sid}/work-status")
+async def set_so_work_status(sid: str, status: str, user: dict = Depends(require_staff)):
+    return await _set_work_status(db.sales_orders, sid, "Sales Order", status)
+
+
+@api_router.patch("/invoices/{iid}/work-status")
+async def set_invoice_work_status(iid: str, status: str, user: dict = Depends(require_staff)):
+    return await _set_work_status(db.invoices, iid, "Invoice", status)
+
+
 @api_router.get("/reorders")
 async def list_reorders(user: dict = Depends(require_staff)):
     docs = await db.reorders.find().sort("created_at", -1).to_list(1000)

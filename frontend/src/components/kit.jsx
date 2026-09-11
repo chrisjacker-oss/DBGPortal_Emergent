@@ -67,3 +67,24 @@ export function StatusBadge({ status }) {
     </span>
   );
 }
+
+export const WORK_STATUS = [
+  { value: "", label: "— Not set —" },
+  { value: "approved", label: "Approved" },
+  { value: "in_production", label: "In Production" },
+  { value: "in_finishing", label: "In Finishing" },
+  { value: "ready", label: "Ready for Pickup / Shipping" },
+];
+
+export function WorkStatusSelect({ value, onChange, disabled, testid }) {
+  const current = WORK_STATUS.find((w) => w.value === (value || ""));
+  if (disabled) {
+    return <span className="text-xs font-mono text-muted-foreground" data-testid={testid}>{current?.label || "—"}</span>;
+  }
+  return (
+    <select value={value || ""} onChange={(e) => onChange(e.target.value)} data-testid={testid}
+      className="border border-input bg-card px-2 py-1.5 text-xs rounded-none focus:outline-none focus:ring-1 focus:ring-ring">
+      {WORK_STATUS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+    </select>
+  );
+}

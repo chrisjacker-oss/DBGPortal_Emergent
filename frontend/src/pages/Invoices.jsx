@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
@@ -215,6 +215,14 @@ export default function Invoices() {
       toast.success(`Deleted ${data.deleted} invoice(s)`); setBulkOpen(false); setSel({}); load(); return true;
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
+  const changeWork = async (r, status) => {
+    if (!status || status === r.work_status) return;
+    try {
+      const { data } = await api.patch(`/invoices/${r.id}/work-status`, null, { params: { status } });
+      toast.success(`Work status set · customer emailed`);
+      setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, work_status: data.work_status } : x)));
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to update work status"); }
+  };
 
   return (
     <div>
@@ -276,6 +284,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">Job</th>
                 <th className="px-6 py-3 font-mono">{isPaid ? "Paid Date" : "Due"}</th>
                 <th className="px-6 py-3 font-mono">Status</th>
+                <th className="px-6 py-3 font-mono">Work status</th>
                 {isPaid && <th className="px-6 py-3 font-mono">Payment Type</th>}
                 <th className="px-6 py-3 font-mono text-right">Total</th>
                 {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
@@ -296,6 +305,7 @@ export default function Invoices() {
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
                   {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
                     {currency(r.total)}
@@ -338,7 +348,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 11 : 8) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 12 : 9) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>

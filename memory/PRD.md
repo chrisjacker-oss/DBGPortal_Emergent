@@ -26,7 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
-- **June 2026**: Reorders bulk delete — admin-only checkboxes (+ select-all) on the Reorders page with a "Delete (N)" button; `POST /api/reorders/bulk-delete` (admin password confirmed).
+- **June 2026**: Work status — new `work_status` field on Sales Orders & Invoices (Approved / In Production / In Finishing / Ready for Pickup-Shipping) with an inline dropdown per row (shared `WorkStatusSelect`, read-only for salesmen/voided). `PATCH /api/{sales-orders|invoices}/{id}/work-status` emails the customer on change (blind copy to sales@dbgsigns.com); idempotent on same status; invalid → 400.
+- **June 2026**: Reorders bulk delete (admin checkboxes + password-confirmed).
 - **June 2026**: Portal multi-invoice pay — select invoices and pay together via "Pay selected".
 - **June 2026**: Reorders upgrade (prior line items on portal, invoice link + SO generation + customer email on Mark processing).
 - **June 2026**: Contact portal checkbox + per-unit price box.
