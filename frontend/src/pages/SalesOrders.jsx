@@ -88,7 +88,11 @@ export default function SalesOrders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
 
-  const visible = rows.filter((r) => (tab === "voided" ? r.voided : !r.voided));
+  const visible = rows.filter((r) => {
+    if (tab === "voided") return r.voided;
+    if (tab === "approved") return !r.voided && !!r.invoice_id;
+    return !r.voided && !r.invoice_id;
+  });
   const selIds = Object.keys(sel).filter((k) => sel[k]);
   const allChecked = visible.length > 0 && visible.every((r) => sel[r.id]);
   const toggleAll = () => { const n = {}; if (!allChecked) visible.forEach((r) => (n[r.id] = true)); setSel(n); };
@@ -116,6 +120,7 @@ export default function SalesOrders() {
       <div className="p-8">
         <div className="flex gap-2 mb-4" data-testid="so-tabs">
           <Btn variant={tab === "active" ? "solid" : "outline"} onClick={() => setTab("active")} data-testid="so-tab-active">Active</Btn>
+          <Btn variant={tab === "approved" ? "solid" : "outline"} onClick={() => setTab("approved")} data-testid="so-tab-approved">Approved (Invoiced)</Btn>
           <Btn variant={tab === "voided" ? "solid" : "outline"} onClick={() => setTab("voided")} data-testid="so-tab-voided">Voided</Btn>
         </div>
         <div className="border border-border bg-card">
