@@ -5,9 +5,9 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge } from "@/components/kit";
 import { useAuth } from "@/context/AuthContext";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
-import { Trash } from "@phosphor-icons/react";
+import ActionsMenu from "@/components/ActionsMenu";
+import { Trash, ClipboardText, Receipt, CheckCircle } from "@phosphor-icons/react";
 
-const NEXT = { requested: "processing", processing: "completed" };
 const viewInvoice = (id) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api/invoices/${id}/pdf?inline=1`, "_blank");
 
 export default function Reorders() {
@@ -32,14 +32,18 @@ export default function Reorders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); }
   };
 
-  const advance = async (r) => {
-    const status = NEXT[r.status];
-    if (!status) return;
+  const convert = async (r, target) => {
     try {
-      const { data } = await api.patch(`/reorders/${r.id}/status`, null, { params: { status } });
-      if (status === "processing" && data.sales_order_number) toast.success(`Sales order ${data.sales_order_number} created · customer emailed`);
-      else toast.success(`Marked ${status}`);
+      const { data } = await api.post(`/reorders/${r.id}/convert`, null, { params: { target } });
+      toast.success(`Created ${data.converted_number} · customer emailed`);
       load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Convert failed"); }
+  };
+
+  const markCompleted = async (r) => {
+    try {
+      await api.patch(`/reorders/${r.id}/status`, null, { params: { status: "completed" } });
+      toast.success("Marked completed"); load();
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to update"); }
   };
 
@@ -61,12 +65,15 @@ export default function Reorders() {
                 <th className="px-6 py-3 font-mono">Invoice</th>
                 <th className="px-6 py-3 font-mono">Notes</th>
                 <th className="px-6 py-3 font-mono">Status</th>
-                <th className="px-6 py-3 font-mono">Sales Order</th>
+                <th className="px-6 py-3 font-mono">Converted</th>
                 <th className="px-6 py-3 font-mono text-right">Action</th>
               </tr>
             </thead>
             <tbody data-testid="reorders-table">
-              {rows.map((r) => (
+              {rows.map((r) => {
+                const convertedNum = r.converted_number || r.sales_order_number;
+                const convertedType = r.converted_type === "invoice" ? "Invoice" : (convertedNum ? "Sales Order" : "");
+                return (
                 <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => toggle(r.id)} data-testid={`reorder-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
@@ -78,12 +85,19 @@ export default function Reorders() {
                   </td>
                   <td className="px-6 py-3 text-muted-foreground">{r.notes || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`reorder-so-${r.id}`}>{r.sales_order_number || "—"}</td>
-                  <td className="px-6 py-3 text-right">
-                    {NEXT[r.status] && <Btn variant="ghost" onClick={() => advance(r)} data-testid={`advance-reorder-${r.id}`}>Mark {NEXT[r.status]}</Btn>}
+                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`reorder-so-${r.id}`}>{convertedNum ? `${convertedType} ${convertedNum}` : "—"}</td>
+                  <td className="px-6 py-3">
+                    <div className="flex justify-end">
+                      <ActionsMenu testid={`reorder-actions-${r.id}`} items={[
+                        { label: "Convert to Sales Order", icon: <ClipboardText size={16} />, onClick: () => convert(r, "sales_order"), testid: `convert-so-${r.id}`, hidden: !!r.converted_id },
+                        { label: "Convert to Invoice", icon: <Receipt size={16} />, onClick: () => convert(r, "invoice"), testid: `convert-inv-${r.id}`, hidden: !!r.converted_id },
+                        { label: "Mark completed", icon: <CheckCircle size={16} />, onClick: () => markCompleted(r), testid: `complete-reorder-${r.id}`, hidden: r.status === "completed" },
+                      ]} />
+                    </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {rows.length === 0 && <tr><td colSpan={isAdmin ? 8 : 7} className="px-6 py-10 text-center text-muted-foreground">No reorder requests.</td></tr>}
             </tbody>
           </table>
