@@ -88,3 +88,17 @@ export function WorkStatusSelect({ value, onChange, disabled, testid }) {
     </select>
   );
 }
+
+const workStatusColors = {
+  approved: "bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/30",
+  in_production: "bg-[#06B6D4]/10 text-[#0E7490] border-[#06B6D4]/30",
+  in_finishing: "bg-[#F59E0B]/10 text-[#B45309] border-[#F59E0B]/30",
+  ready: "bg-[#D946EF]/10 text-[#A21CAF] border-[#D946EF]/30",
+};
+
+export function WorkStatusBadge({ status, testid }) {
+  const label = WORK_STATUS.find((w) => w.value === status)?.label;
+  if (!label || !status) return <span className="text-xs text-muted-foreground" data-testid={testid}>—</span>;
+  const cls = workStatusColors[status] || "bg-muted text-muted-foreground border-border";
+  return <span className={`inline-block border px-2 py-0.5 text-xs font-mono uppercase tracking-wider ${cls}`} data-testid={testid}>{label}</span>;
+}

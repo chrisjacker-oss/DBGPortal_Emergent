@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatCard, StatusBadge } from "@/components/kit";
+import { Btn, StatCard, StatusBadge, WorkStatusBadge } from "@/components/kit";
 import PayNowDialog from "@/components/PayNowDialog";
 import { Inp } from "@/pages/Customers";
 import { downloadFile } from "@/lib/download";
@@ -94,6 +94,7 @@ export default function Portal() {
                   <th className="px-6 py-3 font-mono">#</th>
                   <th className="px-6 py-3 font-mono">Job</th>
                   <th className="px-6 py-3 font-mono">Status</th>
+                  <th className="px-6 py-3 font-mono">Progress</th>
                   <th className="px-6 py-3 font-mono text-right">Total</th>
                   <th className="px-6 py-3 font-mono text-right">Actions</th>
                 </tr>
@@ -109,6 +110,7 @@ export default function Portal() {
                     <td className="px-6 py-3 font-mono">{r.number}</td>
                     <td className="px-6 py-3 font-medium">{r.title}</td>
                     <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                    <td className="px-6 py-3"><WorkStatusBadge status={r.work_status} testid={`portal-work-status-${r.id}`} /></td>
                     <td className="px-6 py-3 text-right font-mono">
                       {currency(r.total)}
                       {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (
@@ -123,7 +125,7 @@ export default function Portal() {
                     </td>
                   </tr>
                 ))}
-                {data.invoices.length === 0 && <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">No orders yet. Once we invoice a job it will appear here.</td></tr>}
+                {data.invoices.length === 0 && <tr><td colSpan={7} className="px-6 py-10 text-center text-muted-foreground">No orders yet. Once we invoice a job it will appear here.</td></tr>}
               </tbody>
             </table>
           </div>

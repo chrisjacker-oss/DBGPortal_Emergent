@@ -3754,6 +3754,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     y = rule_y - 30
     # Meta (right)
     meta = [("Date", str(doc.get("created_at", ""))[:10])]
+    if doc.get("work_status") in WORK_STATUS_LABELS:
+        meta.append(("Work Status", WORK_STATUS_LABELS[doc["work_status"]]))
     if doc.get("customer_po"):
         meta.append(("Customer PO", str(doc.get("customer_po"))))
     if doc.get("due_date"):
