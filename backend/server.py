@@ -3420,7 +3420,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'{pay_btn}'
         # Footer
         f'<tr><td style="padding:22px 32px 28px">'
-        f'<p style="margin:0 0 4px">Questions about this {escape(kind_label.lower())}? Just reply to this email.</p>'
+        f'<p style="margin:0 0 4px">Questions about this {escape(kind_label.lower())}? Please email sales@dbgsigns.com</p>'
         f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
         f'<div style="font-weight:bold">{escape(cname)}</div>'
         f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
