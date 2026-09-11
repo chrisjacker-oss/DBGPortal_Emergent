@@ -282,6 +282,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
+                <th className="px-6 py-3 font-mono">Order Date</th>
                 <th className="px-6 py-3 font-mono">{isPaid ? "Paid Date" : "Due"}</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono">Work status</th>
@@ -303,6 +304,7 @@ export default function Invoices() {
                   </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
@@ -348,7 +350,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 12 : 9) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 13 : 10) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>

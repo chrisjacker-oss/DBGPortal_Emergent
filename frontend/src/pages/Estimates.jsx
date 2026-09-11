@@ -102,6 +102,7 @@ export default function Estimates() {
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
+                <th className="px-6 py-3 font-mono">Order Date</th>
                 <th className="px-6 py-3 font-mono">Salesman</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono text-right">Commission</th>
@@ -120,6 +121,7 @@ export default function Estimates() {
                   </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.salesman_name || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
@@ -143,7 +145,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={10 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>

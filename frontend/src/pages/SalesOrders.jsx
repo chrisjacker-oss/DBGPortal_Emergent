@@ -131,6 +131,7 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
+                <th className="px-6 py-3 font-mono">Order Date</th>
                 <th className="px-6 py-3 font-mono">From</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono">Work status</th>
@@ -149,6 +150,7 @@ export default function SalesOrders() {
                   </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`so-work-status-${r.id}`} /></td>
@@ -175,7 +177,7 @@ export default function SalesOrders() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={9 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={10 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
             </tbody>
           </table>
         </div>
