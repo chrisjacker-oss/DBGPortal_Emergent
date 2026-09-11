@@ -55,7 +55,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
               customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
-              status: statusOptions[0], due_date: "",
+              status: statusOptions[0], order_date: new Date().toISOString().slice(0, 10), due_date: "",
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
       );
@@ -307,6 +307,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <Inp label="Tax exempt #" value={form.tax_exempt_number || ""} onChange={(e) => set("tax_exempt_number", e.target.value)} testid="doc-tax-exempt-number" placeholder="Optional" />
                 )}
               </div>
+              <Inp label="Order date" type="date" value={form.order_date || ""} onChange={(e) => set("order_date", e.target.value)} testid="doc-order-date" />
               <Inp label="Estimated due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />
               {form.created_at && (
                 <div className="text-xs font-mono text-muted-foreground" data-testid="doc-created-date">Created: {new Date(form.created_at).toLocaleDateString()}</div>

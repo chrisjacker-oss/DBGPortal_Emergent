@@ -206,6 +206,7 @@ class EstimateInput(BaseModel):
     tax_rate: float = 0.0
     tax_exempt: bool = False
     tax_exempt_number: Optional[str] = None
+    order_date: Optional[str] = None
     due_date: Optional[str] = None
     notes: Optional[str] = None
     status: str = "draft"  # draft, sent, approved, rejected
@@ -223,6 +224,7 @@ class InvoiceInput(BaseModel):
     tax_rate: float = 0.0
     tax_exempt: bool = False
     tax_exempt_number: Optional[str] = None
+    order_date: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[str] = None
     status: str = "unpaid"  # unpaid, paid, partial, overdue
@@ -1340,6 +1342,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "number": renumber(est.get("number"), "SO") or await next_number("SO", "sales_orders", db.sales_orders, start=29500),
         "from_estimate": est.get("number"),
         "estimate_id": str(est["_id"]),
+        "order_date": est.get("order_date"),
         "due_date": est.get("due_date"),
         "created_at": now_iso(),
     }
@@ -1428,6 +1431,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "customer_po": so.get("customer_po"),
         "tax_exempt": so.get("tax_exempt", False),
         "tax_exempt_number": so.get("tax_exempt_number"),
+        "order_date": so.get("order_date"),
         "line_items": so.get("line_items", []),
         "tax_rate": so.get("tax_rate", 0),
         "subtotal": so.get("subtotal", 0),
@@ -3781,6 +3785,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     y = rule_y - 30
     # Meta (right)
     meta = [("Date", str(doc.get("created_at", ""))[:10])]
+    if doc.get("order_date"):
+        meta.append(("Order Date", str(doc.get("order_date"))))
     if doc.get("work_status") in WORK_STATUS_LABELS:
         meta.append(("Work Status", WORK_STATUS_LABELS[doc["work_status"]]))
     if doc.get("customer_po"):
