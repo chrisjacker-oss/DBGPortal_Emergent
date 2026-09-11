@@ -206,6 +206,7 @@ class EstimateInput(BaseModel):
     tax_rate: float = 0.0
     tax_exempt: bool = False
     tax_exempt_number: Optional[str] = None
+    due_date: Optional[str] = None
     notes: Optional[str] = None
     status: str = "draft"  # draft, sent, approved, rejected
     commission_rate: float = 0.0
@@ -458,6 +459,14 @@ def strip_margins(doc: dict) -> dict:
     if isinstance(d.get("line_items"), list):
         d["line_items"] = [{k: v for k, v in li.items() if k not in _MARGIN_LINE_FIELDS} for li in d["line_items"]]
     return d
+
+
+def renumber(source_number: Optional[str], new_prefix: str) -> Optional[str]:
+    """Carry a document's numeric id across conversions (EST-29500 -> SO-29500 -> INV-29500)."""
+    if source_number and "-" in str(source_number):
+        return f"{new_prefix}-{str(source_number).split('-', 1)[1]}"
+    return None
+
 
 
 def _apply_doc_margin(row: dict) -> dict:
@@ -1328,9 +1337,10 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "salesman_id": est.get("salesman_id"),
         "salesman_name": est.get("salesman_name"),
         "status": "open",  # open / in_production / fulfilled
-        "number": await next_number("SO", "sales_orders", db.sales_orders, start=29500),
+        "number": renumber(est.get("number"), "SO") or await next_number("SO", "sales_orders", db.sales_orders, start=29500),
         "from_estimate": est.get("number"),
         "estimate_id": str(est["_id"]),
+        "due_date": est.get("due_date"),
         "created_at": now_iso(),
     }
     res = await db.sales_orders.insert_one(doc)
@@ -1432,7 +1442,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "salesman_name": so.get("salesman_name"),
         "status": "unpaid",
         "due_date": (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat(),
-        "number": await next_number("INV", "invoices", db.invoices, start=29500),
+        "number": renumber(so.get("number"), "INV") or await next_number("INV", "invoices", db.invoices, start=29500),
         "from_sales_order": so.get("number"),
         "sales_order_id": str(so["_id"]),
         "created_at": now_iso(),

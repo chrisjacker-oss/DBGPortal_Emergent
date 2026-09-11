@@ -307,7 +307,10 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                   <Inp label="Tax exempt #" value={form.tax_exempt_number || ""} onChange={(e) => set("tax_exempt_number", e.target.value)} testid="doc-tax-exempt-number" placeholder="Optional" />
                 )}
               </div>
-              {isInvoice && <Inp label="Due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />}
+              <Inp label="Estimated due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />
+              {form.created_at && (
+                <div className="text-xs font-mono text-muted-foreground" data-testid="doc-created-date">Created: {new Date(form.created_at).toLocaleDateString()}</div>
+              )}
               <label className="block">
                 <span className="overline text-muted-foreground">Status</span>
                 <select value={form.status} onChange={(e) => set("status", e.target.value)} data-testid="doc-status" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
