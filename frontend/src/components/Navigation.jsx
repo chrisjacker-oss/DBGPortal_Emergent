@@ -29,6 +29,7 @@ const adminLinks = [
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
+  { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
   { to: "/work-orders", label: "Work Orders", icon: Wrench },
   { to: "/time-clock", label: "Time Clock", icon: Timer },
   { to: "/materials", label: "Materials", icon: Stack },
@@ -38,7 +39,6 @@ const adminLinks = [
   { to: "/payables", label: "Payable", icon: ArrowCircleUp },
   { to: "/commissions", label: "Commissions", icon: Percent },
   { to: "/purchase-orders", label: "Purchase Orders", icon: Receipt },
-  { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
   { to: "/team", label: "Team", icon: UsersThree },
   { to: "/settings", label: "Settings", icon: Gear },
 ];
