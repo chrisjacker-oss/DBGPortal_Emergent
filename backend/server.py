@@ -3028,7 +3028,7 @@ def render_reorder_processed_email(customer_name: str, item_title: str, doc_labe
         f'<p style="margin:14px 0 0">Hi {escape(customer_name)},</p>'
         f'<p style="margin:12px 0 0">Good news — your reorder request <strong>{escape(item_title)}</strong> has been received and processed. '
         f'We have created <strong>{escape(doc_label)} {escape(str(doc_number))}</strong> and our team is getting it underway.</p>'
-        f'<p style="margin:12px 0 0">We will keep you posted as your order progresses. Just reply to this email if you have any questions.</p>'
+        f'<p style="margin:12px 0 0">We will keep you posted as your order progresses.</p>'
         f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
         f'<div style="font-weight:bold">{escape(cname)}</div>'
         f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
