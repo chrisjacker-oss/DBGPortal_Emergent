@@ -20,8 +20,6 @@ const printDoc = (path) => {
   setTimeout(go, 1200);
 };
 
-const NEXT = { open: "in_production", in_production: "fulfilled" };
-
 export default function SalesOrders() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -53,14 +51,6 @@ export default function SalesOrders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
 
-  const advance = async (r) => {
-    const status = NEXT[r.status];
-    if (!status) return;
-    try {
-      await api.patch(`/sales-orders/${r.id}/status`, null, { params: { status } });
-      toast.success(`Marked ${status.replace("_", " ")}`); load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Update failed"); }
-  };
   const sendEmail = async (id) => {
     try { const { data } = await api.post(`/sales-orders/${id}/send`); toast.success(`Emailed to ${data.to}`); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
@@ -164,7 +154,6 @@ export default function SalesOrders() {
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/sales-orders/${r.id}/pdf`), testid: `print-so-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-so-${r.id}` },
-                        { label: NEXT[r.status] ? `Advance → ${NEXT[r.status].replace("_", " ")}` : "", icon: <ArrowCounterClockwise size={16} />, onClick: () => advance(r), testid: `advance-so-${r.id}`, hidden: r.voided || !NEXT[r.status] || isSalesman },
                         { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id || isSalesman },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided || isSalesman },
                         { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-so-${r.id}`, hidden: !isAdmin || r.voided },
