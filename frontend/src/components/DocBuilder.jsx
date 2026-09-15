@@ -167,6 +167,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       contact_id: form.contact_id || null,
       customer_po: form.customer_po || "",
       tracking_number: form.tracking_number || "",
+      shipping_type: form.shipping_type || "",
       tax_rate: form.tax_exempt ? 0 : Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
@@ -217,6 +218,14 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             {!isEstimate && (
               <Inp label="Tracking #" value={form.tracking_number || ""} onChange={(e) => set("tracking_number", e.target.value)} testid="doc-tracking-number" placeholder="Optional" />
             )}
+            <label className="block">
+              <span className="overline text-muted-foreground">Shipping type</span>
+              <select value={form.shipping_type || ""} onChange={(e) => set("shipping_type", e.target.value)} data-testid="doc-shipping-type"
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="">None</option>
+                {["Ground", "2 Day Air", "Overnight", "Overnight AM", "LTL"].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
           </div>
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">

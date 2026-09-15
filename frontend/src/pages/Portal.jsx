@@ -112,7 +112,7 @@ export default function Portal() {
                     <td className="px-6 py-3 font-medium">{r.title}</td>
                     <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                     <td className="px-6 py-3"><WorkStatusBadge status={r.work_status} testid={`portal-work-status-${r.id}`} /></td>
-                    <td className="px-6 py-3"><TrackingLink value={r.tracking_number} testid={`portal-tracking-${r.id}`} /></td>
+                    <td className="px-6 py-3"><TrackingLink value={r.tracking_number} shipType={r.shipping_type} testid={`portal-tracking-${r.id}`} /></td>
                     <td className="px-6 py-3 text-right font-mono">
                       {currency(r.total)}
                       {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (

@@ -203,6 +203,7 @@ class EstimateInput(BaseModel):
     title: str
     customer_po: Optional[str] = None
     tracking_number: Optional[str] = None
+    shipping_type: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     tax_exempt: bool = False
@@ -223,6 +224,7 @@ class InvoiceInput(BaseModel):
     title: str
     customer_po: Optional[str] = None
     tracking_number: Optional[str] = None
+    shipping_type: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     tax_exempt: bool = False
@@ -1341,6 +1343,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "contact_id": est.get("contact_id"),
         "title": est["title"],
         "customer_po": est.get("customer_po"),
+        "shipping_type": est.get("shipping_type"),
         "tax_exempt": est.get("tax_exempt", False),
         "tax_exempt_number": est.get("tax_exempt_number"),
         "line_items": est.get("line_items", []),
@@ -1451,6 +1454,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "title": so["title"],
         "customer_po": so.get("customer_po"),
         "tracking_number": so.get("tracking_number"),
+        "shipping_type": so.get("shipping_type"),
         "tax_exempt": so.get("tax_exempt", False),
         "tax_exempt_number": so.get("tax_exempt_number"),
         "order_date": so.get("order_date"),
@@ -3191,11 +3195,12 @@ def carrier_track_url(tracking: str) -> tuple:
     return ("Track", f"https://www.google.com/search?q={_q(t)}")
 
 
-def render_shipped_email(customer_name: str, doc_label: str, number: str, tracking: str, company: Optional[dict] = None) -> str:
+def render_shipped_email(customer_name: str, doc_label: str, number: str, tracking: str, company: Optional[dict] = None, ship_type: Optional[str] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     carrier, track_url = carrier_track_url(tracking)
-    carrier_line = f'<div style="font-size:11px;color:#6B7280;margin-top:6px">via {escape(carrier)}</div>' if carrier and carrier != "Track" else ""
+    via_bits = [b for b in [carrier if carrier and carrier != "Track" else None, ship_type] if b]
+    carrier_line = f'<div style="font-size:11px;color:#6B7280;margin-top:6px">via {escape(" · ".join(via_bits))}</div>' if via_bits else ""
     track_html = (
         f'<a href="{escape(track_url)}" target="_blank" style="font-size:18px;font-weight:bold;font-family:monospace;color:#0E7490;text-decoration:underline">{escape(str(tracking))}</a>'
         if track_url else f'<div style="font-size:18px;font-weight:bold;font-family:monospace">{escape(str(tracking))}</div>'
@@ -3246,7 +3251,7 @@ async def _notify_shipped(collection, doc_id: str, kind_label: str, old_tracking
             return
         company = await get_settings()
         cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
-        html = render_shipped_email(cname, kind_label, doc.get("number", ""), new, company)
+        html = render_shipped_email(cname, kind_label, doc.get("number", ""), new, company, ship_type=doc.get("shipping_type"))
         await send_email(to=to, subject=f"Your order {doc.get('number', '')} has shipped — DBG Signs, Inc.", html=html)
         try:
             await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Shipped — {kind_label} {doc.get('number', '')} to {cname}", html=html)
@@ -3649,7 +3654,10 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
     po_html = f'<div style="color:#6B7280;font-size:12px">Your PO: {escape(str(doc.get("customer_po")))}</div>' if doc.get("customer_po") else ""
     if doc.get("tracking_number"):
-        po_html += f'<div style="color:#6B7280;font-size:12px">Tracking #: {escape(str(doc.get("tracking_number")))}</div>'
+        ship_m = f' ({escape(str(doc.get("shipping_type")))})' if doc.get("shipping_type") else ""
+        po_html += f'<div style="color:#6B7280;font-size:12px">Tracking #{ship_m}: {escape(str(doc.get("tracking_number")))}</div>'
+    elif doc.get("shipping_type"):
+        po_html += f'<div style="color:#6B7280;font-size:12px">Ship method: {escape(str(doc.get("shipping_type")))}</div>'
     attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
     pay_btn = ""
     if kind_label in ("Invoice", "Sales Order") and not doc.get("voided"):
@@ -4107,6 +4115,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         meta.append(("Work Status", WORK_STATUS_LABELS[doc["work_status"]]))
     if doc.get("customer_po"):
         meta.append(("Customer PO", str(doc.get("customer_po"))))
+    if doc.get("shipping_type"):
+        meta.append(("Ship Method", str(doc.get("shipping_type"))))
     if doc.get("tracking_number"):
         meta.append(("Tracking #", str(doc.get("tracking_number"))))
     if doc.get("due_date"):
