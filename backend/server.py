@@ -1383,6 +1383,7 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
     doc["number"] = await next_number("SO", "sales_orders", db.sales_orders, start=29500)
     doc["created_at"] = now_iso()
     res = await db.sales_orders.insert_one(doc)
+    await _notify_shipped(db.sales_orders, str(res.inserted_id), "Sales Order", None, payload.tracking_number)
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": res.inserted_id})))
 
 
@@ -1399,6 +1400,7 @@ async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depe
         if existing.get(k):
             doc[k] = existing[k]
     await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": doc})
+    await _notify_shipped(db.sales_orders, sid, "Sales Order", existing.get("tracking_number"), payload.tracking_number)
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
 
 
@@ -1505,17 +1507,19 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
     doc["number"] = await next_number("INV", "invoices", db.invoices, start=29500)
     doc["created_at"] = now_iso()
     res = await db.invoices.insert_one(doc)
+    await _notify_shipped(db.invoices, str(res.inserted_id), "Invoice", None, payload.tracking_number)
     return await enrich_customer(clean(await db.invoices.find_one({"_id": res.inserted_id})))
 
 
 @api_router.put("/invoices/{iid}")
 async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_staff)):
-    await get_or_404(db.invoices, iid, "Invoice")
+    existing = await get_or_404(db.invoices, iid, "Invoice")
     disc = await customer_discount(payload.customer_id)
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": doc})
+    await _notify_shipped(db.invoices, iid, "Invoice", existing.get("tracking_number"), payload.tracking_number)
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
 
 
@@ -3158,6 +3162,63 @@ async def _set_work_status(collection, doc_id: str, kind_label: str, status: str
     return clean(await collection.find_one({"_id": oid(doc_id)}))
 
 
+def render_shipped_email(customer_name: str, doc_label: str, number: str, tracking: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#16A34A"></div></td></tr>'
+        f'<tr><td style="padding:22px 32px">'
+        f'<div style="font-size:20px;font-weight:bold">Your order has shipped</div>'
+        f'<p style="margin:14px 0 0">Hi {escape(customer_name)},</p>'
+        f'<p style="margin:12px 0 0">Good news — your order <strong>{escape(doc_label)} {escape(str(number))}</strong> is on its way!</p>'
+        f'<div style="margin:16px 0;padding:14px 18px;background:#F9FAFB;border:1px solid #E5E7EB;text-align:center">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Tracking #</div>'
+        f'<div style="font-size:18px;font-weight:bold;font-family:monospace;margin-top:4px">{escape(str(tracking))}</div></div>'
+        f'<p style="margin:12px 0 0">Reply to this email with any questions.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _notify_shipped(collection, doc_id: str, kind_label: str, old_tracking, new_tracking):
+    old = (old_tracking or "").strip()
+    new = (new_tracking or "").strip()
+    if not new or new == old:
+        return
+    try:
+        doc = await collection.find_one({"_id": oid(doc_id)})
+        if not doc:
+            return
+        cid = str(doc.get("customer_id") or "")
+        cust = await db.customers.find_one({"_id": oid(cid)}) if ObjectId.is_valid(cid) else None
+        to = cust.get("email") if cust else None
+        if not to and doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+            ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+            to = ct.get("email") if ct else None
+        if not to and cid:
+            ct = await db.contacts.find_one({"customer_id": cid, "email": {"$nin": [None, ""]}})
+            to = ct.get("email") if ct else None
+        if not to:
+            return
+        company = await get_settings()
+        cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+        html = render_shipped_email(cname, kind_label, doc.get("number", ""), new, company)
+        await send_email(to=to, subject=f"Your order {doc.get('number', '')} has shipped — DBG Signs, Inc.", html=html)
+        try:
+            await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Shipped — {kind_label} {doc.get('number', '')} to {cname}", html=html)
+        except Exception as e:
+            logger.warning(f"BCC shipped copy failed: {e}")
+        await collection.update_one({"_id": oid(doc_id)}, {"$set": {"shipped_notified_at": now_iso()}})
+    except Exception as e:
+        logger.warning(f"Shipped notice failed: {e}")
+
+
 @api_router.patch("/sales-orders/{sid}/work-status")
 async def set_so_work_status(sid: str, status: str, user: dict = Depends(require_staff)):
     return await _set_work_status(db.sales_orders, sid, "Sales Order", status)
@@ -3552,6 +3613,7 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
     await collection.update_one({"_id": oid(doc_id)}, {"$set": {
         "email_status": "sent", "email_to": to, "email_sent_at": now_iso(),
         "email_opened_at": None, "email_token": token, "email_id": email_id,
+        "email_recipients": to_list,
     }})
     return {"status": "sent", "to": to}
 

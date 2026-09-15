@@ -5,11 +5,17 @@ export function ReceiptBadge({ doc }) {
   if (!doc?.email_sent_at) return <span className="text-xs text-muted-foreground" data-testid="receipt-none">—</span>;
   const opened = doc.email_opened_at;
   const when = new Date(opened || doc.email_sent_at).toLocaleString();
+  const recipients = Array.isArray(doc.email_recipients) && doc.email_recipients.length
+    ? doc.email_recipients
+    : (doc.email_to ? String(doc.email_to).split(",").map((s) => s.trim()).filter(Boolean) : []);
+  const n = recipients.length;
+  const label = n > 1 ? `Emailed to ${n} people` : `Emailed to ${n || 1}`;
+  const tip = `${opened ? `Opened ${when}` : `Sent ${when}`}${recipients.length ? ` · ${recipients.join(", ")}` : ""}`;
   return (
-    <span data-testid="receipt-badge" title={opened ? `Opened ${when}` : `Sent ${when}`}
-      className={`inline-flex items-center gap-1 text-xs font-mono ${opened ? "text-[#16A34A]" : "text-[#B45309]"}`}>
+    <span data-testid="receipt-badge" title={tip}
+      className="inline-flex items-center gap-1 text-xs font-mono text-[#16A34A]">
       {opened ? <CheckCircle size={14} weight="bold" /> : <PaperPlaneTilt size={14} weight="bold" />}
-      {opened ? "Read" : "Sent"}
+      {label}
     </span>
   );
 }

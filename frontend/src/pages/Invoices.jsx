@@ -285,6 +285,7 @@ export default function Invoices() {
                 <th className="px-6 py-3 font-mono">{isPaid ? "Paid Date" : "Due"}</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono">Work status</th>
+                <th className="px-6 py-3 font-mono">Tracking #</th>
                 {isPaid && <th className="px-6 py-3 font-mono">Payment Type</th>}
                 <th className="px-6 py-3 font-mono text-right">Total</th>
                 {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
@@ -307,6 +308,7 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`invoice-tracking-${r.id}`}>{r.tracking_number || "—"}</td>
                   {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
                     {currency(r.total)}
@@ -349,7 +351,7 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 13 : 10) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 14 : 11) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
             </tbody>
           </table>
         </div>

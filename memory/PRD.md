@@ -51,8 +51,11 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Multi-recipient send**: "Email to customer" on Estimates/Sales Orders/Invoices now opens a **SendDialog** (`components/SendDialog.jsx`) listing the customer's company email + all contacts with emails as checkboxes (current contact/company preselected), plus an "add another email" field. Sends one email to all selected recipients. Backend: `SendDocInput{recipients:[]}` on the three `/send` endpoints; `_send_document` accepts a recipient list (dedupes, joins), `send_email` accepts str or list. `enrich_customer` now returns `customer_email`. BCC copy to sales@dbgsigns.com unchanged. Empty recipients falls back to the default single recipient. Verified end-to-end.
-- **Tracking #** field on Sales Orders & Invoices only (not Estimates): text box next to Customer PO in `DocBuilder.jsx` (`doc-tracking-number`). Backend `tracking_number` on Estimate/Invoice models; carries SO→Invoice; renders on customer PDF ("Tracking #") and in the document email. Verified end-to-end.
+- **Shipped notice**: adding/changing a Tracking # on a Sales Order or Invoice (create or edit) auto-sends a branded "your order has shipped" email to the customer (contact/company email) with the tracking number, plus an internal copy to sales@dbgsigns.com. Only fires when tracking transitions to a new non-empty value (no email on SO→Invoice conversion since that's an insert with tracking already set on the SO). Stores `shipped_notified_at`. Helper `_notify_shipped` + `render_shipped_email` in server.py.
+- **Tracking # column**: added to Sales Orders and Invoices list tables (after Work status), shows value or "—". testids `so-tracking-{id}` / `invoice-tracking-{id}`.
+- **Remember recipients**: `_send_document` stores `email_recipients` list; `ReceiptBadge` (kit.jsx) now shows a green "Emailed to N people" note with a tooltip listing addresses + sent/opened time.
+- **Multi-recipient send**: "Email to customer" opens **SendDialog** (contacts + company email checkboxes, preselected default, add-another-email field). Backend `SendDocInput{recipients:[]}`; `_send_document` accepts list; `send_email` accepts str|list; `enrich_customer` returns `customer_email`.
+- **Tracking #** field on Sales Orders & Invoices builder (not Estimates), next to Customer PO; carries SO→Invoice; on PDF + email.
 
 ## Constraints
 - Preview only; production requires user Deploy.
