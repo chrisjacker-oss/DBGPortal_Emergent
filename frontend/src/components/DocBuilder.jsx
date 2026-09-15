@@ -192,9 +192,6 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       <DialogContent className="rounded-none max-w-5xl w-[95vw] max-h-[92vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="font-display">{initial ? "Edit" : "New"} {label}</DialogTitle>
-          <DialogDescription className="font-mono text-xs">
-            Shop {currency(settings.shop_rate_per_hr)}/hr @ {settings.shop_sqft_per_hr} sqft/hr · Machine {currency(settings.machine_rate_per_hr)}/hr @ {settings.machine_sqft_per_hr} sqft/hr · hours auto-derived from area
-          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 min-w-0">
