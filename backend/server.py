@@ -266,6 +266,8 @@ class InstallInput(BaseModel):
     customer_id: str
     contact_id: Optional[str] = None
     description: str = ""
+    linked_type: Optional[str] = None  # sales_order | invoice
+    linked_id: Optional[str] = None
 
 
 class SettingsInput(BaseModel):
@@ -3275,10 +3277,13 @@ INSTALL_PREP_NOTE = (
 )
 
 
-def render_install_email(customer_name: str, contact_name: Optional[str], date: str, time_label: str, description: str, company: Optional[dict] = None) -> str:
+def render_install_email(customer_name: str, contact_name: Optional[str], date: str, time_label: str, description: str, company: Optional[dict] = None, reminder: bool = False) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     greet = escape(contact_name or customer_name or "there")
+    heading = "Reminder: your installation is tomorrow" if reminder else "Your installation is scheduled"
+    lead = (f'This is a friendly reminder that your installation with <strong>{escape(cname)}</strong> is scheduled for tomorrow.'
+            if reminder else f'You have an installation scheduled with <strong>{escape(cname)}</strong>.')
     desc_html = (
         f'<div style="margin:16px 0;padding:14px 18px;background:#F9FAFB;border:1px solid #E5E7EB">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">What we\'re installing</div>'
@@ -3290,9 +3295,9 @@ def render_install_email(customer_name: str, contact_name: Optional[str], date: 
         f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td></tr>'
         f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
         f'<tr><td style="padding:22px 32px">'
-        f'<div style="font-size:20px;font-weight:bold">Your installation is scheduled</div>'
+        f'<div style="font-size:20px;font-weight:bold">{escape(heading)}</div>'
         f'<p style="margin:14px 0 0">Hi {greet},</p>'
-        f'<p style="margin:12px 0 0">You have an installation scheduled with <strong>{escape(cname)}</strong>.</p>'
+        f'<p style="margin:12px 0 0">{lead}</p>'
         f'<div style="margin:16px 0;padding:14px 18px;background:#0A0A0A;color:#ffffff;text-align:center">'
         f'<div style="font-size:22px;font-weight:bold;letter-spacing:1px">{escape(str(date))}</div>'
         f'<div style="font-size:13px;color:#D1D5DB;margin-top:4px">{escape(time_label)}</div></div>'
@@ -3319,10 +3324,14 @@ async def _enrich_install(d: dict) -> dict:
         d["contact_name"] = ct.get("name") if ct else None
         d["contact_email"] = ct.get("email") if ct else None
     d["time_label"] = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
+    if d.get("linked_type") and d.get("linked_id") and ObjectId.is_valid(str(d["linked_id"])):
+        coll = db.sales_orders if d["linked_type"] == "sales_order" else db.invoices
+        ld = await coll.find_one({"_id": oid(str(d["linked_id"]))}, {"number": 1})
+        d["linked_number"] = ld.get("number") if ld else None
     return d
 
 
-async def _notify_install(iid: str) -> dict:
+async def _notify_install(iid: str, reminder: bool = False) -> dict:
     d = await db.installs.find_one({"_id": oid(iid)})
     if not d:
         return {"status": "skipped"}
@@ -3341,13 +3350,17 @@ async def _notify_install(iid: str) -> dict:
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     label = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
     company = await get_settings()
-    html = render_install_email(cname, contact_name, d.get("date", ""), label, d.get("description", ""), company)
-    await send_email(to=to, subject=f"Installation scheduled for {d.get('date', '')} — DBG Signs, Inc.", html=html)
+    html = render_install_email(cname, contact_name, d.get("date", ""), label, d.get("description", ""), company, reminder=reminder)
+    subject = (f"Reminder: installation tomorrow ({d.get('date', '')}) — DBG Signs, Inc." if reminder
+               else f"Installation scheduled for {d.get('date', '')} — DBG Signs, Inc.")
+    await send_email(to=to, subject=subject, html=html)
+    tag = "Reminder" if reminder else "Install scheduled"
     try:
-        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Install scheduled {d.get('date', '')} — {cname}", html=html)
+        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {tag} {d.get('date', '')} — {cname}", html=html)
     except Exception as e:
         logger.warning(f"BCC install copy failed: {e}")
-    await db.installs.update_one({"_id": oid(iid)}, {"$set": {"notified_at": now_iso(), "notified_to": to}})
+    field = "reminder_sent_at" if reminder else "notified_at"
+    await db.installs.update_one({"_id": oid(iid)}, {"$set": {field: now_iso(), "notified_to": to}})
     return {"status": "sent", "to": to}
 
 
@@ -4802,6 +4815,39 @@ async def cron_overdue_reminders(request: Request):
         body = {}
     run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or secrets.token_hex(8)
     asyncio.create_task(_run_overdue_reminders(run_id))
+    return {"status": "accepted", "run_id": run_id}
+
+
+async def _run_install_reminders(run_id: str) -> None:
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return
+    await db.cron_runs.insert_one({"run_id": run_id, "job": "install-reminders", "at": now_iso()})
+    tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+    installs = await db.installs.find({"date": tomorrow, "reminder_sent_at": {"$exists": False}}).to_list(1000)
+    sent = 0
+    for it in installs:
+        try:
+            r = await _notify_install(str(it["_id"]), reminder=True)
+            if r.get("status") == "sent":
+                sent += 1
+        except Exception as e:
+            logger.error(f"Install reminder failed for {it.get('_id')}: {e}")
+    logger.info(f"Install reminder run {run_id}: {sent} email(s) sent for {tomorrow}")
+
+
+@api_router.post("/cron/install-reminders")
+async def cron_install_reminders(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not WEBHOOK_CRON_SECRET or not hmac.compare_digest(token, WEBHOOK_CRON_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or secrets.token_hex(8)
+    asyncio.create_task(_run_install_reminders(run_id))
     return {"status": "accepted", "run_id": run_id}
 
 

@@ -15,13 +15,14 @@ const pad = (n) => String(n).padStart(2, "0");
 const ymOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const emptyForm = { date: "", time_of_day: "morning", customer_id: "", contact_id: "", description: "" };
+const emptyForm = { date: "", time_of_day: "morning", customer_id: "", contact_id: "", description: "", linked_type: "", linked_id: "" };
 
 export default function Installs() {
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [installs, setInstalls] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -33,21 +34,29 @@ export default function Installs() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [ym]);
   useEffect(() => { api.get("/customers").then((r) => setCustomers(r.data)).catch(() => {}); }, []);
   useEffect(() => {
-    if (open && form.customer_id) api.get(`/customers/${form.customer_id}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
-    else if (open) setContacts([]);
+    if (open && form.customer_id) {
+      api.get(`/customers/${form.customer_id}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
+      Promise.all([api.get("/sales-orders").catch(() => ({ data: [] })), api.get("/invoices").catch(() => ({ data: [] }))]).then(([so, inv]) => {
+        const opts = [
+          ...so.data.filter((x) => x.customer_id === form.customer_id && !x.voided).map((x) => ({ value: `sales_order:${x.id}`, label: `${x.number} · ${x.title || "Sales Order"}` })),
+          ...inv.data.filter((x) => x.customer_id === form.customer_id && !x.voided).map((x) => ({ value: `invoice:${x.id}`, label: `${x.number} · ${x.title || "Invoice"}` })),
+        ];
+        setJobs(opts);
+      });
+    } else if (open) { setContacts([]); setJobs([]); }
   }, [open, form.customer_id]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const openAdd = (dateStr) => { setEditing(null); setForm({ ...emptyForm, date: dateStr || todayStr() }); setOpen(true); };
-  const openEdit = (it) => { setEditing(it); setForm({ date: it.date, time_of_day: it.time_of_day || "morning", customer_id: it.customer_id || "", contact_id: it.contact_id || "", description: it.description || "" }); setOpen(true); };
+  const openEdit = (it) => { setEditing(it); setForm({ date: it.date, time_of_day: it.time_of_day || "morning", customer_id: it.customer_id || "", contact_id: it.contact_id || "", description: it.description || "", linked_type: it.linked_type || "", linked_id: it.linked_id || "" }); setOpen(true); };
 
   const save = async () => {
     if (!form.customer_id) { toast.error("Select a customer"); return; }
     if (!form.date) { toast.error("Pick a date"); return; }
     setSaving(true);
     try {
-      const payload = { ...form, contact_id: form.contact_id || null };
+      const payload = { ...form, contact_id: form.contact_id || null, linked_type: form.linked_type || null, linked_id: form.linked_id || null };
       if (editing) {
         await api.put(`/installs/${editing.id}`, payload);
         toast.success("Install updated");
@@ -121,6 +130,7 @@ export default function Installs() {
                             className="w-full text-left bg-[#0A0A0A] text-white px-1.5 py-1 text-[11px] leading-tight hover:bg-[#0A0A0A]/85">
                             <span className="inline-block bg-[#06B6D4] text-[9px] font-bold uppercase px-1 mr-1">{it.time_label === "Afternoon" ? "PM" : "AM"}</span>
                             <span className="font-medium">{it.customer_name}</span>
+                            {it.linked_number ? <span className="block text-[10px] text-[#67E8F9]">{it.linked_number}</span> : null}
                             {it.description ? <span className="block text-[10px] text-gray-300 truncate">{it.description}</span> : null}
                           </button>
                         ))}
@@ -164,6 +174,16 @@ export default function Installs() {
                 className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50">
                 <option value="">{contacts.length ? "Use customer email" : "No contacts on file — uses customer email"}</option>
                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}{c.email ? ` — ${c.email}` : " (no email)"}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="overline text-muted-foreground">Link to job (optional)</span>
+              <select value={form.linked_type && form.linked_id ? `${form.linked_type}:${form.linked_id}` : ""}
+                onChange={(e) => { const [t, id] = e.target.value ? e.target.value.split(":") : ["", ""]; setForm((f) => ({ ...f, linked_type: t, linked_id: id })); }}
+                data-testid="install-link-job" disabled={!form.customer_id}
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50">
+                <option value="">{jobs.length ? "Not linked" : "No sales orders / invoices for this customer"}</option>
+                {jobs.map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}
               </select>
             </label>
             <label className="block">
