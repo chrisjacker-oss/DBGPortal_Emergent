@@ -24,6 +24,7 @@ export default function Materials() {
   const [newCat, setNewCat] = useState("");
   const [del, setDel] = useState(null); // { url, label, after }
   const [sortBy, setSortBy] = useState("category");
+  const [filterCat, setFilterCat] = useState("all");
 
   const load = () => api.get("/materials").then((r) => setRows(r.data));
   const loadCats = () => api.get("/material-categories").then((r) => setCats(r.data)).catch(() => {});
@@ -87,10 +88,21 @@ export default function Materials() {
     }
     return name;
   });
+  const visibleRows = filterCat === "all"
+    ? sortedRows
+    : sortedRows.filter((m) => (m.category || "Uncategorized") === filterCat);
 
   return (
     <div>
       <PageHeader overline="Inventory · Costing" title="Materials">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="overline text-muted-foreground">Category</span>
+          <select value={filterCat} onChange={(e) => setFilterCat(e.target.value)} data-testid="materials-filter-category"
+            className="border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+            <option value="all">All categories</option>
+            {cats.all.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <span className="overline text-muted-foreground">Sort by</span>
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} data-testid="materials-sort-by"
@@ -120,7 +132,7 @@ export default function Materials() {
               </tr>
             </thead>
             <tbody data-testid="materials-table">
-              {sortedRows.map((m) => (
+              {visibleRows.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   <td className="px-5 py-3">
                     <div className="font-medium">{m.name}</div>
@@ -141,7 +153,7 @@ export default function Materials() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">No materials yet.</td></tr>}
+              {visibleRows.length === 0 && <tr><td colSpan={9} className="px-6 py-10 text-center text-muted-foreground">{rows.length === 0 ? "No materials yet." : "No materials in this category."}</td></tr>}
             </tbody>
           </table>
         </div>
