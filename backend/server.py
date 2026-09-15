@@ -1233,6 +1233,7 @@ async def public_logo():
 async def enrich_customer(doc: dict) -> dict:
     cust = await db.customers.find_one({"_id": ObjectId(doc["customer_id"])}) if doc.get("customer_id") else None
     doc["customer_name"] = cust.get("company") or cust.get("name") if cust else "Unknown"
+    doc["customer_email"] = cust.get("email") if cust else None
     if doc.get("contact_id") and ObjectId.is_valid(doc["contact_id"]):
         ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
         doc["contact_name"] = ct.get("name") if ct else None
@@ -3309,9 +3310,11 @@ def _assert_safe_email(subject: str, html: str) -> None:
                 raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
 
 
-async def send_email(*, to: str, subject: str, html: str) -> Optional[str]:
+async def send_email(*, to, subject: str, html: str) -> Optional[str]:
     _assert_safe_email(subject, html)
-    payload = {"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    to_list = to if isinstance(to, list) else [to]
+    to_list = [t for t in to_list if t]
+    payload = {"to": to_list, "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
@@ -3510,17 +3513,27 @@ def render_statement_email(customer_name: str, period_label: str, invoices: list
     )
 
 
-async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
+async def _send_document(collection, doc_id: str, kind_label: str, recipients: Optional[List[str]] = None) -> dict:
     doc = await get_or_404(collection, doc_id, kind_label)
     await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
-    to = (cust or {}).get("email")
-    if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
-        ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
-        if ct and ct.get("email"):
-            to = ct["email"]
-    if not to:
+    if recipients:
+        to_list, seen = [], set()
+        for e in recipients:
+            e = (e or "").strip()
+            if e and e.lower() not in seen:
+                seen.add(e.lower())
+                to_list.append(e)
+    else:
+        to = (cust or {}).get("email")
+        if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+            ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+            if ct and ct.get("email"):
+                to = ct["email"]
+        to_list = [to] if to else []
+    if not to_list:
         raise HTTPException(status_code=400, detail="No email on file for this customer or the selected contact")
+    to = ", ".join(to_list)
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     token = secrets.token_urlsafe(16)
     pdf_token = secrets.token_urlsafe(16)
@@ -3528,7 +3541,7 @@ async def _send_document(collection, doc_id: str, kind_label: str) -> dict:
     pdf_url = f"{PUBLIC_BASE_URL}/api/pub/pdf/{pdf_token}"
     company = await get_settings()
     html = render_doc_email(kind_label, doc, cname, token, company, pdf_url=pdf_url)
-    email_id = await send_email(to=to, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
+    email_id = await send_email(to=to_list, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
     await db.email_tracking.insert_one({"token": token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
     # Blind copy to the shop so there is always an internal record of what was sent.
     try:
@@ -3655,19 +3668,23 @@ async def _send_welcome_email(*, name: str, email: str, temp_password: str, role
     await send_email(to=email, subject="Welcome to DBG Signs, Inc. — set your password", html=html)
 
 
+class SendDocInput(BaseModel):
+    recipients: List[str] = []
+
+
 @api_router.post("/estimates/{eid}/send")
-async def send_estimate(eid: str, user: dict = Depends(require_staff)):
-    return await _send_document(db.estimates, eid, "Estimate")
+async def send_estimate(eid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
+    return await _send_document(db.estimates, eid, "Estimate", payload.recipients)
 
 
 @api_router.post("/sales-orders/{sid}/send")
-async def send_sales_order(sid: str, user: dict = Depends(require_staff)):
-    return await _send_document(db.sales_orders, sid, "Sales Order")
+async def send_sales_order(sid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
+    return await _send_document(db.sales_orders, sid, "Sales Order", payload.recipients)
 
 
 @api_router.post("/invoices/{iid}/send")
-async def send_invoice(iid: str, user: dict = Depends(require_staff)):
-    return await _send_document(db.invoices, iid, "Invoice")
+async def send_invoice(iid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
+    return await _send_document(db.invoices, iid, "Invoice", payload.recipients)
 
 
 _PIXEL = base64.b64decode("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==")

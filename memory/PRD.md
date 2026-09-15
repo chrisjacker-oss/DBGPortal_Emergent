@@ -51,6 +51,7 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
+- **Multi-recipient send**: "Email to customer" on Estimates/Sales Orders/Invoices now opens a **SendDialog** (`components/SendDialog.jsx`) listing the customer's company email + all contacts with emails as checkboxes (current contact/company preselected), plus an "add another email" field. Sends one email to all selected recipients. Backend: `SendDocInput{recipients:[]}` on the three `/send` endpoints; `_send_document` accepts a recipient list (dedupes, joins), `send_email` accepts str or list. `enrich_customer` now returns `customer_email`. BCC copy to sales@dbgsigns.com unchanged. Empty recipients falls back to the default single recipient. Verified end-to-end.
 - **Tracking #** field on Sales Orders & Invoices only (not Estimates): text box next to Customer PO in `DocBuilder.jsx` (`doc-tracking-number`). Backend `tracking_number` on Estimate/Invoice models; carries SO→Invoice; renders on customer PDF ("Tracking #") and in the document email. Verified end-to-end.
 
 ## Constraints

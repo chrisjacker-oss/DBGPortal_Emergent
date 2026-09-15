@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
+import SendDialog from "@/components/SendDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
@@ -33,6 +34,7 @@ export default function Estimates() {
   const [editing, setEditing] = useState(null);
   const [delEst, setDelEst] = useState(null);
   const [noteDoc, setNoteDoc] = useState(null);
+  const [sendDoc, setSendDoc] = useState(null);
   const [params] = useSearchParams();
   const focusId = params.get("focus");
   const focusRef = useRef(null);
@@ -58,13 +60,7 @@ export default function Estimates() {
       load();
     } catch (e) { toast.error(e.response?.data?.detail || "Approve failed"); }
   };
-  const sendEmail = async (id) => {
-    try {
-      const { data } = await api.post(`/estimates/${id}/send`);
-      toast.success(`Emailed to ${data.to}`);
-      load();
-    } catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
-  };
+  const sendEmail = (id) => { const r = rows.find((x) => x.id === id); if (r) setSendDoc(r); };
   const duplicate = async (id) => {
     try { const { data } = await api.post(`/estimates/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
@@ -152,6 +148,7 @@ export default function Estimates() {
       </div>
 
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
+      <SendDialog open={!!sendDoc} doc={sendDoc} path="/estimates" kindLabel="estimate" onClose={() => setSendDoc(null)} onSent={load} />
       <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected estimate(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/estimates/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

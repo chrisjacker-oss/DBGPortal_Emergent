@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
+import SendDialog from "@/components/SendDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
@@ -33,6 +34,7 @@ export default function SalesOrders() {
   const [editing, setEditing] = useState(null);
   const [delSo, setDelSo] = useState(null);
   const [noteDoc, setNoteDoc] = useState(null);
+  const [sendDoc, setSendDoc] = useState(null);
   const [tab, setTab] = useState("active");
   const [params] = useSearchParams();
   const focusId = params.get("focus");
@@ -51,10 +53,7 @@ export default function SalesOrders() {
     } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
 
-  const sendEmail = async (id) => {
-    try { const { data } = await api.post(`/sales-orders/${id}/send`); toast.success(`Emailed to ${data.to}`); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
-  };
+  const sendEmail = (id) => { const r = rows.find((x) => x.id === id); if (r) setSendDoc(r); };
   const duplicate = async (id) => {
     try { const { data } = await api.post(`/sales-orders/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
@@ -173,6 +172,7 @@ export default function SalesOrders() {
       </div>
 
       <DocBuilder open={open} kind="sales-order" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
+      <SendDialog open={!!sendDoc} doc={sendDoc} path="/sales-orders" kindLabel="sales order" onClose={() => setSendDoc(null)} onSent={load} />
       <AdminDeleteDialog open={!!delSo} label={`sales order ${delSo?.number || ""}`} onClose={() => setDelSo(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected sales order(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/sales-orders/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

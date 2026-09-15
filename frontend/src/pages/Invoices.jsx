@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
+import SendDialog from "@/components/SendDialog";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
@@ -24,6 +25,7 @@ export default function Invoices() {
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [sendDoc, setSendDoc] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [delInv, setDelInv] = useState(null);
   const [recInv, setRecInv] = useState(null);
@@ -181,10 +183,7 @@ export default function Invoices() {
       toast.success("Invoice deleted"); setDelInv(null); load(); return true;
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
-  const sendEmail = async (id) => {
-    try { const { data } = await api.post(`/invoices/${id}/send`); toast.success(`Emailed to ${data.to}`); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Email failed"); }
-  };
+  const sendEmail = (id) => { const r = rows.find((x) => x.id === id); if (r) setSendDoc(r); };
   const duplicate = async (id) => {
     try { const { data } = await api.post(`/invoices/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
@@ -357,6 +356,7 @@ export default function Invoices() {
       </div>
 
       <DocBuilder open={open} kind="invoice" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
+      <SendDialog open={!!sendDoc} doc={sendDoc} path="/invoices" kindLabel="invoice" onClose={() => setSendDoc(null)} onSent={load} />
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
