@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { formatApiErrorDetail } from "@/lib/api";
@@ -19,6 +19,15 @@ export default function Login({ variant = "staff" }) {
   const [loading, setLoading] = useState(false);
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("idle_logout")) {
+        sessionStorage.removeItem("idle_logout");
+        setError("You were signed out after 90 minutes of inactivity. Please sign in again.");
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
