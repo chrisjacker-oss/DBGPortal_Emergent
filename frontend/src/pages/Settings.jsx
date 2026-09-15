@@ -33,6 +33,7 @@ export default function Settings() {
         card_surcharge_enabled: !!form.card_surcharge_enabled,
         card_surcharge_pct: Number(form.card_surcharge_pct || 0),
         low_margin_threshold: Number(form.low_margin_threshold || 0),
+        idle_timeout_min: Number(form.idle_timeout_min || 90),
         company_name: form.company_name || "",
         company_address: form.company_address || "",
         company_phone: form.company_phone || "",
@@ -87,6 +88,12 @@ export default function Settings() {
             <Inp label="Email" value={form.company_email || ""} onChange={set("company_email")} testid="set-company-email" />
           </div>
           <Inp label="Web address" value={form.company_web || ""} onChange={set("company_web")} testid="set-company-web" />
+        </div>
+
+        <div className="border border-border bg-card p-8 space-y-4" data-testid="security-card">
+          <div className="overline text-muted-foreground">Security</div>
+          <Inp label="Auto sign-out after inactivity (minutes)" type="number" value={form.idle_timeout_min ?? 90} onChange={set("idle_timeout_min")} testid="set-idle-timeout" />
+          <div className="text-xs text-muted-foreground -mt-2">Signed-in users get a 1-minute warning, then are signed out after this many idle minutes. Applies to everyone.</div>
         </div>
 
         <div className="border border-border bg-card p-8 space-y-5">

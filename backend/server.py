@@ -288,6 +288,7 @@ class SettingsInput(BaseModel):
     card_surcharge_enabled: bool = False
     card_surcharge_pct: float = 0.0
     low_margin_threshold: float = 0.0
+    idle_timeout_min: float = 90.0
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
     company_phone: Optional[str] = ""
@@ -348,9 +349,9 @@ def clean(doc: dict) -> dict:
 
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 2.0,
                     "laminator_rate_per_hr": 35.0, "laminator_sqft_per_hr": 150.0, "cnc_rate_per_min": 1.30, "design_rate_per_min": 1.08,
-                    "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0,
+                    "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0, "idle_timeout_min": 90.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
-_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold"}
+_NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold", "idle_timeout_min"}
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Installation", "Shipping"]
 
@@ -572,7 +573,9 @@ async def register(payload: RegisterInput, response: Response):
         "created_at": now_iso(),
     })
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
-    return {"id": uid, "email": email, "name": payload.name, "role": "customer"}
+    s = await get_settings()
+    return {"id": uid, "email": email, "name": payload.name, "role": "customer",
+            "idle_timeout_min": int(s.get("idle_timeout_min", 90) or 90)}
 
 
 @api_router.post("/auth/login")
@@ -597,8 +600,10 @@ async def login(payload: LoginInput, response: Response, request: Request):
         raise HTTPException(status_code=403, detail="Your portal access has been suspended. Please contact DBG Signs.")
     uid = str(user["_id"])
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
+    s = await get_settings()
     return {"id": uid, "email": email, "name": user.get("name"), "role": user.get("role"),
-            "must_change_password": bool(user.get("must_change_password"))}
+            "must_change_password": bool(user.get("must_change_password")),
+            "idle_timeout_min": int(s.get("idle_timeout_min", 90) or 90)}
 
 
 @api_router.post("/auth/change-password")
@@ -624,6 +629,8 @@ async def logout(response: Response, user: dict = Depends(get_current_user)):
 
 @api_router.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
+    s = await get_settings()
+    user["idle_timeout_min"] = int(s.get("idle_timeout_min", 90) or 90)
     return user
 
 
