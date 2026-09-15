@@ -27,6 +27,7 @@ export default function Settings() {
         laminator_rate_per_hr: Number(form.laminator_rate_per_hr),
         laminator_sqft_per_hr: Number(form.laminator_sqft_per_hr),
         cnc_rate_per_min: Number(form.cnc_rate_per_min),
+        design_rate_per_min: Number(form.design_rate_per_min),
         default_markup: Number(form.default_markup),
         default_tax_rate: Number(form.default_tax_rate),
         card_surcharge_enabled: !!form.card_surcharge_enabled,
@@ -98,6 +99,7 @@ export default function Settings() {
             <Inp label="Laminator rate ($/hr)" type="number" value={form.laminator_rate_per_hr} onChange={set("laminator_rate_per_hr")} testid="set-laminator-rate" />
             <Inp label="Laminator throughput (sqft/hr)" type="number" value={form.laminator_sqft_per_hr} onChange={set("laminator_sqft_per_hr")} testid="set-laminator-sqft" />
             <Inp label="CNC Router rate ($/min)" type="number" value={form.cnc_rate_per_min} onChange={set("cnc_rate_per_min")} testid="set-cnc-rate" />
+            <Inp label="Design Time rate ($/min)" type="number" value={form.design_rate_per_min} onChange={set("design_rate_per_min")} testid="set-design-rate" />
           </div>
           <Inp label="Default material markup (× multiplier)" type="number" value={form.default_markup} onChange={set("default_markup")} testid="set-default-markup" />
           <Inp label="Default tax rate (%)" type="number" value={form.default_tax_rate ?? 0} onChange={set("default_tax_rate")} testid="set-default-tax-rate" />

@@ -51,7 +51,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Salesman conversions**: salespeople can now Approve estimate→Sales Order and Convert Sales Order→Invoice (backend already allowed via `require_staff`; removed the `isSalesman` hide flag on both actions in Estimates.jsx / SalesOrders.jsx). Verified end-to-end as `sam@dbgsigns.com`.
+- **Design Time rate setting**: exposed `design_rate_per_min` ($/min, default $1.08) on the Settings page next to the CNC rate. Verified save/persist.
+- **Estimate trace link on SO**: the Sales Orders "From Estimate" column is now a clickable link (uses `from_estimate` + `estimate_id`) that opens the originating estimate with row highlight. The Estimates list normally hides converted estimates but still shows a focused one when traced from its SO (`visibleRows` allows `id === focusId`). Verified end-to-end.
+- **Estimates drop off after conversion**: estimates with a `sales_order_id` are filtered out of the Estimates page.
+- **Salesman conversions**: salespeople can convert estimate→SO and SO→invoice.
 - **Design Time line category**: added "Design Time" preset category (like CNC Router Time) — a Minutes textbox × per-minute rate. New setting `design_rate_per_min` default **$1.08/min**; flat charge (no shop/machine labor); line_total = minutes × rate. Verified 30 min = $32.40 (backend + builder UI).
 - **Reorderable categories**: up/down arrows in Categories dialog persist order (`settings.category_order`) driving all category dropdowns.
 - **Deletable material categories**: admins can delete built-in categories (reversible hide) + custom (permanent).

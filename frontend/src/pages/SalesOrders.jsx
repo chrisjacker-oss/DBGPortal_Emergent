@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -37,6 +37,7 @@ export default function SalesOrders() {
   const [sendDoc, setSendDoc] = useState(null);
   const [tab, setTab] = useState("active");
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const focusId = params.get("focus");
   const focusRef = useRef(null);
   const load = () => api.get("/sales-orders").then((r) => setRows(r.data));
@@ -121,7 +122,7 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
                 <th className="px-6 py-3 font-mono">Order Date</th>
-                <th className="px-6 py-3 font-mono">From</th>
+                <th className="px-6 py-3 font-mono">From Estimate</th>
                 <th className="px-6 py-3 font-mono">Status</th>
                 <th className="px-6 py-3 font-mono">Work status</th>
                 <th className="px-6 py-3 font-mono">Tracking #</th>
@@ -141,7 +142,11 @@ export default function SalesOrders() {
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-from-estimate-${r.id}`}>
+                    {r.from_estimate ? (
+                      <button onClick={() => navigate(`/estimates?focus=${r.estimate_id}`)} data-testid={`so-estimate-link-${r.id}`} className="text-[#0E7490] hover:underline">{r.from_estimate}</button>
+                    ) : "—"}
+                  </td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`so-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} shipType={r.shipping_type} shippedDate={r.shipped_date} testid={`so-tracking-${r.id}`} /></td>

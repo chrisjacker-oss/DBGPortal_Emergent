@@ -73,7 +73,7 @@ export default function Estimates() {
   };
 
   const selIds = Object.keys(sel).filter((k) => sel[k]);
-  const visibleRows = rows.filter((r) => !r.sales_order_id);
+  const visibleRows = rows.filter((r) => !r.sales_order_id || r.id === focusId);
   const allChecked = visibleRows.length > 0 && visibleRows.every((r) => sel[r.id]);
   const toggleAll = () => { const n = {}; if (!allChecked) visibleRows.forEach((r) => (n[r.id] = true)); setSel(n); };
   const bulkDelete = async (password) => {
