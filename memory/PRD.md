@@ -51,7 +51,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Reorderable categories**: Materials → Categories dialog now shows one unified ordered list with up/down arrows to control the order categories appear in every category dropdown. Order persists in `settings.category_order`; GET returns `ordered` [{name,type,id}] and `all` in saved order (falls back to natural order for anything not explicitly ordered). Backend `PUT /material-categories/order` (admin, defined before `/{cid}` to avoid route clash). Delete/hide/restore/rename retained. Verified reorder persists + reflects in `all`.
+- **Salesman conversions**: salespeople can now Approve estimate→Sales Order and Convert Sales Order→Invoice (backend already allowed via `require_staff`; removed the `isSalesman` hide flag on both actions in Estimates.jsx / SalesOrders.jsx). Verified end-to-end as `sam@dbgsigns.com`.
+- **Design Time line category**: added "Design Time" preset category (like CNC Router Time) — a Minutes textbox × per-minute rate. New setting `design_rate_per_min` default **$1.08/min**; flat charge (no shop/machine labor); line_total = minutes × rate. Verified 30 min = $32.40 (backend + builder UI).
+- **Reorderable categories**: up/down arrows in Categories dialog persist order (`settings.category_order`) driving all category dropdowns.
 - **Deletable material categories**: admins can delete built-in categories (reversible hide) + custom (permanent).
 - **Auto ship date**: `_autostamp_ship_date` stamps today on SO/Invoice when a tracking # is present and no ship date set (create+update); explicit dates preserved.
 - **Ship date field ("Shipped on")** on SO/Invoice next to tracking; on PDF/email/lists/portal; carries SO→Invoice.

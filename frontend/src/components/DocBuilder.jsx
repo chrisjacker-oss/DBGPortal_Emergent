@@ -95,6 +95,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       if (cv === "shipping") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Shipping"; }
       if (cv === "installation") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Installation"; }
       if (cv === "cnc router time") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = Number(settings.cnc_rate_per_min || 1.30); items[i].line_total_override = ""; if (!items[i].description) items[i].description = "CNC Router Time"; }
+      if (cv === "design time") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = Number(settings.design_rate_per_min || 1.08); items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Design Time"; }
     }
     setForm({ ...form, line_items: items });
   };
@@ -126,7 +127,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const breakdown = (li) => {
     const area = areaOf(li);
     const material = Number(li.price_per_sqft || 0) * area;
-    const flat = ["shipping", "installation", "cnc router time"].includes(String(li.category || "").trim().toLowerCase());
+    const flat = ["shipping", "installation", "cnc router time", "design time"].includes(String(li.category || "").trim().toLowerCase());
     const machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
     const machine = flat ? 0 : machineH * settings.machine_rate_per_hr;
     const laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
@@ -246,6 +247,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const isShip = String(cat).trim().toLowerCase() === "shipping";
               const isInstall = String(cat).trim().toLowerCase() === "installation";
               const isCnc = String(cat).trim().toLowerCase() === "cnc router time";
+              const isDesign = String(cat).trim().toLowerCase() === "design time";
               return (
               <div key={li._key} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
@@ -276,6 +278,15 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
                   <span className="text-xs text-muted-foreground whitespace-nowrap">Minutes</span>
                   <input type="number" value={li.quantity} onChange={(e) => setItem(i, "quantity", e.target.value)} data-testid={`item-cnc-min-${i}`} className="w-28 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">× {currency(li.price_per_sqft || 0)}/min</span>
+                </div>
+                <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
+                </>
+                ) : isDesign ? (
+                <>
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Minutes</span>
+                  <input type="number" value={li.quantity} onChange={(e) => setItem(i, "quantity", e.target.value)} data-testid={`item-design-min-${i}`} className="w-28 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
                   <span className="text-xs text-muted-foreground whitespace-nowrap">× {currency(li.price_per_sqft || 0)}/min</span>
                 </div>
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>

@@ -131,7 +131,7 @@ export default function Estimates() {
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-estimate-${r.id}` },
-                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" || isSalesman },
+                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },
