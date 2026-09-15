@@ -1388,6 +1388,12 @@ async def list_sales_orders(user: dict = Depends(require_staff)):
 _SO_STATUSES = ("open", "in_production", "fulfilled")
 
 
+def _autostamp_ship_date(doc: dict) -> None:
+    """When a tracking # is present but no ship date is set, stamp today automatically."""
+    if (doc.get("tracking_number") or "").strip() and not (doc.get("shipped_date") or "").strip():
+        doc["shipped_date"] = datetime.now(timezone.utc).date().isoformat()
+
+
 @api_router.post("/sales-orders")
 async def create_sales_order(payload: EstimateInput, user: dict = Depends(require_staff)):
     disc = await customer_discount(payload.customer_id)
@@ -1397,6 +1403,7 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
     await apply_commission(doc, user)
     doc["status"] = payload.status if payload.status in _SO_STATUSES else "open"
     doc["number"] = await next_number("SO", "sales_orders", db.sales_orders, start=29500)
+    _autostamp_ship_date(doc)
     doc["created_at"] = now_iso()
     res = await db.sales_orders.insert_one(doc)
     await _notify_shipped(db.sales_orders, str(res.inserted_id), "Sales Order", None, payload.tracking_number)
@@ -1415,6 +1422,7 @@ async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depe
     for k in ("estimate_id", "from_estimate", "invoice_id"):
         if existing.get(k):
             doc[k] = existing[k]
+    _autostamp_ship_date(doc)
     await db.sales_orders.update_one({"_id": oid(sid)}, {"$set": doc})
     await _notify_shipped(db.sales_orders, sid, "Sales Order", existing.get("tracking_number"), payload.tracking_number)
     return await enrich_customer(clean(await db.sales_orders.find_one({"_id": oid(sid)})))
@@ -1524,6 +1532,7 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
     doc = payload.model_dump()
     doc.update(totals)
     doc["number"] = await next_number("INV", "invoices", db.invoices, start=29500)
+    _autostamp_ship_date(doc)
     doc["created_at"] = now_iso()
     res = await db.invoices.insert_one(doc)
     await _notify_shipped(db.invoices, str(res.inserted_id), "Invoice", None, payload.tracking_number)
@@ -1537,6 +1546,7 @@ async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(r
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
+    _autostamp_ship_date(doc)
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": doc})
     await _notify_shipped(db.invoices, iid, "Invoice", existing.get("tracking_number"), payload.tracking_number)
     return await enrich_customer(clean(await db.invoices.find_one({"_id": oid(iid)})))
