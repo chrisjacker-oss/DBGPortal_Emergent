@@ -166,6 +166,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       ...form,
       contact_id: form.contact_id || null,
       customer_po: form.customer_po || "",
+      tracking_number: form.tracking_number || "",
       tax_rate: form.tax_exempt ? 0 : Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
@@ -213,6 +214,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             </label>
             <Inp label="Title / Job" value={form.title} onChange={(e) => set("title", e.target.value)} testid="doc-title" />
             <Inp label="Customer PO" value={form.customer_po || ""} onChange={(e) => set("customer_po", e.target.value)} testid="doc-customer-po" placeholder="Optional" />
+            {!isEstimate && (
+              <Inp label="Tracking #" value={form.tracking_number || ""} onChange={(e) => set("tracking_number", e.target.value)} testid="doc-tracking-number" placeholder="Optional" />
+            )}
           </div>
 
           <div className="border border-border overflow-x-auto min-w-0 w-full">

@@ -50,6 +50,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Data cleanup: duplicate "Chris Acker" team records.
 
 ## Invariants
+## Recent (June 2026)
+- **Tracking #** field on Sales Orders & Invoices only (not Estimates): text box next to Customer PO in `DocBuilder.jsx` (`doc-tracking-number`). Backend `tracking_number` on Estimate/Invoice models; carries SO→Invoice; renders on customer PDF ("Tracking #") and in the document email. Verified end-to-end.
+
+## Constraints
 - Preview only; production requires user Deploy.
 - Do NOT re-add Email-to-Xero/accounting.
 - Do NOT restore per-line Laminate checkbox.
