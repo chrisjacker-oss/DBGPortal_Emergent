@@ -3494,6 +3494,7 @@ async def convert_reorder(rid: str, target: str, user: dict = Depends(require_st
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY")
 EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "DBG Signs, Inc.")
+EMAIL_REPLY_TO = os.environ.get("EMAIL_REPLY_TO")
 BCC_COPY_EMAIL = "sales@dbgsigns.com"
 PUBLIC_BASE_URL = os.environ.get("FRONTEND_URL", "")
 LOGO_PATH = ROOT_DIR / "assets" / "dbg_logo.jpg"
@@ -3578,6 +3579,8 @@ async def send_email(*, to, subject: str, html: str) -> Optional[str]:
     to_list = to if isinstance(to, list) else [to]
     to_list = [t for t in to_list if t]
     payload = {"to": to_list, "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME}
+    if EMAIL_REPLY_TO:
+        payload["contact_email"] = EMAIL_REPLY_TO
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
