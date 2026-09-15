@@ -1,8 +1,8 @@
 import { currency, carrierInfo } from "@/lib/api";
 import { PaperPlaneTilt, CheckCircle } from "@phosphor-icons/react";
 
-export function TrackingLink({ value, shipType, testid }) {
-  if (!value && !shipType) return <span className="text-xs text-muted-foreground" data-testid={testid}>—</span>;
+export function TrackingLink({ value, shipType, shippedDate, testid }) {
+  if (!value && !shipType && !shippedDate) return <span className="text-xs text-muted-foreground" data-testid={testid}>—</span>;
   const info = value ? carrierInfo(value) : null;
   return (
     <span className="inline-flex flex-col gap-0.5" data-testid={testid}>
@@ -11,6 +11,7 @@ export function TrackingLink({ value, shipType, testid }) {
         <a href={info.url} target="_blank" rel="noopener noreferrer" title={`Track with ${info.carrier}`} onClick={(e) => e.stopPropagation()}
           className="text-[#0E7490] hover:underline font-mono text-sm">{value}</a>
       ) : <span className="text-xs text-muted-foreground">—</span>}
+      {shippedDate ? <span className="text-[10px] text-muted-foreground">Shipped {shippedDate}</span> : null}
     </span>
   );
 }

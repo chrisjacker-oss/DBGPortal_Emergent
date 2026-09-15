@@ -168,6 +168,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       customer_po: form.customer_po || "",
       tracking_number: form.tracking_number || "",
       shipping_type: form.shipping_type || "",
+      shipped_date: form.shipped_date || "",
       tax_rate: form.tax_exempt ? 0 : Number(form.tax_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
@@ -217,6 +218,9 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             <Inp label="Customer PO" value={form.customer_po || ""} onChange={(e) => set("customer_po", e.target.value)} testid="doc-customer-po" placeholder="Optional" />
             {!isEstimate && (
               <Inp label="Tracking #" value={form.tracking_number || ""} onChange={(e) => set("tracking_number", e.target.value)} testid="doc-tracking-number" placeholder="Optional" />
+            )}
+            {!isEstimate && (
+              <Inp label="Shipped on" type="date" value={form.shipped_date || ""} onChange={(e) => set("shipped_date", e.target.value)} testid="doc-shipped-date" />
             )}
             <label className="block">
               <span className="overline text-muted-foreground">Shipping type</span>

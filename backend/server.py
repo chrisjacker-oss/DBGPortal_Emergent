@@ -204,6 +204,7 @@ class EstimateInput(BaseModel):
     customer_po: Optional[str] = None
     tracking_number: Optional[str] = None
     shipping_type: Optional[str] = None
+    shipped_date: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     tax_exempt: bool = False
@@ -225,6 +226,7 @@ class InvoiceInput(BaseModel):
     customer_po: Optional[str] = None
     tracking_number: Optional[str] = None
     shipping_type: Optional[str] = None
+    shipped_date: Optional[str] = None
     line_items: List[LineItem] = []
     tax_rate: float = 0.0
     tax_exempt: bool = False
@@ -1344,6 +1346,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "title": est["title"],
         "customer_po": est.get("customer_po"),
         "shipping_type": est.get("shipping_type"),
+        "shipped_date": est.get("shipped_date"),
         "tax_exempt": est.get("tax_exempt", False),
         "tax_exempt_number": est.get("tax_exempt_number"),
         "line_items": est.get("line_items", []),
@@ -1455,6 +1458,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "customer_po": so.get("customer_po"),
         "tracking_number": so.get("tracking_number"),
         "shipping_type": so.get("shipping_type"),
+        "shipped_date": so.get("shipped_date"),
         "tax_exempt": so.get("tax_exempt", False),
         "tax_exempt_number": so.get("tax_exempt_number"),
         "order_date": so.get("order_date"),
@@ -3655,7 +3659,8 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     po_html = f'<div style="color:#6B7280;font-size:12px">Your PO: {escape(str(doc.get("customer_po")))}</div>' if doc.get("customer_po") else ""
     if doc.get("tracking_number"):
         ship_m = f' ({escape(str(doc.get("shipping_type")))})' if doc.get("shipping_type") else ""
-        po_html += f'<div style="color:#6B7280;font-size:12px">Tracking #{ship_m}: {escape(str(doc.get("tracking_number")))}</div>'
+        shipped_on = f' · Shipped {escape(str(doc.get("shipped_date")))}' if doc.get("shipped_date") else ""
+        po_html += f'<div style="color:#6B7280;font-size:12px">Tracking #{ship_m}: {escape(str(doc.get("tracking_number")))}{shipped_on}</div>'
     elif doc.get("shipping_type"):
         po_html += f'<div style="color:#6B7280;font-size:12px">Ship method: {escape(str(doc.get("shipping_type")))}</div>'
     attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
@@ -4119,6 +4124,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         meta.append(("Ship Method", str(doc.get("shipping_type"))))
     if doc.get("tracking_number"):
         meta.append(("Tracking #", str(doc.get("tracking_number"))))
+    if doc.get("shipped_date"):
+        meta.append(("Shipped", str(doc.get("shipped_date"))))
     if doc.get("due_date"):
         meta.append(("Due Date", str(doc.get("due_date"))))
     terms = (customer or {}).get("net_terms")
