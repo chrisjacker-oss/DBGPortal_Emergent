@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import ActionsMenu from "@/components/ActionsMenu";
@@ -144,7 +144,7 @@ export default function SalesOrders() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.from_estimate || "—"}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`so-work-status-${r.id}`} /></td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-tracking-${r.id}`}>{r.tracking_number || "—"}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} testid={`so-tracking-${r.id}`} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`so-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>

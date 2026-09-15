@@ -1,20 +1,38 @@
-import { currency } from "@/lib/api";
+import { currency, carrierInfo } from "@/lib/api";
 import { PaperPlaneTilt, CheckCircle } from "@phosphor-icons/react";
+
+export function TrackingLink({ value, testid }) {
+  if (!value) return <span className="text-xs text-muted-foreground" data-testid={testid}>—</span>;
+  const info = carrierInfo(value);
+  return (
+    <a href={info.url} target="_blank" rel="noopener noreferrer" data-testid={testid}
+      title={`Track with ${info.carrier}`} onClick={(e) => e.stopPropagation()}
+      className="text-[#0E7490] hover:underline font-mono text-sm">
+      {value}
+    </a>
+  );
+}
 
 export function ReceiptBadge({ doc }) {
   if (!doc?.email_sent_at) return <span className="text-xs text-muted-foreground" data-testid="receipt-none">—</span>;
-  const opened = doc.email_opened_at;
-  const when = new Date(opened || doc.email_sent_at).toLocaleString();
-  const recipients = Array.isArray(doc.email_recipients) && doc.email_recipients.length
-    ? doc.email_recipients
-    : (doc.email_to ? String(doc.email_to).split(",").map((s) => s.trim()).filter(Boolean) : []);
-  const n = recipients.length;
-  const label = n > 1 ? `Emailed to ${n} people` : `Emailed to ${n || 1}`;
-  const tip = `${opened ? `Opened ${when}` : `Sent ${when}`}${recipients.length ? ` · ${recipients.join(", ")}` : ""}`;
+  const receipts = Array.isArray(doc.email_receipts) ? doc.email_receipts : [];
+  const recipients = receipts.length
+    ? receipts.map((r) => r.email)
+    : (Array.isArray(doc.email_recipients) && doc.email_recipients.length
+        ? doc.email_recipients
+        : (doc.email_to ? String(doc.email_to).split(",").map((s) => s.trim()).filter(Boolean) : []));
+  const n = recipients.length || 1;
+  const openedCount = receipts.length ? receipts.filter((r) => r.opened_at).length : (doc.email_opened_at ? 1 : 0);
+  const anyOpened = openedCount > 0;
+  const sentWhen = new Date(doc.email_sent_at).toLocaleString();
+  const label = anyOpened ? `Opened ${openedCount}/${n}` : (n > 1 ? `Emailed to ${n} people` : `Emailed to ${n}`);
+  const tip = receipts.length
+    ? receipts.map((r) => `${r.email} — ${r.opened_at ? "opened " + new Date(r.opened_at).toLocaleString() : "not opened yet"}`).join("\n")
+    : `Sent ${sentWhen}${recipients.length ? " · " + recipients.join(", ") : ""}`;
   return (
     <span data-testid="receipt-badge" title={tip}
-      className="inline-flex items-center gap-1 text-xs font-mono text-[#16A34A]">
-      {opened ? <CheckCircle size={14} weight="bold" /> : <PaperPlaneTilt size={14} weight="bold" />}
+      className={`inline-flex items-center gap-1 text-xs font-mono ${anyOpened ? "text-[#16A34A]" : "text-[#B45309]"}`}>
+      {anyOpened ? <CheckCircle size={14} weight="bold" /> : <PaperPlaneTilt size={14} weight="bold" />}
       {label}
     </span>
   );

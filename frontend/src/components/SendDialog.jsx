@@ -54,7 +54,11 @@ export default function SendDialog({ open, doc, path, kindLabel = "document", on
     setBusy(true);
     try {
       const { data } = await api.post(`${path}/${doc.id}/send`, { recipients });
-      toast.success(`Emailed to ${data.to}`);
+      if (data.failed && data.failed.length) {
+        toast.warning(`Emailed to ${data.to}. Could not send to: ${data.failed.join(", ")}`);
+      } else {
+        toast.success(`Emailed to ${data.to}`);
+      }
       onSent && onSent();
       onClose();
     } catch (e) {

@@ -51,11 +51,13 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Shipped notice**: adding/changing a Tracking # on a Sales Order or Invoice (create or edit) auto-sends a branded "your order has shipped" email to the customer (contact/company email) with the tracking number, plus an internal copy to sales@dbgsigns.com. Only fires when tracking transitions to a new non-empty value (no email on SO→Invoice conversion since that's an insert with tracking already set on the SO). Stores `shipped_notified_at`. Helper `_notify_shipped` + `render_shipped_email` in server.py.
-- **Tracking # column**: added to Sales Orders and Invoices list tables (after Work status), shows value or "—". testids `so-tracking-{id}` / `invoice-tracking-{id}`.
-- **Remember recipients**: `_send_document` stores `email_recipients` list; `ReceiptBadge` (kit.jsx) now shows a green "Emailed to N people" note with a tooltip listing addresses + sent/opened time.
-- **Multi-recipient send**: "Email to customer" opens **SendDialog** (contacts + company email checkboxes, preselected default, add-another-email field). Backend `SendDocInput{recipients:[]}`; `_send_document` accepts list; `send_email` accepts str|list; `enrich_customer` returns `customer_email`.
-- **Tracking #** field on Sales Orders & Invoices builder (not Estimates), next to Customer PO; carries SO→Invoice; on PDF + email.
+- **Carrier link**: tracking numbers are now clickable links to the carrier's tracking page. Carrier auto-detected from the number format (UPS `1Z…`, FedEx 12/15 digits, USPS 20+/9x/420, DHL 10 digits, else Google fallback). Frontend `carrierInfo()` in `lib/api.js` + `<TrackingLink>` in kit.jsx, used on Sales Orders/Invoices lists and the customer Portal. Shipped-notice email also links the tracking # + a "Track your package" button (backend `carrier_track_url()`).
+- **Read receipts (per recipient)**: `_send_document` now sends an individual email to each recipient, each with its own tracking pixel token, stored in `email_receipts:[{email,token,opened_at}]`. Sends are resilient — a failed address is skipped and returned in `failed` (frontend shows a warning toast); doc still records the ones that went out. `/track/open/{token}` marks the specific recipient's receipt opened (array filter). `ReceiptBadge` shows "Opened X/N" (green) or "Emailed to N people" (amber) with a per-recipient hover tooltip. Verified end-to-end.
+- **Portal tracking**: added a "Tracking #" column to the customer Portal order history (clickable carrier link). `tracking_number` already flows through `/portal/orders` (not a margin field).
+- **Shipped notice**: adding/changing a Tracking # on a Sales Order or Invoice auto-sends a branded "your order has shipped" email + internal copy. Fires only when tracking transitions to a new non-empty value. Stores `shipped_notified_at`.
+- **Tracking # column**: on Sales Orders and Invoices lists.
+- **Multi-recipient send**: "Email to customer" opens SendDialog (contacts + company email checkboxes + add-another-email).
+- **Tracking #** field on SO & Invoice builder (not Estimates), next to Customer PO; carries SO→Invoice; on PDF + email.
 
 ## Constraints
 - Preview only; production requires user Deploy.

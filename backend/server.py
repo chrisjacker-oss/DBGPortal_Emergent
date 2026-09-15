@@ -3162,9 +3162,33 @@ async def _set_work_status(collection, doc_id: str, kind_label: str, status: str
     return clean(await collection.find_one({"_id": oid(doc_id)}))
 
 
+def carrier_track_url(tracking: str) -> tuple:
+    """Return (carrier_name, tracking_url) guessed from the tracking number format."""
+    t = re.sub(r"\s+", "", str(tracking or "")).upper()
+    if not t:
+        return ("", "")
+    if t.startswith("1Z"):
+        return ("UPS", f"https://www.ups.com/track?tracknum={t}")
+    if t.isdigit():
+        if len(t) >= 20 or t[:2] in ("94", "93", "92", "91") or t.startswith("420"):
+            return ("USPS", f"https://tools.usps.com/go/TrackConfirmAction?tLabels={t}")
+        if len(t) == 10:
+            return ("DHL", f"https://www.dhl.com/us-en/home/tracking.html?tracking-id={t}")
+        if len(t) in (12, 15):
+            return ("FedEx", f"https://www.fedex.com/fedextrack/?trknbr={t}")
+    from urllib.parse import quote as _q
+    return ("Track", f"https://www.google.com/search?q={_q(t)}")
+
+
 def render_shipped_email(customer_name: str, doc_label: str, number: str, tracking: str, company: Optional[dict] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
+    carrier, track_url = carrier_track_url(tracking)
+    carrier_line = f'<div style="font-size:11px;color:#6B7280;margin-top:6px">via {escape(carrier)}</div>' if carrier and carrier != "Track" else ""
+    track_html = (
+        f'<a href="{escape(track_url)}" target="_blank" style="font-size:18px;font-weight:bold;font-family:monospace;color:#0E7490;text-decoration:underline">{escape(str(tracking))}</a>'
+        if track_url else f'<div style="font-size:18px;font-weight:bold;font-family:monospace">{escape(str(tracking))}</div>'
+    )
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -3176,7 +3200,10 @@ def render_shipped_email(customer_name: str, doc_label: str, number: str, tracki
         f'<p style="margin:12px 0 0">Good news — your order <strong>{escape(doc_label)} {escape(str(number))}</strong> is on its way!</p>'
         f'<div style="margin:16px 0;padding:14px 18px;background:#F9FAFB;border:1px solid #E5E7EB;text-align:center">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Tracking #</div>'
-        f'<div style="font-size:18px;font-weight:bold;font-family:monospace;margin-top:4px">{escape(str(tracking))}</div></div>'
+        f'<div style="margin-top:4px">{track_html}</div>{carrier_line}'
+        f'<div style="margin-top:10px">'
+        + (f'<a href="{escape(track_url)}" target="_blank" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:bold">Track your package</a>' if track_url else "")
+        + f'</div></div>'
         f'<p style="margin:12px 0 0">Reply to this email with any questions.</p>'
         f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
         f'<div style="font-weight:bold">{escape(cname)}</div>'
@@ -3596,26 +3623,39 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
         raise HTTPException(status_code=400, detail="No email on file for this customer or the selected contact")
     to = ", ".join(to_list)
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
-    token = secrets.token_urlsafe(16)
     pdf_token = secrets.token_urlsafe(16)
     await db.pdf_tokens.insert_one({"token": pdf_token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
     pdf_url = f"{PUBLIC_BASE_URL}/api/pub/pdf/{pdf_token}"
     company = await get_settings()
-    html = render_doc_email(kind_label, doc, cname, token, company, pdf_url=pdf_url)
-    email_id = await send_email(to=to_list, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
-    await db.email_tracking.insert_one({"token": token, "collection": collection.name, "doc_id": str(doc["_id"]), "created_at": now_iso()})
-    # Blind copy to the shop so there is always an internal record of what was sent.
+    # Send an individual email to each recipient with its own tracking pixel so we know exactly who opened.
+    receipts, first_token, last_email_id, failed = [], None, None, []
+    for addr in to_list:
+        rtoken = secrets.token_urlsafe(16)
+        html = render_doc_email(kind_label, doc, cname, rtoken, company, pdf_url=pdf_url)
+        try:
+            last_email_id = await send_email(to=addr, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
+        except Exception as e:
+            logger.warning(f"Email to {addr} failed: {e}")
+            failed.append(addr)
+            continue
+        first_token = first_token or rtoken
+        await db.email_tracking.insert_one({"token": rtoken, "collection": collection.name, "doc_id": str(doc["_id"]), "email": addr, "created_at": now_iso()})
+        receipts.append({"email": addr, "token": rtoken, "opened_at": None})
+    if not receipts:
+        raise HTTPException(status_code=502, detail="Could not send to any of the selected recipients")
+    sent_to = [r["email"] for r in receipts]
+    # Blind copy to the shop so there is always an internal record of what was sent (no tracking pixel).
     try:
-        copy_html = render_doc_email(kind_label, doc, cname, token, company, pdf_url=pdf_url, track=False)
+        copy_html = render_doc_email(kind_label, doc, cname, first_token, company, pdf_url=pdf_url, track=False)
         await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} sent to {cname}", html=copy_html)
     except Exception as e:
         logger.warning(f"BCC copy to {BCC_COPY_EMAIL} failed: {e}")
     await collection.update_one({"_id": oid(doc_id)}, {"$set": {
-        "email_status": "sent", "email_to": to, "email_sent_at": now_iso(),
-        "email_opened_at": None, "email_token": token, "email_id": email_id,
-        "email_recipients": to_list,
+        "email_status": "sent", "email_to": ", ".join(sent_to), "email_sent_at": now_iso(),
+        "email_opened_at": None, "email_token": first_token, "email_id": last_email_id,
+        "email_recipients": sent_to, "email_receipts": receipts,
     }})
-    return {"status": "sent", "to": to}
+    return {"status": "sent", "to": ", ".join(sent_to), "failed": failed}
 
 
 def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: str, company: Optional[dict] = None, pdf_link: Optional[str] = None) -> str:
@@ -3757,9 +3797,14 @@ async def track_open(token: str):
     rec = await db.email_tracking.find_one({"token": token})
     if rec:
         coll = db[rec["collection"]]
+        now = now_iso()
+        await coll.update_one(
+            {"_id": oid(rec["doc_id"]), "email_receipts.token": token, "email_receipts.opened_at": None},
+            {"$set": {"email_receipts.$.opened_at": now}},
+        )
         await coll.update_one(
             {"_id": oid(rec["doc_id"]), "email_opened_at": None},
-            {"$set": {"email_opened_at": now_iso(), "email_status": "opened"}},
+            {"$set": {"email_opened_at": now, "email_status": "opened"}},
         )
     return Response(content=_PIXEL, media_type="image/gif", headers={"Cache-Control": "no-store, max-age=0"})
 

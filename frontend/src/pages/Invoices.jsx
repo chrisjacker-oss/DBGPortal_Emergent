@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PayNowDialog from "@/components/PayNowDialog";
@@ -308,7 +308,7 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`invoice-tracking-${r.id}`}>{r.tracking_number || "—"}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`invoice-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} testid={`invoice-tracking-${r.id}`} /></td>
                   {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
                     {currency(r.total)}
