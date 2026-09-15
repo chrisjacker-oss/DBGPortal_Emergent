@@ -41,6 +41,11 @@ export default function Materials() {
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
   const removeCat = (c) => setDel({ url: `/material-categories/${c.id}`, label: `category "${c.name}"`, after: loadCats });
+  const removePreset = (name) => setDel({ url: `/material-categories/preset/${encodeURIComponent(name)}`, label: `built-in category "${name}"`, after: () => { loadCats(); load(); } });
+  const restorePreset = async (name) => {
+    try { await api.post(`/material-categories/preset/${encodeURIComponent(name)}/restore`); toast.success("Category restored"); loadCats(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Restore failed"); }
+  };
   const renameCat = async (c) => {
     const name = window.prompt("Rename category:", c.name);
     if (!name || !name.trim() || name.trim() === c.name) return;
@@ -211,10 +216,28 @@ export default function Materials() {
           <div className="space-y-4">
             <div>
               <div className="overline text-muted-foreground mb-2">Built-in</div>
-              <div className="flex flex-wrap gap-2">
-                {cats.presets.map((c) => <span key={c} className="border border-border px-2 py-1 text-xs font-mono">{c}</span>)}
+              <div className="space-y-1" data-testid="preset-categories-list">
+                {cats.presets.map((c) => (
+                  <div key={c} className="flex items-center justify-between border border-border px-3 py-2">
+                    <span className="text-sm font-medium font-mono">{c}</span>
+                    <Btn variant="ghost" onClick={() => removePreset(c)} data-testid={`delete-preset-${c}`} title="Remove this category"><Trash size={16} /></Btn>
+                  </div>
+                ))}
               </div>
             </div>
+            {cats.hidden && cats.hidden.length > 0 && (
+              <div>
+                <div className="overline text-muted-foreground mb-2">Removed (built-in)</div>
+                <div className="space-y-1" data-testid="hidden-categories-list">
+                  {cats.hidden.map((c) => (
+                    <div key={c} className="flex items-center justify-between border border-dashed border-border px-3 py-2">
+                      <span className="text-sm text-muted-foreground line-through font-mono">{c}</span>
+                      <Btn variant="outline" onClick={() => restorePreset(c)} data-testid={`restore-preset-${c}`}>Restore</Btn>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <div className="overline text-muted-foreground mb-2">Custom</div>
               {cats.custom.length === 0 && <div className="text-sm text-muted-foreground">No custom categories yet.</div>}

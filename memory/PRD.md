@@ -51,7 +51,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Shipping type**: dropdown (None / Ground / 2 Day Air / Overnight / Overnight AM / LTL) added to Estimate, Sales Order, and Invoice builders (`doc-shipping-type`). Backend `shipping_type` on Estimate/Invoice models; carries EST→SO and SO→Invoice. Shown with the tracking number everywhere it appears: PDF ("Ship Method" meta line above Tracking #), document email, shipped-notice email (via …), and the Tracking # column on SO/Invoice lists + customer Portal (small label above the tracking link via `<TrackingLink shipType>`). Verified end-to-end incl. PDF extraction.
+- **Deletable material categories**: Materials → Categories dialog lets admins delete **built-in** categories (previously custom-only). Built-in deletes are a reversible "hide" (`settings.hidden_categories`) with a Restore section. Backend `DELETE /material-categories/preset/{name}` (admin-pw) + `POST /material-categories/preset/{name}/restore`; GET returns `hidden` and filters presets. Verified.
+- **Auto ship date**: `_autostamp_ship_date` stamps today on SO/Invoice when a tracking # is present and no ship date set (create+update); explicit dates preserved.
+- **Ship date field ("Shipped on")** on SO/Invoice next to tracking; on PDF/email/lists/portal; carries SO→Invoice.
+- **Shipping type**: dropdown (None / Ground / 2 Day Air / Overnight / Overnight AM / LTL) on Estimate/SO/Invoice builders; shown with tracking on PDF/email/lists/portal; carries EST→SO→Invoice.
 - **Resend (managed email) integration**: app sends all email through Emergent's managed Resend proxy; added Reply-To `sales@dbgsigns.com`.
 - **Open linked job**: linked SO/Invoice on calendar tile is a clickable link to the doc (with row highlight; added `?focus=` to Invoices).
 - **Reschedule notice**: editing an install with a changed date auto-emails the customer an "installation rescheduled" alert (new date + prep note) and clears `reminder_sent_at` so the day-before reminder can fire for the new date; no email when the date is unchanged. `render_install_email(reschedule=True)`. Install notify is now resilient — email failures (e.g. rate limit) return `{"status":"error"}` and never block the save; UI shows a "use Resend" warning. Verified.

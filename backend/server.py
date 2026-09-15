@@ -1150,13 +1150,21 @@ class CategoryInput(BaseModel):
     name: str
 
 
+async def _hidden_categories() -> set:
+    doc = await db.settings.find_one({"key": "hidden_categories"})
+    return set(doc.get("names", [])) if doc else set()
+
+
 @api_router.get("/material-categories")
 async def list_categories(user: dict = Depends(require_staff)):
     custom = await db.material_categories.find().sort("name", 1).to_list(500)
+    hidden = await _hidden_categories()
+    visible_presets = [p for p in PRESET_CATEGORIES if p not in hidden]
     return {
-        "presets": PRESET_CATEGORIES,
+        "presets": visible_presets,
         "custom": [{"id": str(c["_id"]), "name": c["name"]} for c in custom],
-        "all": PRESET_CATEGORIES + [c["name"] for c in custom],
+        "hidden": sorted(hidden),
+        "all": visible_presets + [c["name"] for c in custom],
     }
 
 
@@ -1190,6 +1198,21 @@ async def update_category(cid: str, payload: CategoryInput, user: dict = Depends
     if old != name:
         await db.materials.update_many({"category": old}, {"$set": {"category": name}})
     return {"id": cid, "name": name}
+
+
+@api_router.delete("/material-categories/preset/{name}")
+async def hide_preset_category(name: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    if name not in PRESET_CATEGORIES:
+        raise HTTPException(status_code=404, detail="Preset category not found")
+    await db.settings.update_one({"key": "hidden_categories"}, {"$addToSet": {"names": name}}, upsert=True)
+    return {"message": "hidden"}
+
+
+@api_router.post("/material-categories/preset/{name}/restore")
+async def restore_preset_category(name: str, user: dict = Depends(require_admin)):
+    await db.settings.update_one({"key": "hidden_categories"}, {"$pull": {"names": name}})
+    return {"message": "restored"}
 
 
 @api_router.delete("/material-categories/{cid}")
