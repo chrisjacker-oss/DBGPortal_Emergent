@@ -1454,6 +1454,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "tax_exempt": so.get("tax_exempt", False),
         "tax_exempt_number": so.get("tax_exempt_number"),
         "order_date": so.get("order_date"),
+        "work_status": so.get("work_status"),
         "line_items": so.get("line_items", []),
         "tax_rate": so.get("tax_rate", 0),
         "subtotal": so.get("subtotal", 0),
