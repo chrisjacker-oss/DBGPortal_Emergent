@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
@@ -18,6 +19,7 @@ const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(
 const emptyForm = { date: "", time_of_day: "morning", customer_id: "", contact_id: "", description: "", linked_type: "", linked_id: "" };
 
 export default function Installs() {
+  const navigate = useNavigate();
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [installs, setInstalls] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -58,13 +60,17 @@ export default function Installs() {
     try {
       const payload = { ...form, contact_id: form.contact_id || null, linked_type: form.linked_type || null, linked_id: form.linked_id || null };
       if (editing) {
-        await api.put(`/installs/${editing.id}`, payload);
-        toast.success("Install updated");
+        const { data } = await api.put(`/installs/${editing.id}`, payload);
+        const n = data.notify || {};
+        if (n.status === "sent") toast.success(`Install updated · reschedule alert emailed to ${n.to}`);
+        else if (n.status === "error") toast.warning("Install updated, but the reschedule email couldn't be sent — use Resend");
+        else toast.success("Install updated");
       } else {
         const { data } = await api.post("/installs", payload);
         const n = data.notify || {};
         if (n.status === "sent") toast.success(`Install scheduled · alert emailed to ${n.to}`);
         else if (n.status === "no_email") toast.warning("Install scheduled, but no email on file for the contact/customer");
+        else if (n.status === "error") toast.warning("Install scheduled, but the alert email couldn't be sent — use Resend");
         else toast.success("Install scheduled");
       }
       setOpen(false); setEditing(null); load();
@@ -130,7 +136,12 @@ export default function Installs() {
                             className="w-full text-left bg-[#0A0A0A] text-white px-1.5 py-1 text-[11px] leading-tight hover:bg-[#0A0A0A]/85">
                             <span className="inline-block bg-[#06B6D4] text-[9px] font-bold uppercase px-1 mr-1">{it.time_label === "Afternoon" ? "PM" : "AM"}</span>
                             <span className="font-medium">{it.customer_name}</span>
-                            {it.linked_number ? <span className="block text-[10px] text-[#67E8F9]">{it.linked_number}</span> : null}
+                            {it.linked_number ? (
+                              <span role="link" tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); navigate(`${it.linked_type === "invoice" ? "/invoices" : "/sales-orders"}?focus=${it.linked_id}`); }}
+                                data-testid={`install-linked-${it.id}`}
+                                className="block text-[10px] text-[#67E8F9] underline hover:text-white cursor-pointer">{it.linked_number}</span>
+                            ) : null}
                             {it.description ? <span className="block text-[10px] text-gray-300 truncate">{it.description}</span> : null}
                           </button>
                         ))}

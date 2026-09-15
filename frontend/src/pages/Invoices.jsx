@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -47,6 +47,10 @@ export default function Invoices() {
   const [xeroOpen, setXeroOpen] = useState(false);
   const [xeroMonth, setXeroMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [xeroBusy, setXeroBusy] = useState(false);
+  const [params] = useSearchParams();
+  const focusId = params.get("focus");
+  const focusRef = useRef(null);
+  useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
   const exportInvoicesPdf = async () => {
     setXeroBusy(true);
     try {
@@ -297,7 +301,7 @@ export default function Invoices() {
             </thead>
             <tbody data-testid="invoices-table">
               {sorted.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
+                <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`invoice-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`invoice-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
                     <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>

@@ -3277,13 +3277,19 @@ INSTALL_PREP_NOTE = (
 )
 
 
-def render_install_email(customer_name: str, contact_name: Optional[str], date: str, time_label: str, description: str, company: Optional[dict] = None, reminder: bool = False) -> str:
+def render_install_email(customer_name: str, contact_name: Optional[str], date: str, time_label: str, description: str, company: Optional[dict] = None, reminder: bool = False, reschedule: bool = False) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     greet = escape(contact_name or customer_name or "there")
-    heading = "Reminder: your installation is tomorrow" if reminder else "Your installation is scheduled"
-    lead = (f'This is a friendly reminder that your installation with <strong>{escape(cname)}</strong> is scheduled for tomorrow.'
-            if reminder else f'You have an installation scheduled with <strong>{escape(cname)}</strong>.')
+    if reschedule:
+        heading = "Your installation has been rescheduled"
+        lead = f'Your installation with <strong>{escape(cname)}</strong> has been rescheduled. Please note the new date below.'
+    elif reminder:
+        heading = "Reminder: your installation is tomorrow"
+        lead = f'This is a friendly reminder that your installation with <strong>{escape(cname)}</strong> is scheduled for tomorrow.'
+    else:
+        heading = "Your installation is scheduled"
+        lead = f'You have an installation scheduled with <strong>{escape(cname)}</strong>.'
     desc_html = (
         f'<div style="margin:16px 0;padding:14px 18px;background:#F9FAFB;border:1px solid #E5E7EB">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">What we\'re installing</div>'
@@ -3331,7 +3337,7 @@ async def _enrich_install(d: dict) -> dict:
     return d
 
 
-async def _notify_install(iid: str, reminder: bool = False) -> dict:
+async def _notify_install(iid: str, reminder: bool = False, reschedule: bool = False) -> dict:
     d = await db.installs.find_one({"_id": oid(iid)})
     if not d:
         return {"status": "skipped"}
@@ -3350,11 +3356,21 @@ async def _notify_install(iid: str, reminder: bool = False) -> dict:
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     label = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
     company = await get_settings()
-    html = render_install_email(cname, contact_name, d.get("date", ""), label, d.get("description", ""), company, reminder=reminder)
-    subject = (f"Reminder: installation tomorrow ({d.get('date', '')}) — DBG Signs, Inc." if reminder
-               else f"Installation scheduled for {d.get('date', '')} — DBG Signs, Inc.")
-    await send_email(to=to, subject=subject, html=html)
-    tag = "Reminder" if reminder else "Install scheduled"
+    html = render_install_email(cname, contact_name, d.get("date", ""), label, d.get("description", ""), company, reminder=reminder, reschedule=reschedule)
+    if reschedule:
+        subject = f"Updated: your installation is now {d.get('date', '')} — DBG Signs, Inc."
+        tag = "Rescheduled"
+    elif reminder:
+        subject = f"Reminder: installation tomorrow ({d.get('date', '')}) — DBG Signs, Inc."
+        tag = "Reminder"
+    else:
+        subject = f"Installation scheduled for {d.get('date', '')} — DBG Signs, Inc."
+        tag = "Install scheduled"
+    try:
+        await send_email(to=to, subject=subject, html=html)
+    except Exception as e:
+        logger.warning(f"Install email to {to} failed: {e}")
+        return {"status": "error", "to": to}
     try:
         await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {tag} {d.get('date', '')} — {cname}", html=html)
     except Exception as e:
@@ -3385,11 +3401,18 @@ async def create_install(payload: InstallInput, user: dict = Depends(require_adm
 
 @api_router.put("/installs/{iid}")
 async def update_install(iid: str, payload: InstallInput, user: dict = Depends(require_admin)):
-    await get_or_404(db.installs, iid, "Install")
+    existing = await get_or_404(db.installs, iid, "Install")
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
+    date_changed = (existing.get("date") or "") != (payload.date or "")
+    if date_changed:
+        # allow the day-before reminder to fire again for the new date
+        await db.installs.update_one({"_id": oid(iid)}, {"$unset": {"reminder_sent_at": ""}})
     await db.installs.update_one({"_id": oid(iid)}, {"$set": doc})
-    return await _enrich_install(await db.installs.find_one({"_id": oid(iid)}))
+    out = await _enrich_install(await db.installs.find_one({"_id": oid(iid)}))
+    if date_changed:
+        out["notify"] = await _notify_install(iid, reschedule=True)
+    return out
 
 
 @api_router.post("/installs/{iid}/notify")
