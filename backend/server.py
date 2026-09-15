@@ -260,6 +260,14 @@ class ReorderInput(BaseModel):
     notes: Optional[str] = None
 
 
+class InstallInput(BaseModel):
+    date: str
+    time_of_day: str = "morning"  # morning | afternoon
+    customer_id: str
+    contact_id: Optional[str] = None
+    description: str = ""
+
+
 class SettingsInput(BaseModel):
     shop_rate_per_hr: float = 65.0
     shop_sqft_per_hr: float = 150.0
@@ -3254,6 +3262,137 @@ async def set_so_work_status(sid: str, status: str, user: dict = Depends(require
 @api_router.patch("/invoices/{iid}/work-status")
 async def set_invoice_work_status(iid: str, status: str, user: dict = Depends(require_staff)):
     return await _set_work_status(db.invoices, iid, "Invoice", status)
+
+
+# ---------------------------------------------------------------------------
+# Install calendar (admin-scheduled installations + customer alert email)
+# ---------------------------------------------------------------------------
+INSTALL_TIME_LABELS = {"morning": "Morning", "afternoon": "Afternoon"}
+INSTALL_PREP_NOTE = (
+    "Please have your equipment cleaned and ready for installation unless already done. "
+    "Installer(s) will do light cleaning if needed, but heavy oxidation or heavy dirt is the "
+    "customer's responsibility on any oversized equipment (e.g. Semi Trucks / Trailers, Box Trucks, etc.)."
+)
+
+
+def render_install_email(customer_name: str, contact_name: Optional[str], date: str, time_label: str, description: str, company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    greet = escape(contact_name or customer_name or "there")
+    desc_html = (
+        f'<div style="margin:16px 0;padding:14px 18px;background:#F9FAFB;border:1px solid #E5E7EB">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">What we\'re installing</div>'
+        f'<div style="font-size:14px;margin-top:4px;white-space:pre-wrap">{escape(str(description))}</div></div>'
+    ) if (description or "").strip() else ""
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:22px 32px">'
+        f'<div style="font-size:20px;font-weight:bold">Your installation is scheduled</div>'
+        f'<p style="margin:14px 0 0">Hi {greet},</p>'
+        f'<p style="margin:12px 0 0">You have an installation scheduled with <strong>{escape(cname)}</strong>.</p>'
+        f'<div style="margin:16px 0;padding:14px 18px;background:#0A0A0A;color:#ffffff;text-align:center">'
+        f'<div style="font-size:22px;font-weight:bold;letter-spacing:1px">{escape(str(date))}</div>'
+        f'<div style="font-size:13px;color:#D1D5DB;margin-top:4px">{escape(time_label)}</div></div>'
+        f'{desc_html}'
+        f'<div style="margin:16px 0;padding:14px 18px;background:#FEF3C7;border:1px solid #FCD34D">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#92400E;text-transform:uppercase;font-weight:bold">Before we arrive</div>'
+        f'<div style="font-size:13px;margin-top:6px;color:#78350F">{escape(INSTALL_PREP_NOTE)}</div></div>'
+        f'<p style="margin:12px 0 0">Reply to this email with any questions.</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'</table></div>'
+    )
+
+
+async def _enrich_install(d: dict) -> dict:
+    d = clean(d)
+    cid = str(d.get("customer_id") or "")
+    cust = await db.customers.find_one({"_id": oid(cid)}) if ObjectId.is_valid(cid) else None
+    d["customer_name"] = (cust.get("company") or cust.get("name")) if cust else "Unknown"
+    if d.get("contact_id") and ObjectId.is_valid(str(d["contact_id"])):
+        ct = await db.contacts.find_one({"_id": oid(str(d["contact_id"]))})
+        d["contact_name"] = ct.get("name") if ct else None
+        d["contact_email"] = ct.get("email") if ct else None
+    d["time_label"] = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
+    return d
+
+
+async def _notify_install(iid: str) -> dict:
+    d = await db.installs.find_one({"_id": oid(iid)})
+    if not d:
+        return {"status": "skipped"}
+    cid = str(d.get("customer_id") or "")
+    cust = await db.customers.find_one({"_id": oid(cid)}) if ObjectId.is_valid(cid) else None
+    contact_name, to = None, None
+    if d.get("contact_id") and ObjectId.is_valid(str(d["contact_id"])):
+        ct = await db.contacts.find_one({"_id": oid(str(d["contact_id"]))})
+        if ct:
+            contact_name = ct.get("name")
+            to = ct.get("email")
+    if not to and cust:
+        to = cust.get("email")
+    if not to:
+        return {"status": "no_email"}
+    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+    label = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
+    company = await get_settings()
+    html = render_install_email(cname, contact_name, d.get("date", ""), label, d.get("description", ""), company)
+    await send_email(to=to, subject=f"Installation scheduled for {d.get('date', '')} — DBG Signs, Inc.", html=html)
+    try:
+        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Install scheduled {d.get('date', '')} — {cname}", html=html)
+    except Exception as e:
+        logger.warning(f"BCC install copy failed: {e}")
+    await db.installs.update_one({"_id": oid(iid)}, {"$set": {"notified_at": now_iso(), "notified_to": to}})
+    return {"status": "sent", "to": to}
+
+
+@api_router.get("/installs")
+async def list_installs(month: Optional[str] = None, user: dict = Depends(require_admin)):
+    q = {"date": {"$regex": f"^{re.escape(month)}"}} if month else {}
+    docs = await db.installs.find(q).sort([("date", 1), ("time_of_day", 1)]).to_list(2000)
+    return [await _enrich_install(d) for d in docs]
+
+
+@api_router.post("/installs")
+async def create_install(payload: InstallInput, user: dict = Depends(require_admin)):
+    doc = payload.model_dump()
+    doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
+    doc["created_at"] = now_iso()
+    res = await db.installs.insert_one(doc)
+    notify = await _notify_install(str(res.inserted_id))
+    out = await _enrich_install(await db.installs.find_one({"_id": res.inserted_id}))
+    out["notify"] = notify
+    return out
+
+
+@api_router.put("/installs/{iid}")
+async def update_install(iid: str, payload: InstallInput, user: dict = Depends(require_admin)):
+    await get_or_404(db.installs, iid, "Install")
+    doc = payload.model_dump()
+    doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
+    await db.installs.update_one({"_id": oid(iid)}, {"$set": doc})
+    return await _enrich_install(await db.installs.find_one({"_id": oid(iid)}))
+
+
+@api_router.post("/installs/{iid}/notify")
+async def resend_install(iid: str, user: dict = Depends(require_admin)):
+    await get_or_404(db.installs, iid, "Install")
+    return await _notify_install(iid)
+
+
+@api_router.delete("/installs/{iid}")
+async def delete_install(iid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    res = await db.installs.delete_one({"_id": oid(iid)})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Install not found")
+    return {"message": "deleted"}
+
 
 
 @api_router.get("/reorders")

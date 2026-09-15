@@ -19,6 +19,7 @@ import {
   IdentificationBadge,
   Wrench,
   Timer,
+  CalendarCheck,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
@@ -31,6 +32,7 @@ const adminLinks = [
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
   { to: "/work-orders", label: "Work Orders", icon: Wrench },
+  { to: "/install-calendar", label: "Install Calendar", icon: CalendarCheck },
   { to: "/time-clock", label: "Time Clock", icon: Timer },
   { to: "/materials", label: "Materials", icon: Stack },
   { to: "/customers", label: "Customers", icon: Users },

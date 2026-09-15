@@ -24,6 +24,7 @@ import ForcePasswordChange from "@/pages/ForcePasswordChange";
 import PublicPay from "@/pages/PublicPay";
 import Reports from "@/pages/Reports";
 import TimeClock from "@/pages/TimeClock";
+import Installs from "@/pages/Installs";
 
 function Loading() {
   return (
@@ -78,6 +79,7 @@ function App() {
               ["/reports", <Reports />, A],
               ["/customers", <Customers />, AS],
               ["/work-orders", <WorkOrders />, ["admin", "installer"]],
+              ["/install-calendar", <Installs />, A],
               ["/time-clock", <TimeClock />, ASI],
               ["/portal-accounts", <PortalAccounts />, A],
               ["/materials", <Materials />, A],
