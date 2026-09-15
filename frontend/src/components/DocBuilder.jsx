@@ -55,7 +55,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
               customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
-              status: statusOptions[0], order_date: new Date().toISOString().slice(0, 10), due_date: "",
+              status: statusOptions[0], order_date: new Date().toISOString().slice(0, 10), due_date: "", shipping_cost: 0,
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
       );
@@ -151,7 +151,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const discount = subtotal * (discRate / 100);
   const taxable = subtotal - discount;
   const tax = form.tax_exempt ? 0 : taxable * (Number(form.tax_rate || 0) / 100);
-  const total = taxable + tax;
+  const shipping = Math.round((Number(form.shipping_cost || 0) * 1.3) * 100) / 100;
+  const total = taxable + tax + shipping;
   const totMaterial = form.line_items.reduce((s, li) => s + breakdown(li).material, 0);
   const totMargin = form.line_items.reduce((s, li) => s + lineMargin(li), 0);
   const totMarginPct = subtotal > 0 ? (totMargin / subtotal) * 100 : 0;
@@ -226,7 +227,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             {form.line_items.map((li, i) => {
               const cat = li.category || catOfMaterial(li.material_id);
               const baseCats = categories.includes(cat) || !cat ? categories : [cat, ...categories];
-              const catOptions = Array.from(new Set(baseCats));
+              const catOptions = Array.from(new Set(baseCats)).filter((c) => String(c).trim().toLowerCase() !== "shipping");
               const matOptions = materials.filter((m) => !cat || m.category === cat);
               const isShip = String(cat).trim().toLowerCase() === "shipping";
               const isInstall = String(cat).trim().toLowerCase() === "installation";
@@ -362,6 +363,11 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </div>
               )}
               <Row label={form.tax_exempt ? "Tax (exempt)" : `Tax (${form.tax_rate || 0}%)`} value={tax} muted />
+              <div className="flex items-center justify-between gap-2 py-1" data-testid="doc-shipping-row">
+                <span className="text-sm text-muted-foreground">Shipping cost $ <span className="text-xs">(+30% markup, hidden from customer)</span></span>
+                <input type="number" value={form.shipping_cost || ""} onChange={(e) => set("shipping_cost", e.target.value)} data-testid="doc-shipping-cost" placeholder="0.00" className="w-28 border border-input px-2 py-1 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+              </div>
+              {shipping > 0 && <Row label="Shipping (billed)" value={shipping} muted />}
               <div className="border-t border-border mt-2 pt-2"><Row label="Total" value={total} bold /></div>
               {hasCommission && Number(form.commission_rate || 0) > 0 && (
                 <div className="mt-3 pt-3 border-t border-dashed border-border text-xs font-mono text-muted-foreground space-y-1">

@@ -208,6 +208,7 @@ class EstimateInput(BaseModel):
     tax_exempt_number: Optional[str] = None
     order_date: Optional[str] = None
     due_date: Optional[str] = None
+    shipping_cost: float = 0.0
     notes: Optional[str] = None
     status: str = "draft"  # draft, sent, approved, rejected
     commission_rate: float = 0.0
@@ -227,6 +228,7 @@ class InvoiceInput(BaseModel):
     order_date: Optional[str] = None
     notes: Optional[str] = None
     due_date: Optional[str] = None
+    shipping_cost: float = 0.0
     status: str = "unpaid"  # unpaid, paid, partial, overdue
 
 
@@ -418,7 +420,7 @@ async def customer_discount(customer_id: Optional[str]) -> float:
         return 0.0
 
 
-async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate: float = 0.0) -> dict:
+async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate: float = 0.0, shipping_cost: float = 0.0) -> dict:
     s = await get_settings()
     # Resolve material buying cost/sqft from the material record (never trust client for cost)
     mat_ids = [li.get("material_id") for li in line_items if li.get("material_id") and ObjectId.is_valid(li.get("material_id"))]
@@ -438,20 +440,22 @@ async def compute_totals(line_items: List[dict], tax_rate: float, discount_rate:
     discount_amount = round(subtotal * (discount_rate / 100.0), 2)
     discounted = round(subtotal - discount_amount, 2)
     tax_amount = round(discounted * (tax_rate / 100.0), 2)
-    total = round(discounted + tax_amount, 2)
+    shipping_cost_f = round(float(shipping_cost or 0), 2)
+    shipping = round(shipping_cost_f * 1.30, 2)
+    total = round(discounted + tax_amount + shipping, 2)
     material_margin = round(sum(i["material_margin"] for i in items), 2)
     material_margin_pct = round(material_margin / subtotal * 100, 1) if subtotal else 0.0
     return {
         "line_items": items, "subtotal": subtotal,
         "discount_rate": discount_rate, "discount_amount": discount_amount,
-        "tax_amount": tax_amount, "total": total,
+        "tax_amount": tax_amount, "shipping_cost": shipping_cost_f, "shipping": shipping, "total": total,
         "material_margin": material_margin, "material_margin_pct": material_margin_pct,
     }
 
 
 # Fields carrying internal cost/margin data that customers must never see
 _MARGIN_LINE_FIELDS = ("cost_per_sqft", "material_buying_cost", "material_margin")
-_MARGIN_DOC_FIELDS = ("material_margin", "material_margin_pct")
+_MARGIN_DOC_FIELDS = ("material_margin", "material_margin_pct", "shipping_cost")
 
 
 def strip_margins(doc: dict) -> dict:
@@ -1279,7 +1283,7 @@ async def apply_commission(doc: dict, user: dict) -> dict:
 @api_router.post("/estimates")
 async def create_estimate(payload: EstimateInput, user: dict = Depends(require_staff)):
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await apply_commission(doc, user)
@@ -1293,7 +1297,7 @@ async def create_estimate(payload: EstimateInput, user: dict = Depends(require_s
 async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.estimates, eid, "Estimate")
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await apply_commission(doc, user)
@@ -1332,6 +1336,8 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "discount_rate": est.get("discount_rate", 0),
         "discount_amount": est.get("discount_amount", 0),
         "tax_amount": est.get("tax_amount", 0),
+        "shipping_cost": est.get("shipping_cost", 0),
+        "shipping": est.get("shipping", 0),
         "total": est.get("total", 0),
         "notes": est.get("notes"),
         "commission_rate": est.get("commission_rate", 0),
@@ -1366,7 +1372,7 @@ _SO_STATUSES = ("open", "in_production", "fulfilled")
 @api_router.post("/sales-orders")
 async def create_sales_order(payload: EstimateInput, user: dict = Depends(require_staff)):
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await apply_commission(doc, user)
@@ -1381,7 +1387,7 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
 async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.sales_orders, sid, "Sales order")
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await apply_commission(doc, user)
@@ -1438,6 +1444,8 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "discount_rate": so.get("discount_rate", 0),
         "discount_amount": so.get("discount_amount", 0),
         "tax_amount": so.get("tax_amount", 0),
+        "shipping_cost": so.get("shipping_cost", 0),
+        "shipping": so.get("shipping", 0),
         "total": so.get("total", 0),
         "notes": so.get("notes"),
         "commission_rate": so.get("commission_rate", 0),
@@ -1487,7 +1495,7 @@ async def list_invoices(user: dict = Depends(require_staff)):
 @api_router.post("/invoices")
 async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_staff)):
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     doc["number"] = await next_number("INV", "invoices", db.invoices, start=29500)
@@ -1500,7 +1508,7 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
 async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_staff)):
     await get_or_404(db.invoices, iid, "Invoice")
     disc = await customer_discount(payload.customer_id)
-    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc)
+    totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
     await db.invoices.update_one({"_id": oid(iid)}, {"$set": doc})
@@ -3413,9 +3421,11 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<td align="right" style="padding:10px 14px">{_money(net_subtotal)}</td></tr>'
         f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Tax ({doc.get("tax_rate", 0)}%)</td>'
         f'<td align="right" style="padding:6px 14px">{_money(doc.get("tax_amount", 0))}</td></tr>'
-        f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
-        f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>'
-        f'</table></td></tr>'
+        + (f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Shipping</td>'
+           f'<td align="right" style="padding:6px 14px">{_money(doc.get("shipping", 0))}</td></tr>' if float(doc.get("shipping") or 0) > 0 else "")
+        + (f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
+        f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>')
+        + f'</table></td></tr>'
         f'{dl_btn}'
         f'{pay_btn}'
         # Footer
@@ -3864,7 +3874,11 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     else:
         _tax_lbl = f"Tax ({doc.get('tax_rate', 0)}%)"
     c.setFillColor(soft); c.drawRightString(ax - 100, y, _tax_lbl)
-    c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(doc.get("tax_amount", 0))); y -= 26
+    c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(doc.get("tax_amount", 0))); y -= 16
+    if float(doc.get("shipping") or 0) > 0:
+        c.setFillColor(soft); c.drawRightString(ax - 100, y, "Shipping")
+        c.setFillColor(ink); c.drawRightString(ax - 10, y, _money(doc.get("shipping", 0))); y -= 16
+    y -= 10
     label = "AMOUNT DUE" if kind_label == "Invoice" else "TOTAL"
     c.setFillColor(ink); c.rect(ax - 230, y - 7, 230, 28, fill=1, stroke=0)
     c.setFillColor(cyan); c.rect(ax - 230, y - 7, 5, 28, fill=1, stroke=0)
