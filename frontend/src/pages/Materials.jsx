@@ -23,6 +23,7 @@ export default function Materials() {
   const [catOpen, setCatOpen] = useState(false);
   const [newCat, setNewCat] = useState("");
   const [del, setDel] = useState(null); // { url, label, after }
+  const [sortBy, setSortBy] = useState("category");
 
   const load = () => api.get("/materials").then((r) => setRows(r.data));
   const loadCats = () => api.get("/material-categories").then((r) => setCats(r.data)).catch(() => {});
@@ -77,9 +78,27 @@ export default function Materials() {
 
   const marginPct = (m) => (m.price_per_sqft > 0 ? Math.round(((m.price_per_sqft - m.cost_per_sqft) / m.price_per_sqft) * 100) : 0);
 
+  const sortedRows = [...rows].sort((a, b) => {
+    const name = (a.name || "").toLowerCase().localeCompare((b.name || "").toLowerCase());
+    if (sortBy === "category") {
+      const ca = (a.category || "Uncategorized").toLowerCase();
+      const cb = (b.category || "Uncategorized").toLowerCase();
+      return ca === cb ? name : ca.localeCompare(cb);
+    }
+    return name;
+  });
+
   return (
     <div>
       <PageHeader overline="Inventory · Costing" title="Materials">
+        <label className="flex items-center gap-2 text-sm">
+          <span className="overline text-muted-foreground">Sort by</span>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} data-testid="materials-sort-by"
+            className="border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+            <option value="category">Category</option>
+            <option value="name">Name</option>
+          </select>
+        </label>
         {isAdmin && <Btn variant="outline" onClick={() => setCatOpen(true)} data-testid="manage-categories-btn"><Tag size={16} weight="bold" /> Categories</Btn>}
         <Btn onClick={openNew} data-testid="add-material-btn"><Plus size={16} weight="bold" /> Add Material</Btn>
       </PageHeader>
@@ -101,7 +120,7 @@ export default function Materials() {
               </tr>
             </thead>
             <tbody data-testid="materials-table">
-              {rows.map((m) => (
+              {sortedRows.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0 hover:bg-secondary/50">
                   <td className="px-5 py-3">
                     <div className="font-medium">{m.name}</div>
