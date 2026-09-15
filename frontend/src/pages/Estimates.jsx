@@ -73,8 +73,9 @@ export default function Estimates() {
   };
 
   const selIds = Object.keys(sel).filter((k) => sel[k]);
-  const allChecked = rows.length > 0 && rows.every((r) => sel[r.id]);
-  const toggleAll = () => { const n = {}; if (!allChecked) rows.forEach((r) => (n[r.id] = true)); setSel(n); };
+  const visibleRows = rows.filter((r) => !r.sales_order_id);
+  const allChecked = visibleRows.length > 0 && visibleRows.every((r) => sel[r.id]);
+  const toggleAll = () => { const n = {}; if (!allChecked) visibleRows.forEach((r) => (n[r.id] = true)); setSel(n); };
   const bulkDelete = async (password) => {
     try {
       const { data } = await api.post("/estimates/bulk-delete", { ids: selIds, password });
@@ -109,7 +110,7 @@ export default function Estimates() {
               </tr>
             </thead>
             <tbody data-testid="estimates-table">
-              {rows.map((r) => (
+              {visibleRows.map((r) => (
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`estimate-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`estimate-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
@@ -141,7 +142,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={10 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {visibleRows.length === 0 && <tr><td colSpan={10 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>
