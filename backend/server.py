@@ -1155,17 +1155,44 @@ async def _hidden_categories() -> set:
     return set(doc.get("names", [])) if doc else set()
 
 
+async def _category_order() -> list:
+    doc = await db.settings.find_one({"key": "category_order"})
+    return doc.get("names", []) if doc else []
+
+
+def _apply_order(names: list, order: list) -> list:
+    order_set = set(order)
+    in_order = [n for n in order if n in names]
+    rest = [n for n in names if n not in order_set]
+    return in_order + rest
+
+
 @api_router.get("/material-categories")
 async def list_categories(user: dict = Depends(require_staff)):
     custom = await db.material_categories.find().sort("name", 1).to_list(500)
     hidden = await _hidden_categories()
     visible_presets = [p for p in PRESET_CATEGORIES if p not in hidden]
+    custom_by_name = {c["name"]: str(c["_id"]) for c in custom}
+    natural = visible_presets + [c["name"] for c in custom]
+    ordered_names = _apply_order(natural, await _category_order())
+    ordered = [{"name": n, "type": "custom" if n in custom_by_name else "preset", "id": custom_by_name.get(n)} for n in ordered_names]
     return {
         "presets": visible_presets,
         "custom": [{"id": str(c["_id"]), "name": c["name"]} for c in custom],
         "hidden": sorted(hidden),
-        "all": visible_presets + [c["name"] for c in custom],
+        "ordered": ordered,
+        "all": ordered_names,
     }
+
+
+class OrderInput(BaseModel):
+    names: List[str]
+
+
+@api_router.put("/material-categories/order")
+async def set_category_order(payload: OrderInput, user: dict = Depends(require_admin)):
+    await db.settings.update_one({"key": "category_order"}, {"$set": {"names": payload.names}}, upsert=True)
+    return {"message": "ok"}
 
 
 @api_router.post("/material-categories")

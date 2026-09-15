@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Plus, PencilSimple, Trash, Tag } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, Tag, CaretUp, CaretDown } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 
@@ -51,6 +51,15 @@ export default function Materials() {
     try { await api.put(`/material-categories/${c.id}`, { name: name.trim() }); toast.success("Category renamed"); loadCats(); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Rename failed"); }
   };
+  const moveCategory = async (index, dir) => {
+    const names = (cats.ordered || []).map((o) => o.name);
+    const j = index + dir;
+    if (j < 0 || j >= names.length) return;
+    [names[index], names[j]] = [names[j], names[index]];
+    try { await api.put("/material-categories/order", { names }); loadCats(); load(); }
+    catch (e) { toast.error(e.response?.data?.detail || "Reorder failed"); }
+  };
+
 
   const openNew = () => { setForm({ ...empty, markup: defaultMarkup }); setEditing(null); setOpen(true); };
   const openEdit = (r) => { setForm({ ...empty, ...r, stock: r.stock ?? "", category: r.category ?? "", supplier: r.supplier ?? "" }); setEditing(r.id); setOpen(true); };
@@ -203,12 +212,24 @@ export default function Materials() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <div className="overline text-muted-foreground mb-2">Built-in</div>
-              <div className="space-y-1" data-testid="preset-categories-list">
-                {cats.presets.map((c) => (
-                  <div key={c} className="flex items-center justify-between border border-border px-3 py-2">
-                    <span className="text-sm font-medium font-mono">{c}</span>
-                    <Btn variant="ghost" onClick={() => removePreset(c)} data-testid={`delete-preset-${c}`} title="Remove this category"><Trash size={16} /></Btn>
+              <div className="overline text-muted-foreground mb-2">Categories · use arrows to reorder the dropdown</div>
+              <div className="space-y-1 max-h-80 overflow-y-auto" data-testid="ordered-categories-list">
+                {(cats.ordered || []).map((c, i) => (
+                  <div key={c.name} className="flex items-center justify-between border border-border px-3 py-2" data-testid={`category-row-${c.name}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex flex-col">
+                        <button onClick={() => moveCategory(i, -1)} disabled={i === 0} data-testid={`move-up-${c.name}`}
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-30 leading-none" title="Move up"><CaretUp size={14} weight="bold" /></button>
+                        <button onClick={() => moveCategory(i, 1)} disabled={i === (cats.ordered.length - 1)} data-testid={`move-down-${c.name}`}
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-30 leading-none" title="Move down"><CaretDown size={14} weight="bold" /></button>
+                      </div>
+                      <span className="text-sm font-medium font-mono truncate">{c.name}</span>
+                      {c.type === "custom" && <span className="text-[10px] uppercase tracking-wide text-[#0E7490]">custom</span>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {c.type === "custom" && <Btn variant="ghost" onClick={() => renameCat({ id: c.id, name: c.name })} data-testid={`edit-category-${c.name}`}><PencilSimple size={16} /></Btn>}
+                      <Btn variant="ghost" onClick={() => c.type === "custom" ? removeCat({ id: c.id, name: c.name }) : removePreset(c.name)} data-testid={`delete-category-${c.name}`}><Trash size={16} /></Btn>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -226,21 +247,6 @@ export default function Materials() {
                 </div>
               </div>
             )}
-            <div>
-              <div className="overline text-muted-foreground mb-2">Custom</div>
-              {cats.custom.length === 0 && <div className="text-sm text-muted-foreground">No custom categories yet.</div>}
-              <div className="space-y-1" data-testid="custom-categories-list">
-                {cats.custom.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between border border-border px-3 py-2">
-                    <span className="text-sm font-medium">{c.name}</span>
-                    <div className="flex items-center gap-1">
-                      <Btn variant="ghost" onClick={() => renameCat(c)} data-testid={`edit-category-${c.id}`}><PencilSimple size={16} /></Btn>
-                      <Btn variant="ghost" onClick={() => removeCat(c)} data-testid={`delete-category-${c.id}`}><Trash size={16} /></Btn>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
             <div className="flex items-end gap-2 border-t border-border pt-4">
               <div className="flex-1"><Inp label="New category" value={newCat} onChange={(e) => setNewCat(e.target.value)} testid="new-category-input" /></div>
               <Btn onClick={addCat} data-testid="add-category-btn"><Plus size={16} weight="bold" /> Add</Btn>

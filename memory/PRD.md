@@ -51,7 +51,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 
 ## Invariants
 ## Recent (June 2026)
-- **Deletable material categories**: Materials → Categories dialog lets admins delete **built-in** categories (previously custom-only). Built-in deletes are a reversible "hide" (`settings.hidden_categories`) with a Restore section. Backend `DELETE /material-categories/preset/{name}` (admin-pw) + `POST /material-categories/preset/{name}/restore`; GET returns `hidden` and filters presets. Verified.
+- **Reorderable categories**: Materials → Categories dialog now shows one unified ordered list with up/down arrows to control the order categories appear in every category dropdown. Order persists in `settings.category_order`; GET returns `ordered` [{name,type,id}] and `all` in saved order (falls back to natural order for anything not explicitly ordered). Backend `PUT /material-categories/order` (admin, defined before `/{cid}` to avoid route clash). Delete/hide/restore/rename retained. Verified reorder persists + reflects in `all`.
+- **Deletable material categories**: admins can delete built-in categories (reversible hide) + custom (permanent).
 - **Auto ship date**: `_autostamp_ship_date` stamps today on SO/Invoice when a tracking # is present and no ship date set (create+update); explicit dates preserved.
 - **Ship date field ("Shipped on")** on SO/Invoice next to tracking; on PDF/email/lists/portal; carries SO→Invoice.
 - **Shipping type**: dropdown (None / Ground / 2 Day Air / Overnight / Overnight AM / LTL) on Estimate/SO/Invoice builders; shown with tracking on PDF/email/lists/portal; carries EST→SO→Invoice.
