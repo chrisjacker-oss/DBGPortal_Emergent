@@ -259,7 +259,7 @@ export default function Proofs() {
         </DialogContent>
       </Dialog>
 
-      <SendDialog open={!!sendDoc} doc={sendDoc} path="/proofs" kindLabel="proof" onClose={() => setSendDoc(null)} onSent={load} />
+      <SendDialog open={!!sendDoc} doc={sendDoc} path="/proofs" kindLabel="proof" allowNote={false} onClose={() => setSendDoc(null)} onSent={load} />
       <AdminDeleteDialog open={!!delRow} label={`proof ${delRow?.number || ""}`} onClose={() => setDelRow(null)} onConfirm={confirmDelete} />
     </div>
   );

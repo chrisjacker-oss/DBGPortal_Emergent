@@ -3752,7 +3752,7 @@ def _dims_label(li: dict) -> str:
     return f"{area} sqft"
 
 
-def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None, pdf_url: Optional[str] = None, track: bool = True) -> str:
+def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None, pdf_url: Optional[str] = None, track: bool = True, note: Optional[str] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
     contact_bits = [co.get("company_address"), co.get("company_phone"), co.get("company_web"), co.get("company_email")]
@@ -3833,7 +3833,8 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
         f'{attn_html}'
         f'<p style="margin:16px 0 0">Please find your {escape(kind_label.lower())} for <strong>{escape(str(doc.get("title", "")))}</strong> below.</p>'
-        f'</td></tr>'
+        + (f'<div style="margin:14px 0 0;background:#F7F7F8;border-left:3px solid #06B6D4;padding:12px 14px;color:#374151;white-space:pre-wrap">{escape(str(note).strip())}</div>' if note and str(note).strip() else "")
+        + f'</td></tr>'
         # Table
         f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
         f'<tr style="background:#0A0A0A;color:#fff">'
@@ -3957,7 +3958,7 @@ def render_statement_email(customer_name: str, period_label: str, invoices: list
     )
 
 
-async def _send_document(collection, doc_id: str, kind_label: str, recipients: Optional[List[str]] = None) -> dict:
+async def _send_document(collection, doc_id: str, kind_label: str, recipients: Optional[List[str]] = None, note: Optional[str] = None) -> dict:
     doc = await get_or_404(collection, doc_id, kind_label)
     await _attach_contact_name(doc)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
@@ -3987,7 +3988,7 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
     receipts, first_token, last_email_id, failed = [], None, None, []
     for addr in to_list:
         rtoken = secrets.token_urlsafe(16)
-        html = render_doc_email(kind_label, doc, cname, rtoken, company, pdf_url=pdf_url)
+        html = render_doc_email(kind_label, doc, cname, rtoken, company, pdf_url=pdf_url, note=note)
         try:
             last_email_id = await send_email(to=addr, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
         except Exception as e:
@@ -4002,7 +4003,7 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
     sent_to = [r["email"] for r in receipts]
     # Blind copy to the shop so there is always an internal record of what was sent (no tracking pixel).
     try:
-        copy_html = render_doc_email(kind_label, doc, cname, first_token, company, pdf_url=pdf_url, track=False)
+        copy_html = render_doc_email(kind_label, doc, cname, first_token, company, pdf_url=pdf_url, track=False, note=note)
         await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} sent to {cname}", html=copy_html)
     except Exception as e:
         logger.warning(f"BCC copy to {BCC_COPY_EMAIL} failed: {e}")
@@ -4128,21 +4129,22 @@ async def _send_welcome_email(*, name: str, email: str, temp_password: str, role
 
 class SendDocInput(BaseModel):
     recipients: List[str] = []
+    note: Optional[str] = None
 
 
 @api_router.post("/estimates/{eid}/send")
 async def send_estimate(eid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
-    return await _send_document(db.estimates, eid, "Estimate", payload.recipients)
+    return await _send_document(db.estimates, eid, "Estimate", payload.recipients, note=payload.note)
 
 
 @api_router.post("/sales-orders/{sid}/send")
 async def send_sales_order(sid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
-    return await _send_document(db.sales_orders, sid, "Sales Order", payload.recipients)
+    return await _send_document(db.sales_orders, sid, "Sales Order", payload.recipients, note=payload.note)
 
 
 @api_router.post("/invoices/{iid}/send")
 async def send_invoice(iid: str, payload: SendDocInput = SendDocInput(), user: dict = Depends(require_staff)):
-    return await _send_document(db.invoices, iid, "Invoice", payload.recipients)
+    return await _send_document(db.invoices, iid, "Invoice", payload.recipients, note=payload.note)
 
 
 _PIXEL = base64.b64decode("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==")

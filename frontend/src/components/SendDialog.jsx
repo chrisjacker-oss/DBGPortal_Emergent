@@ -7,15 +7,17 @@ import { EnvelopeSimple } from "@phosphor-icons/react";
 
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s || "").trim());
 
-export default function SendDialog({ open, doc, path, kindLabel = "document", onClose, onSent }) {
+export default function SendDialog({ open, doc, path, kindLabel = "document", allowNote = true, onClose, onSent }) {
   const [options, setOptions] = useState([]); // {email, label}
   const [checked, setChecked] = useState({}); // email -> bool
   const [extra, setExtra] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open || !doc) return;
     setExtra("");
+    setNote("");
     const opts = [];
     const seen = new Set();
     const addOpt = (email, label) => {
@@ -53,7 +55,7 @@ export default function SendDialog({ open, doc, path, kindLabel = "document", on
     if (extra.trim() && !isEmail(extra)) { toast.error("The added email is not valid"); return; }
     setBusy(true);
     try {
-      const { data } = await api.post(`${path}/${doc.id}/send`, { recipients });
+      const { data } = await api.post(`${path}/${doc.id}/send`, { recipients, ...(allowNote && note.trim() ? { note: note.trim() } : {}) });
       if (data.failed && data.failed.length) {
         toast.warning(`Emailed to ${data.to}. Could not send to: ${data.failed.join(", ")}`);
       } else {
@@ -95,6 +97,15 @@ export default function SendDialog({ open, doc, path, kindLabel = "document", on
           <input type="email" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="name@company.com" data-testid="send-extra-email"
             className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
         </label>
+
+        {allowNote && (
+          <label className="block">
+            <span className="overline text-muted-foreground">Note to customer (optional)</span>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} data-testid="send-note"
+              placeholder={`Add a short message to include in the ${kindLabel} email…`}
+              className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring" />
+          </label>
+        )}
 
         <DialogFooter>
           <Btn variant="outline" onClick={onClose} disabled={busy}>Cancel</Btn>
