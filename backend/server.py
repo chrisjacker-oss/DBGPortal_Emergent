@@ -3511,14 +3511,14 @@ async def _notify_install(iid: str, reminder: bool = False, reschedule: bool = F
 
 
 @api_router.get("/installs")
-async def list_installs(month: Optional[str] = None, user: dict = Depends(require_admin)):
+async def list_installs(month: Optional[str] = None, user: dict = Depends(require_staff)):
     q = {"date": {"$regex": f"^{re.escape(month)}"}} if month else {}
     docs = await db.installs.find(q).sort([("date", 1), ("time_of_day", 1)]).to_list(2000)
     return [await _enrich_install(d) for d in docs]
 
 
 @api_router.post("/installs")
-async def create_install(payload: InstallInput, user: dict = Depends(require_admin)):
+async def create_install(payload: InstallInput, user: dict = Depends(require_staff)):
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
     doc["created_at"] = now_iso()
@@ -3530,7 +3530,7 @@ async def create_install(payload: InstallInput, user: dict = Depends(require_adm
 
 
 @api_router.put("/installs/{iid}")
-async def update_install(iid: str, payload: InstallInput, user: dict = Depends(require_admin)):
+async def update_install(iid: str, payload: InstallInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.installs, iid, "Install")
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
@@ -3546,7 +3546,7 @@ async def update_install(iid: str, payload: InstallInput, user: dict = Depends(r
 
 
 @api_router.post("/installs/{iid}/notify")
-async def resend_install(iid: str, user: dict = Depends(require_admin)):
+async def resend_install(iid: str, user: dict = Depends(require_staff)):
     await get_or_404(db.installs, iid, "Install")
     return await _notify_install(iid)
 

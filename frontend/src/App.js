@@ -84,7 +84,7 @@ function App() {
               ["/reports", <Reports />, A],
               ["/customers", <Customers />, AS],
               ["/work-orders", <WorkOrders />, ["admin", "installer"]],
-              ["/install-calendar", <Installs />, A],
+              ["/install-calendar", <Installs />, AS],
               ["/time-clock", <TimeClock />, ASI],
               ["/portal-accounts", <PortalAccounts />, A],
               ["/materials", <Materials />, A],

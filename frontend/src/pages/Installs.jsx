@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
@@ -20,6 +21,8 @@ const emptyForm = { date: "", time_of_day: "morning", customer_id: "", contact_i
 
 export default function Installs() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [cursor, setCursor] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [installs, setInstalls] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -206,7 +209,7 @@ export default function Installs() {
           </div>
           <DialogFooter className="flex-wrap gap-2">
             {editing && <Btn variant="outline" onClick={() => resend(editing)} data-testid="install-resend-btn"><EnvelopeSimple size={16} weight="bold" /> Resend alert</Btn>}
-            {editing && <Btn variant="danger" onClick={() => { setDel(editing); setOpen(false); }} data-testid="install-delete-btn"><Trash size={16} weight="bold" /> Delete</Btn>}
+            {editing && isAdmin && <Btn variant="danger" onClick={() => { setDel(editing); setOpen(false); }} data-testid="install-delete-btn"><Trash size={16} weight="bold" /> Delete</Btn>}
             <Btn variant="outline" onClick={() => { setOpen(false); setEditing(null); }} disabled={saving}>Cancel</Btn>
             <Btn onClick={save} disabled={saving || !form.customer_id || !form.date} data-testid="install-save-btn">{saving ? "Saving…" : (editing ? "Save" : "Schedule & Notify")}</Btn>
           </DialogFooter>

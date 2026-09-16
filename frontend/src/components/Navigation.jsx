@@ -52,6 +52,7 @@ const salesmanLinks = [
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
   { to: "/artwork-proofs", label: "Artwork Proofs", icon: Image },
+  { to: "/install-calendar", label: "Install Calendar", icon: CalendarCheck },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/commissions", label: "Commissions", icon: Percent },
   { to: "/time-clock", label: "Time Clock", icon: Timer },
