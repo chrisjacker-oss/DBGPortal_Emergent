@@ -75,6 +75,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - **Tracking # column**: on Sales Orders and Invoices lists.
 - **Multi-recipient send**: "Email to customer" opens SendDialog (contacts + company email checkboxes + add-another-email).
 - **Tracking #** field on SO & Invoice builder (not Estimates), next to Customer PO; carries SO→Invoice; on PDF + email.
+- **Idle auto-logout**: signed-in users are auto-signed-out after N idle minutes (setting `idle_timeout_min`, default 90), with a 1-minute countdown warning dialog (`IdleWarning.jsx`) offering "Stay signed in" (renews token via `/auth/refresh`) or "Sign out". Timeout is admin-editable on Settings → Security; value delivered to all roles via `/auth/me` + login. Login page shows an inactivity message after auto-logout. Verified.
+- **Label changes** (Jun 2026): work status "ready" now displays "Pickup / Shipping" (was "Ready for Pickup / Shipping") in kit.jsx `WORK_STATUS` + backend `WORK_STATUS_LABELS`; document "due date" now labeled "Est. Complete date" on Estimate/SO/Invoice builder (DocBuilder), PDF meta, document email, and Invoice detail/print. Stored value/`due_date` key unchanged. Verified.
+- **Installer work orders**: installers see only their own work orders, can create + edit them (fix mistakes), cannot delete (admin-only). Confirmed already-implemented + verified.
 
 ## Constraints
 - Preview only; production requires user Deploy.

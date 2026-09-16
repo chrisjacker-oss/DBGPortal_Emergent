@@ -334,7 +334,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 )}
               </div>
               <Inp label="Order date" type="date" value={form.order_date || ""} onChange={(e) => set("order_date", e.target.value)} testid="doc-order-date" />
-              <Inp label="Estimated due date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />
+              <Inp label="Est. Complete date" type="date" value={form.due_date || ""} onChange={(e) => set("due_date", e.target.value)} testid="doc-due" />
               {form.created_at && (
                 <div className="text-xs font-mono text-muted-foreground" data-testid="doc-created-date">Created: {new Date(form.created_at).toLocaleDateString()}</div>
               )}

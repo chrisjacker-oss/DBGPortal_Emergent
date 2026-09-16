@@ -100,7 +100,7 @@ export const WORK_STATUS = [
   { value: "approved", label: "Approved" },
   { value: "in_production", label: "In Production" },
   { value: "in_finishing", label: "In Finishing" },
-  { value: "ready", label: "Ready for Pickup / Shipping" },
+  { value: "ready", label: "Pickup / Shipping" },
 ];
 
 export function WorkStatusSelect({ value, onChange, disabled, testid }) {

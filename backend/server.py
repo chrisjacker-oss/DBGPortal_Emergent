@@ -3194,7 +3194,7 @@ WORK_STATUS_LABELS = {
     "approved": "Approved",
     "in_production": "In Production",
     "in_finishing": "In Finishing",
-    "ready": "Ready for Pickup / Shipping",
+    "ready": "Pickup / Shipping",
 }
 
 
@@ -3723,7 +3723,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />' if track else ""
     net_subtotal = round(float(doc.get("subtotal", 0)) - float(doc.get("discount_amount", 0)), 2)
     label = "Amount Due" if kind_label == "Invoice" else "Total"
-    due = f'<span style="color:#6B7280;font-size:12px">Due {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
+    due = f'<span style="color:#6B7280;font-size:12px">Est. Complete {escape(str(doc.get("due_date")))}</span>' if doc.get("due_date") else ""
     po_html = f'<div style="color:#6B7280;font-size:12px">Your PO: {escape(str(doc.get("customer_po")))}</div>' if doc.get("customer_po") else ""
     if doc.get("tracking_number"):
         ship_m = f' ({escape(str(doc.get("shipping_type")))})' if doc.get("shipping_type") else ""
@@ -4195,7 +4195,7 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     if doc.get("shipped_date"):
         meta.append(("Shipped", str(doc.get("shipped_date"))))
     if doc.get("due_date"):
-        meta.append(("Due Date", str(doc.get("due_date"))))
+        meta.append(("Est. Complete date", str(doc.get("due_date"))))
     terms = (customer or {}).get("net_terms")
     if terms:
         meta.append(("Terms", str(terms)))

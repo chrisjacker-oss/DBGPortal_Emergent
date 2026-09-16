@@ -145,7 +145,7 @@ export default function Invoices() {
         <div><div class="muted">BILL TO</div><div style="font-weight:bold">${(inv.customer_name || "").replace(/</g, "&lt;")}</div>
         ${inv.contact_name ? `<div class="muted">Attn: ${inv.contact_name}</div>` : ""}</div>
         <div style="text-align:right"><div class="muted">Issued: ${(inv.created_at || "").slice(0, 10)}</div>
-        <div class="muted">Due: ${inv.due_date || "—"}</div>${inv.net_terms ? `<div class="muted">Terms: ${inv.net_terms}</div>` : ""}</div>
+        <div class="muted">Est. Complete: ${inv.due_date || "—"}</div>${inv.net_terms ? `<div class="muted">Terms: ${inv.net_terms}</div>` : ""}</div>
       </div>
       ${inv.title ? `<div style="margin-top:10px;font-weight:bold">${(inv.title || "").replace(/</g, "&lt;")}</div>` : ""}
       <table><thead><tr><th>Description</th><th style="text-align:center">W × H × Qty</th><th style="text-align:right">Sqft</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rowsHtml}</tbody></table>
@@ -436,7 +436,7 @@ export default function Invoices() {
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Field label="Issued" value={(detailInv.created_at || "").slice(0, 10) || "—"} />
-                <Field label="Due" value={detailInv.due_date || "—"} />
+                <Field label="Est. Complete" value={detailInv.due_date || "—"} />
                 <Field label="Terms" value={detailInv.net_terms || "—"} />
                 <Field label="From SO" value={detailInv.from_sales_order || "—"} />
               </div>
