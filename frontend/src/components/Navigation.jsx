@@ -20,6 +20,7 @@ import {
   Wrench,
   Timer,
   CalendarCheck,
+  Image,
   Gear,
   SignOut,
 } from "@phosphor-icons/react";
@@ -30,6 +31,7 @@ const adminLinks = [
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
+  { to: "/artwork-proofs", label: "Artwork Proofs", icon: Image },
   { to: "/install-calendar", label: "Install Calendar", icon: CalendarCheck },
   { to: "/reorders", label: "Reorders", icon: ArrowsClockwise },
   { to: "/work-orders", label: "Work Orders", icon: Wrench },
@@ -49,6 +51,7 @@ const salesmanLinks = [
   { to: "/estimates", label: "Estimates", icon: FileText },
   { to: "/sales-orders", label: "Sales Orders", icon: ClipboardText },
   { to: "/invoices", label: "Invoices", icon: Receipt },
+  { to: "/artwork-proofs", label: "Artwork Proofs", icon: Image },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/commissions", label: "Commissions", icon: Percent },
   { to: "/time-clock", label: "Time Clock", icon: Timer },

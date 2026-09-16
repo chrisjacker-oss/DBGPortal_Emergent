@@ -12,6 +12,7 @@ import hmac
 import base64
 import re
 import io
+import uuid
 import ipaddress
 from html import escape
 from html.parser import HTMLParser
@@ -30,7 +31,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib import colors
 from bson import ObjectId
 from pymongo import ReturnDocument
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query, Header
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, BeforeValidator, ConfigDict
@@ -5108,10 +5109,424 @@ async def site_search(q: str, user: dict = Depends(require_staff)):
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Object storage (Emergent) + Artwork Proof approval system
+# ---------------------------------------------------------------------------
+STORAGE_BASE = (os.environ.get("INTEGRATION_PROXY_URL") or "").strip() or "https://integrations.emergentagent.com"
+STORAGE_URL = STORAGE_BASE.rstrip("/") + "/objstore/api/v1/storage"
+EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
+STORAGE_APP = "dbgsigns"
+_storage_key: Optional[str] = None
+
+ALLOWED_PROOF_TYPES = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png"}
+MAX_PROOF_BYTES = 26 * 1024 * 1024  # ~25MB
+
+
+async def init_storage(force: bool = False) -> str:
+    global _storage_key
+    if _storage_key and not force:
+        return _storage_key
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_KEY})
+        r.raise_for_status()
+        _storage_key = r.json()["storage_key"]
+    return _storage_key
+
+
+async def storage_put(path: str, data: bytes, content_type: str) -> dict:
+    key = await init_storage()
+    async with httpx.AsyncClient(timeout=120) as c:
+        r = await c.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, content=data)
+        if r.status_code == 404:
+            key = await init_storage(force=True)
+            r = await c.put(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key, "Content-Type": content_type}, content=data)
+        r.raise_for_status()
+        return r.json()
+
+
+async def storage_get(path: str) -> tuple:
+    key = await init_storage()
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key})
+        if r.status_code == 404:
+            key = await init_storage(force=True)
+            r = await c.get(f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key})
+        r.raise_for_status()
+        return r.content, r.headers.get("Content-Type", "application/octet-stream")
+
+
+class ProofSendInput(BaseModel):
+    recipients: List[str] = []
+
+
+class ProofChangesInput(BaseModel):
+    notes: str = ""
+
+
+async def _store_proof_upload(file: UploadFile, proof_key: str, version: int, user: dict) -> dict:
+    ext = (file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else "")
+    if ext not in ALLOWED_PROOF_TYPES:
+        raise HTTPException(status_code=400, detail="Only PDF, JPG or PNG files are allowed")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty")
+    if len(data) > MAX_PROOF_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large (max 25MB)")
+    content_type = ALLOWED_PROOF_TYPES[ext]
+    path = f"{STORAGE_APP}/proofs/{proof_key}/v{version}-{uuid.uuid4().hex}.{ext}"
+    try:
+        result = await storage_put(path, data, content_type)
+    except Exception as e:
+        logger.error(f"Proof upload failed: {e}")
+        raise HTTPException(status_code=502, detail="Could not store the file. Please try again.")
+    return {
+        "version": version,
+        "storage_path": result.get("path", path),
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": result.get("size", len(data)),
+        "uploaded_at": now_iso(),
+        "uploaded_by": user.get("name"),
+        "sent_at": None, "sent_to": None,
+        "decision": None, "decided_at": None, "decided_by": None, "change_notes": None,
+    }
+
+
+async def _enrich_proof(doc: dict) -> dict:
+    doc = clean(doc)
+    if doc.get("customer_id"):
+        c = await db.customers.find_one({"_id": oid(doc["customer_id"])})
+        doc["customer_name"] = (c.get("company") or c.get("name")) if c else "Unknown"
+        doc["customer_email"] = c.get("email") if c else None
+    if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+        ct = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+        doc["contact_name"] = ct.get("name") if ct else None
+        doc["contact_email"] = ct.get("email") if ct else None
+    if doc.get("link_kind") and doc.get("link_id") and ObjectId.is_valid(str(doc["link_id"])):
+        coll = {"estimate": db.estimates, "sales_order": db.sales_orders, "invoice": db.invoices}.get(doc["link_kind"])
+        if coll is not None:
+            ld = await coll.find_one({"_id": oid(doc["link_id"])})
+            doc["link_number"] = ld.get("number") if ld else None
+    return doc
+
+
+def _current_version(proof: dict) -> Optional[dict]:
+    cv = proof.get("current_version")
+    for v in proof.get("versions", []):
+        if v.get("version") == cv:
+            return v
+    return (proof.get("versions") or [None])[-1]
+
+
+@api_router.post("/proofs")
+async def create_proof(
+    file: UploadFile = File(...),
+    customer_id: str = Form(...),
+    contact_id: Optional[str] = Form(None),
+    title: str = Form(...),
+    notes: Optional[str] = Form(None),
+    link_kind: Optional[str] = Form(None),
+    link_id: Optional[str] = Form(None),
+    user: dict = Depends(require_staff),
+):
+    proof_key = uuid.uuid4().hex
+    version = await _store_proof_upload(file, proof_key, 1, user)
+    doc = {
+        "proof_key": proof_key,
+        "number": await next_number("PRF", "proofs", db.proofs, start=1000),
+        "customer_id": customer_id,
+        "contact_id": contact_id or None,
+        "title": title,
+        "notes": notes or None,
+        "link_kind": link_kind or None,
+        "link_id": link_id or None,
+        "status": "draft",
+        "current_version": 1,
+        "versions": [version],
+        "created_by": user.get("name"),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    res = await db.proofs.insert_one(doc)
+    return await _enrich_proof(await db.proofs.find_one({"_id": res.inserted_id}))
+
+
+@api_router.post("/proofs/{pid}/version")
+async def add_proof_version(pid: str, file: UploadFile = File(...), user: dict = Depends(require_staff)):
+    proof = await get_or_404(db.proofs, pid, "Proof")
+    next_v = max([v.get("version", 0) for v in proof.get("versions", [])] or [0]) + 1
+    version = await _store_proof_upload(file, proof.get("proof_key") or str(proof["_id"]), next_v, user)
+    await db.proofs.update_one({"_id": oid(pid)}, {
+        "$push": {"versions": version},
+        "$set": {"current_version": next_v, "status": "draft", "updated_at": now_iso()},
+    })
+    return await _enrich_proof(await db.proofs.find_one({"_id": oid(pid)}))
+
+
+@api_router.get("/proofs")
+async def list_proofs(user: dict = Depends(require_staff)):
+    docs = await db.proofs.find().sort("created_at", -1).to_list(1000)
+    return [await _enrich_proof(d) for d in docs]
+
+
+@api_router.get("/proofs/{pid}")
+async def get_proof(pid: str, user: dict = Depends(require_staff)):
+    return await _enrich_proof(await get_or_404(db.proofs, pid, "Proof"))
+
+
+@api_router.get("/proofs/{pid}/file")
+async def get_proof_file(pid: str, version: Optional[int] = None, user: dict = Depends(require_staff)):
+    proof = await get_or_404(db.proofs, pid, "Proof")
+    v = None
+    if version is not None:
+        v = next((x for x in proof.get("versions", []) if x.get("version") == version), None)
+    v = v or _current_version(proof)
+    if not v:
+        raise HTTPException(status_code=404, detail="No file for this proof")
+    data, ct = await storage_get(v["storage_path"])
+    return Response(content=data, media_type=v.get("content_type") or ct,
+                    headers={"Content-Disposition": f'inline; filename="{v.get("original_filename", "proof")}"'})
+
+
+@api_router.delete("/proofs/{pid}")
+async def delete_proof(pid: str, payload: DeleteConfirm, user: dict = Depends(require_admin)):
+    await verify_admin_password(user, payload.password)
+    await get_or_404(db.proofs, pid, "Proof")
+    await db.proof_tokens.delete_many({"proof_id": pid})
+    await db.proofs.delete_one({"_id": oid(pid)})
+    return {"message": "deleted"}
+
+
+@api_router.post("/proofs/{pid}/send")
+async def send_proof(pid: str, payload: ProofSendInput = ProofSendInput(), user: dict = Depends(require_staff)):
+    proof = await get_or_404(db.proofs, pid, "Proof")
+    v = _current_version(proof)
+    if not v:
+        raise HTTPException(status_code=400, detail="Upload a file before sending")
+    # resolve recipients
+    if payload.recipients:
+        to_list, seen = [], set()
+        for e in payload.recipients:
+            e = (e or "").strip()
+            if e and e.lower() not in seen:
+                seen.add(e.lower()); to_list.append(e)
+    else:
+        to = None
+        if proof.get("contact_id") and ObjectId.is_valid(str(proof["contact_id"])):
+            ct = await db.contacts.find_one({"_id": ObjectId(proof["contact_id"])})
+            if ct and ct.get("email"):
+                to = ct["email"]
+        if not to and proof.get("customer_id"):
+            cust = await db.customers.find_one({"_id": oid(proof["customer_id"])})
+            to = (cust or {}).get("email")
+        to_list = [to] if to else []
+    if not to_list:
+        raise HTTPException(status_code=400, detail="No email on file for the selected contact or customer")
+    cust = await db.customers.find_one({"_id": oid(proof["customer_id"])}) if proof.get("customer_id") else None
+    cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+    company = await get_settings()
+    sent_to, failed = [], []
+    for addr in to_list:
+        token = secrets.token_urlsafe(16)
+        html = render_proof_email(proof, v, cname, token, company)
+        try:
+            await send_email(to=addr, subject=f"Artwork proof {proof.get('number', '')} from DBG Signs, Inc.", html=html)
+        except Exception as e:
+            logger.warning(f"Proof email to {addr} failed: {e}")
+            failed.append(addr); continue
+        await db.proof_tokens.insert_one({"token": token, "proof_id": pid, "version": v["version"], "email": addr, "created_at": now_iso()})
+        sent_to.append(addr)
+    if not sent_to:
+        raise HTTPException(status_code=502, detail="Could not send to any of the selected recipients")
+    # mark the current version as sent
+    await db.proofs.update_one(
+        {"_id": oid(pid), "versions.version": v["version"]},
+        {"$set": {"versions.$.sent_at": now_iso(), "versions.$.sent_to": ", ".join(sent_to),
+                  "status": "sent", "updated_at": now_iso()}},
+    )
+    try:
+        copy_html = render_proof_email(proof, v, cname, "", company, internal=True)
+        await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] Artwork proof {proof.get('number', '')} sent to {cname}", html=copy_html)
+    except Exception as e:
+        logger.warning(f"Proof BCC copy failed: {e}")
+    return {"status": "sent", "to": ", ".join(sent_to), "failed": failed}
+
+
+# ---- Public (no-login) proof review -------------------------------------------------
+async def _pub_proof_from_token(token: str):
+    tr = await db.proof_tokens.find_one({"token": token})
+    if not tr:
+        raise HTTPException(status_code=404, detail="This proof link is invalid or has expired.")
+    proof = await db.proofs.find_one({"_id": oid(tr["proof_id"])})
+    if not proof:
+        raise HTTPException(status_code=404, detail="Proof not found.")
+    ver = next((x for x in proof.get("versions", []) if x.get("version") == tr.get("version")), None) or _current_version(proof)
+    return proof, ver, tr.get("email")
+
+
+@api_router.get("/pub/proof/{token}")
+async def pub_proof_info(token: str):
+    proof, ver, _ = await _pub_proof_from_token(token)
+    cname = "Customer"
+    if proof.get("customer_id"):
+        c = await db.customers.find_one({"_id": oid(proof["customer_id"])})
+        if c:
+            cname = c.get("company") or c.get("name") or "Customer"
+    return {
+        "number": proof.get("number"),
+        "title": proof.get("title"),
+        "notes": proof.get("notes"),
+        "customer_name": cname,
+        "version": ver.get("version") if ver else None,
+        "filename": ver.get("original_filename") if ver else None,
+        "content_type": ver.get("content_type") if ver else None,
+        "decision": ver.get("decision") if ver else None,
+        "change_notes": ver.get("change_notes") if ver else None,
+    }
+
+
+@api_router.get("/pub/proof/{token}/file")
+async def pub_proof_file(token: str):
+    proof, ver, _ = await _pub_proof_from_token(token)
+    if not ver:
+        raise HTTPException(status_code=404, detail="No file for this proof")
+    data, ct = await storage_get(ver["storage_path"])
+    return Response(content=data, media_type=ver.get("content_type") or ct,
+                    headers={"Content-Disposition": f'inline; filename="{ver.get("original_filename", "proof")}"'})
+
+
+async def _notify_proof_decision(proof: dict, ver: dict, email: Optional[str], decision: str, notes: Optional[str]):
+    try:
+        cname = "Customer"
+        if proof.get("customer_id"):
+            c = await db.customers.find_one({"_id": oid(proof["customer_id"])})
+            if c:
+                cname = c.get("company") or c.get("name") or "Customer"
+        company = await get_settings()
+        html = render_proof_decision_email(proof, ver, cname, email, decision, notes, company)
+        subj = "APPROVED" if decision == "approved" else "CHANGES REQUESTED"
+        await send_email(to=BCC_COPY_EMAIL, subject=f"Artwork proof {proof.get('number', '')} — {subj} by {cname}", html=html)
+    except Exception as e:
+        logger.warning(f"Proof decision notice failed: {e}")
+
+
+@api_router.post("/pub/proof/{token}/approve")
+async def pub_proof_approve(token: str):
+    proof, ver, email = await _pub_proof_from_token(token)
+    if not ver:
+        raise HTTPException(status_code=400, detail="No file to approve")
+    if ver.get("decision") != "approved":
+        set_fields = {"versions.$.decision": "approved", "versions.$.decided_at": now_iso(),
+                      "versions.$.decided_by": email, "versions.$.change_notes": None, "updated_at": now_iso()}
+        if proof.get("current_version") == ver.get("version"):
+            set_fields["status"] = "approved"
+        await db.proofs.update_one({"_id": proof["_id"], "versions.version": ver["version"]}, {"$set": set_fields})
+        await _notify_proof_decision(proof, ver, email, "approved", None)
+    return {"status": "approved", "number": proof.get("number")}
+
+
+@api_router.post("/pub/proof/{token}/changes")
+async def pub_proof_changes(token: str, payload: ProofChangesInput):
+    proof, ver, email = await _pub_proof_from_token(token)
+    if not ver:
+        raise HTTPException(status_code=400, detail="No file to review")
+    notes = (payload.notes or "").strip()
+    if not notes:
+        raise HTTPException(status_code=400, detail="Please describe the changes you'd like.")
+    set_fields = {"versions.$.decision": "changes", "versions.$.decided_at": now_iso(),
+                  "versions.$.decided_by": email, "versions.$.change_notes": notes, "updated_at": now_iso()}
+    if proof.get("current_version") == ver.get("version"):
+        set_fields["status"] = "changes_requested"
+    await db.proofs.update_one({"_id": proof["_id"], "versions.version": ver["version"]}, {"$set": set_fields})
+    await _notify_proof_decision(proof, ver, email, "changes", notes)
+    return {"status": "changes_requested", "number": proof.get("number")}
+
+
+def render_proof_email(proof: dict, ver: dict, customer_name: str, token: str, company: Optional[dict] = None, internal: bool = False) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    review_url = f"{PUBLIC_BASE_URL}/proof/{token}"
+    file_url = f"{PUBLIC_BASE_URL}/api/pub/proof/{token}/file"
+    is_img = str(ver.get("content_type", "")).startswith("image/")
+    preview = (
+        f'<tr><td style="padding:18px 32px 0" align="center"><img src="{file_url}" alt="Artwork preview" style="max-width:100%;max-height:320px;border:1px solid #E5E7EB" /></td></tr>'
+        if (is_img and not internal) else ""
+    )
+    notes_html = f'<p style="margin:12px 0 0;color:#374151">{escape(str(proof.get("notes")))}</p>' if proof.get("notes") else ""
+    cta = "" if internal else (
+        f'<tr><td style="padding:22px 32px 0" align="center">'
+        f'<a href="{review_url}" style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;padding:14px 40px;font-weight:bold;letter-spacing:1px;font-size:14px">REVIEW &amp; APPROVE ARTWORK</a>'
+        f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Approve the artwork or request changes online.</div>'
+        f'<div style="margin-top:10px"><a href="{file_url}" style="color:#0E7490;font-size:12px">View / download the file &rarr;</a></div>'
+        f'</td></tr>'
+    )
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><table role="presentation" width="100%"><tr>'
+        f'<td><img src="{LOGO_URL}" alt="DBG Signs, Inc." height="46" style="height:46px;display:block" /></td>'
+        f'<td align="right"><div style="font-size:22px;font-weight:bold;letter-spacing:1px">ARTWORK PROOF</div>'
+        f'<div style="color:#6B7280;font-size:13px">#{escape(str(proof.get("number", "")))} &middot; v{escape(str(ver.get("version", 1)))}</div></td>'
+        f'</tr></table></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Prepared for</div>'
+        f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
+        f'<p style="margin:16px 0 0">Please review the artwork proof for <strong>{escape(str(proof.get("title", "")))}</strong>.</p>'
+        f'{notes_html}'
+        f'</td></tr>'
+        f'{preview}'
+        f'{cta}'
+        f'<tr><td style="padding:22px 32px 28px">'
+        f'<p style="margin:0 0 4px">Questions? Please email sales@dbgsigns.com</p>'
+        f'<div style="border-top:1px solid #E5E7EB;margin-top:14px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        f'</div></td></tr>'
+        f'{_disclaimer_html()}'
+        f'</table></div>'
+    )
+
+
+def render_proof_decision_email(proof: dict, ver: dict, customer_name: str, email: Optional[str], decision: str, notes: Optional[str], company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    who = escape(str(email)) if email else "the customer"
+    approved = decision == "approved"
+    color = "#16A34A" if approved else "#B45309"
+    heading = "&#10003; ARTWORK APPROVED" if approved else "&#9998; CHANGES REQUESTED"
+    notes_block = "" if approved else (
+        f'<tr><td style="padding:6px 32px 0"><div style="background:#FEF3C7;border:1px solid #F59E0B;padding:12px 14px;color:#92400E">'
+        f'<div style="font-weight:bold;font-size:12px;letter-spacing:1px">REQUESTED CHANGES</div>'
+        f'<div style="margin-top:6px;white-space:pre-wrap">{escape(str(notes or ""))}</div></div></td></tr>'
+    )
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:26px 32px 0"><div style="font-size:22px;font-weight:bold;color:{color};letter-spacing:1px">{heading}</div></td></tr>'
+        f'<tr><td style="padding:12px 32px 0"><div style="height:3px;background:{color}"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px 0">'
+        f'<p style="margin:0 0 8px;font-size:15px"><strong>{escape(customer_name)}</strong> responded to artwork proof '
+        f'<strong>#{escape(str(proof.get("number", "")))}</strong> (v{escape(str(ver.get("version", 1)))}) &mdash; {escape(str(proof.get("title", "")))}.</p>'
+        f'<p style="margin:0;color:#6B7280">Responded by {who} &middot; {escape(now_iso()[:19].replace("T", " "))} UTC</p>'
+        f'</td></tr>'
+        f'{notes_block}'
+        f'<tr><td style="padding:18px 32px 26px"><div style="border-top:1px solid #E5E7EB;padding-top:12px;font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div></td></tr>'
+        f'</table></div>'
+    )
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
+    await db.proof_tokens.create_index("token")
+    try:
+        await init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.error(f"Storage init failed: {e}")
     await get_settings()  # seed default shop rates
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
