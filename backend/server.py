@@ -1617,6 +1617,7 @@ _DUP_STRIP = {
     "paid_at", "amount_paid", "balance_due", "payments", "stripe_payment_intent_id", "stripe_session_id",
     "commission_po", "commission_po_number", "commission_paid_at", "commission_paid",
     "voided", "voided_at", "voided_by", "voided_reason", "fulfilled_at",
+    "customer_approved", "customer_approved_at", "customer_approved_by",
     "customer_name", "salesman_name", "contact_name", "internal_notes",
 }
 
@@ -2153,6 +2154,56 @@ async def _pub_doc_from_token(token: str):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
     return coll, doc
+
+
+async def _cust_name_of(doc: dict) -> str:
+    if doc.get("customer_id"):
+        c = await db.customers.find_one({"_id": oid(doc["customer_id"])})
+        if c:
+            return c.get("company") or c.get("name") or "Customer"
+    return "Customer"
+
+
+async def _pub_estimate_from_token(token: str):
+    tr = await db.email_tracking.find_one({"token": token})
+    if not tr or tr.get("collection") != "estimates":
+        raise HTTPException(status_code=404, detail="This approval link is invalid or has expired.")
+    est = await db.estimates.find_one({"_id": oid(tr["doc_id"])})
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found.")
+    return est, tr.get("email")
+
+
+@api_router.get("/pub/approve/{token}")
+async def pub_approve_info(token: str):
+    est, _ = await _pub_estimate_from_token(token)
+    return {
+        "number": est.get("number"),
+        "title": est.get("title"),
+        "total": est.get("total", 0),
+        "customer_name": await _cust_name_of(est),
+        "approved": bool(est.get("customer_approved")) or bool(est.get("sales_order_id")),
+        "approved_at": est.get("customer_approved_at"),
+    }
+
+
+@api_router.post("/pub/approve/{token}")
+async def pub_approve(token: str):
+    est, email = await _pub_estimate_from_token(token)
+    if not est.get("customer_approved") and not est.get("sales_order_id"):
+        await db.estimates.update_one({"_id": est["_id"]}, {"$set": {
+            "customer_approved": True,
+            "customer_approved_at": now_iso(),
+            "customer_approved_by": email,
+        }})
+        try:
+            cname = await _cust_name_of(est)
+            company = await get_settings()
+            html = render_estimate_approved_email(est, cname, email, company)
+            await send_email(to=BCC_COPY_EMAIL, subject=f"\u2713 Estimate {est.get('number', '')} APPROVED by {cname}", html=html)
+        except Exception as e:
+            logger.warning(f"Estimate approval notice failed: {e}")
+    return {"status": "approved", "number": est.get("number")}
 
 
 @api_router.get("/reports/salespeople")
@@ -3749,6 +3800,22 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
             f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Download a PDF copy of your {escape(kind_label.lower())} for your records.</div>'
             f'</td></tr>'
         )
+    approve_btn = ""
+    if kind_label == "Estimate" and not doc.get("sales_order_id"):
+        if doc.get("customer_approved"):
+            approve_btn = (
+                f'<tr><td style="padding:20px 32px 0" align="center">'
+                f'<div style="display:inline-block;border:2px solid #16A34A;color:#16A34A;padding:12px 28px;font-weight:bold;letter-spacing:1px;font-size:13px">&#10003; YOU APPROVED THIS ESTIMATE</div>'
+                f'</td></tr>'
+            )
+        else:
+            approve_url = f"{PUBLIC_BASE_URL}/approve/{token}"
+            approve_btn = (
+                f'<tr><td style="padding:22px 32px 0" align="center">'
+                f'<a href="{approve_url}" style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;padding:14px 40px;font-weight:bold;letter-spacing:1px;font-size:14px">&#10003; APPROVE THIS ESTIMATE</a>'
+                f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Approve online and we&rsquo;ll get started on your order.</div>'
+                f'</td></tr>'
+            )
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -3782,6 +3849,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         + (f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
         f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>')
         + f'</table></td></tr>'
+        f'{approve_btn}'
         f'{dl_btn}'
         f'{pay_btn}'
         # Footer
@@ -3796,6 +3864,33 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'{_disclaimer_html()}'
         f'</table></div>{pixel}'
     )
+
+
+def render_estimate_approved_email(est: dict, customer_name: str, approver_email: Optional[str], company: Optional[dict] = None) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    who = escape(str(approver_email)) if approver_email else "the customer"
+    return (
+        f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:26px 32px 0"><div style="font-size:22px;font-weight:bold;color:#16A34A;letter-spacing:1px">&#10003; ESTIMATE APPROVED</div></td></tr>'
+        f'<tr><td style="padding:12px 32px 0"><div style="height:3px;background:#16A34A"></div></td></tr>'
+        f'<tr><td style="padding:20px 32px">'
+        f'<p style="margin:0 0 10px;font-size:15px"><strong>{escape(customer_name)}</strong> has approved estimate '
+        f'<strong>#{escape(str(est.get("number", "")))}</strong>{(" — " + escape(str(est.get("title")))) if est.get("title") else ""}.</p>'
+        f'<table role="presentation" width="100%" style="border-collapse:collapse;margin-top:8px">'
+        f'<tr><td style="padding:8px 0;color:#6B7280">Estimate</td><td align="right" style="padding:8px 0;font-weight:bold">#{escape(str(est.get("number", "")))}</td></tr>'
+        f'<tr><td style="padding:8px 0;color:#6B7280">Total</td><td align="right" style="padding:8px 0;font-weight:bold">{_money(est.get("total", 0))}</td></tr>'
+        f'<tr><td style="padding:8px 0;color:#6B7280">Approved by</td><td align="right" style="padding:8px 0">{who}</td></tr>'
+        f'<tr><td style="padding:8px 0;color:#6B7280">Approved at</td><td align="right" style="padding:8px 0">{escape(now_iso()[:19].replace("T", " "))} UTC</td></tr>'
+        f'</table>'
+        f'<p style="margin:16px 0 0;color:#374151">Convert it to a Sales Order in the console to get started.</p>'
+        f'</td></tr>'
+        f'<tr><td style="padding:0 32px 26px"><div style="border-top:1px solid #E5E7EB;padding-top:12px;font-weight:bold">{escape(cname)}</div>'
+        f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div></td></tr>'
+        f'</table></div>'
+    )
+
 
 
 def render_statement_email(customer_name: str, period_label: str, invoices: list, total_due: float, pdf_url: str, company: Optional[dict] = None) -> str:

@@ -120,7 +120,17 @@ export default function Estimates() {
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.salesman_name || "—"}</td>
-                  <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
+                  <td className="px-6 py-3">
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={r.status} />
+                      {r.customer_approved && !r.sales_order_id && (
+                        <span data-testid={`estimate-customer-approved-${r.id}`} title={`Customer approved${r.customer_approved_at ? " " + String(r.customer_approved_at).slice(0, 10) : ""}${r.customer_approved_by ? " · " + r.customer_approved_by : ""}`}
+                          className="inline-flex items-center gap-1 border border-[#16A34A]/30 bg-[#16A34A]/10 text-[#16A34A] px-2 py-0.5 text-xs font-mono uppercase tracking-wider">
+                          <CheckCircle size={12} weight="bold" /> Customer OK
+                        </span>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`estimate-margin-${r.id}`} />}
@@ -132,7 +142,7 @@ export default function Estimates() {
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-estimate-${r.id}` },
-                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: r.status === "approved" },
+                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: !!r.sales_order_id },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },

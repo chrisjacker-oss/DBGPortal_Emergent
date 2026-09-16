@@ -22,6 +22,7 @@ import PortalAccounts from "@/pages/PortalAccounts";
 import WorkOrders from "@/pages/WorkOrders";
 import ForcePasswordChange from "@/pages/ForcePasswordChange";
 import PublicPay from "@/pages/PublicPay";
+import PublicApprove from "@/pages/PublicApprove";
 import Reports from "@/pages/Reports";
 import TimeClock from "@/pages/TimeClock";
 import Installs from "@/pages/Installs";
@@ -63,6 +64,7 @@ function App() {
             <Route path="/login" element={<Login variant="staff" />} />
             <Route path="/portal-login" element={<Login variant="customer" />} />
             <Route path="/pay/:token" element={<PublicPay />} />
+            <Route path="/approve/:token" element={<PublicApprove />} />
             <Route path="/" element={<Root />} />
             <Route
               path="/portal"
