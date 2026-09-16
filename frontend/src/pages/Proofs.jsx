@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
 import SendDialog from "@/components/SendDialog";
+import SearchSelect from "@/components/SearchSelect";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -184,10 +185,9 @@ export default function Proofs() {
           <div className="space-y-3">
             <label className="block">
               <span className="overline text-muted-foreground">Customer</span>
-              <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value, contact_id: "", link_id: "" })} data-testid="proof-customer" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="">— Select customer —</option>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.company || c.name}</option>)}
-              </select>
+              <SearchSelect testid="proof-customer" value={form.customer_id} placeholder="Search customer…"
+                options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
+                onChange={(v) => setForm({ ...form, customer_id: v, contact_id: "", link_id: "" })} />
             </label>
             <label className="block">
               <span className="overline text-muted-foreground">Contact (who approves)</span>
