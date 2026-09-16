@@ -54,7 +54,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
-              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
+              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, discount_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
               status: statusOptions[0], order_date: new Date().toISOString().slice(0, 10), due_date: "", shipping_cost: 0,
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -148,7 +148,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
 
   const subtotal = form.line_items.reduce((s, li) => s + lineTotal(li), 0);
   const selCust = customers.find((c) => c.id === form.customer_id);
-  const discRate = selCust?.tier ? ({ 1: 35, 2: 25, 3: 15 }[selCust.tier] || 0) : 0;
+  const discRate = Number(form.discount_rate || 0);
   const discount = subtotal * (discRate / 100);
   const taxable = subtotal - discount;
   const tax = form.tax_exempt ? 0 : taxable * (Number(form.tax_rate || 0) / 100);
@@ -171,6 +171,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       shipping_type: form.shipping_type || "",
       shipped_date: form.shipped_date || "",
       tax_rate: form.tax_exempt ? 0 : Number(form.tax_rate || 0),
+      discount_rate: Number(form.discount_rate || 0),
       due_date: form.due_date || null,
       commission_rate: Number(form.commission_rate || 0),
       salesman_id: form.salesman_id || null,
@@ -204,7 +205,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
                 options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
-                onChange={(v) => { const c = customers.find((x) => x.id === v); const ex = !!c?.tax_exempt; setForm({ ...form, customer_id: v, contact_id: "", tax_exempt: ex || form.tax_exempt, tax_exempt_number: ex ? (c.tax_exempt_number || form.tax_exempt_number || "") : form.tax_exempt_number, tax_rate: (ex || form.tax_exempt) ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0) }); }} />
+                onChange={(v) => { const c = customers.find((x) => x.id === v); const ex = !!c?.tax_exempt; setForm({ ...form, customer_id: v, contact_id: "", tax_exempt: ex || form.tax_exempt, tax_exempt_number: ex ? (c.tax_exempt_number || form.tax_exempt_number || "") : form.tax_exempt_number, tax_rate: (ex || form.tax_exempt) ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0), discount_rate: ({ 1: 35, 2: 25, 3: 15 }[c?.tier] || 0) }); }} />
             </div>
             <label className="block min-w-0">
               <span className="overline text-muted-foreground">Contact (Attn)</span>
@@ -381,9 +382,13 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 <span className="text-[#16A34A] font-semibold">{totMarginPct.toFixed(0)}%</span>
               </div>
               <div className="border-t border-border mt-2 pt-2"><Row label="Subtotal" value={subtotal} /></div>
+              <div className="flex items-center justify-between gap-2 py-1" data-testid="doc-discount-row">
+                <span className="text-sm text-muted-foreground">Discount %</span>
+                <input type="number" min="0" max="100" value={form.discount_rate ?? ""} onChange={(e) => set("discount_rate", e.target.value)} data-testid="doc-discount" placeholder="0" className="w-28 border border-input px-2 py-1 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+              </div>
               {discRate > 0 && (
-                <div className="flex justify-between text-sm py-0.5" data-testid="discount-row">
-                  <span className="text-[#16A34A]">Tier {selCust.tier} discount ({discRate}%)</span>
+                <div className="flex justify-between text-sm py-0.5" data-testid="discount-summary-row">
+                  <span className="text-[#16A34A]">Discount ({discRate}%)</span>
                   <span className="font-mono text-[#16A34A]">-{currency(discount)}</span>
                 </div>
               )}
