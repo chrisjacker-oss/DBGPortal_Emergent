@@ -1,0 +1,25 @@
+{
+  "summary": "Full end-to-end testing of the new Artwork Proofs feature (backend + frontend). Backend: 9 pytest cases covering create-proof, list, GET file (image/png content-type), send (delivered@resend.dev), public info + request-changes (with notes persisted + status flip to changes_requested), version upload (v2 resets to draft), public approve, salesman-cannot-delete (403), and admin delete + 404 verification. All 9/9 passed. Frontend: logged in as admin (sales@dbgsigns.com / 10297099), created a new proof via /artwork-proofs -> row appears with DRAFT + v1; opened Send dialog, added delivered@resend.dev, sent -> status becomes SENT; opened public /proof/{token} in a fresh browser context -> preview <img> renders inline, clicked 'Request changes', typed notes, submitted -> 'Changes requested' success state shown; staff row updated to CHANGES REQUESTED and the customer note is displayed under the status via proof-changes-{id}. Uploaded v2 via 'Upload new version' file-chooser -> current_version=2 and status resets to draft; Version history dialog lists both v1 and v2. Sent v2, approved from public page -> APPROVED status on staff row. Verified salesman (sam@dbgsigns.com) does NOT see the Delete option in the actions menu. Admin deleted via UI (password 10297099) -> proof removed from DB. Encountered a transient email 429 rate-limit during rapid re-sends; retried and it went through. All UI selectors documented in the spec worked as-is. No bugs found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration16_proofs.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Email send flow may fail with 429 (Emergent email rate limit) under rapid re-send bursts. Consider surfacing a friendlier user-visible retry message (currently the toast just shows the 429 body); functionally not a defect."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration16_proofs.py"],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (all flows verified)"},
+  "test_credentials": "admin: sales@dbgsigns.com / 10297099; salesman: sam@dbgsigns.com / Sales2026!",
+  "seed_data_creation": "Created 3 test proofs during the session (TEST_UI Proof Iter16, ..Iter16b, ..Iter16c). All deleted via UI/API cleanup at end. DB verified: 0 TEST_ proofs remaining.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Artwork Proofs testids: add-proof-btn, proof-dialog, proof-customer, proof-title, proof-notes, proof-file, save-proof-btn, proof-row-{id}, proof-actions-{id}, send-proof-{id}, newver-proof-{id}, history-proof-{id}, delete-proof-{id}, proof-changes-{id}, proof-history-dialog. Public: public-proof-page, public-proof-preview, public-proof-approve, public-proof-request-changes, public-proof-notes, public-proof-submit-changes, public-proof-approved, public-proof-changes-done. Public token lookup: mongosh test_database -> db.proof_tokens.find({proof_id: '<id>', version: N}).",
+  "rca of the issue": "n/a"
+}
