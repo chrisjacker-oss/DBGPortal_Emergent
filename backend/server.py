@@ -3284,9 +3284,10 @@ WORK_STATUS_LABELS = {
 }
 
 
-def render_work_status_email(customer_name: str, doc_label: str, number: str, status_label: str, company: Optional[dict] = None) -> str:
+def render_work_status_email(greeting_name: str, doc_label: str, number: str, status_label: str, job_title: Optional[str] = None, company: Optional[dict] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
+    job_line = f'<p style="margin:12px 0 0;color:#374151">Job: <strong>{escape(str(job_title))}</strong></p>' if job_title else ""
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -3294,8 +3295,9 @@ def render_work_status_email(customer_name: str, doc_label: str, number: str, st
         f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#06B6D4"></div></td></tr>'
         f'<tr><td style="padding:22px 32px">'
         f'<div style="font-size:20px;font-weight:bold">Order status update</div>'
-        f'<p style="margin:14px 0 0">Hi {escape(customer_name)},</p>'
+        f'<p style="margin:14px 0 0">Hi {escape(greeting_name)},</p>'
         f'<p style="margin:12px 0 0">Your order <strong>{escape(doc_label)} {escape(str(number))}</strong> has a new status:</p>'
+        f'{job_line}'
         f'<div style="margin:16px 0;padding:14px 18px;background:#0A0A0A;color:#ffffff;text-align:center;font-size:16px;font-weight:bold;letter-spacing:1px">{escape(status_label)}</div>'
         f'<p style="margin:12px 0 0">We will keep you posted as your order moves forward. Reply to this email with any questions.</p>'
         f'<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
@@ -3316,15 +3318,20 @@ async def _set_work_status(collection, doc_id: str, kind_label: str, status: str
     try:
         cid = str(doc.get("customer_id") or "")
         cust = await db.customers.find_one({"_id": oid(cid)}) if ObjectId.is_valid(cid) else None
-        to = cust.get("email") if cust else None
+        contact = None
+        if doc.get("contact_id") and ObjectId.is_valid(str(doc["contact_id"])):
+            contact = await db.contacts.find_one({"_id": ObjectId(doc["contact_id"])})
+        to = (contact or {}).get("email") or (cust.get("email") if cust else None)
         if not to and cid:
             ct = await db.contacts.find_one({"customer_id": cid, "email": {"$nin": [None, ""]}})
-            to = ct.get("email") if ct else None
+            if ct:
+                to = ct.get("email")
+                contact = contact or ct
         if to:
             company = await get_settings()
-            cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
+            greeting = (contact or {}).get("name") or ((cust.get("company") or cust.get("name")) if cust else "Customer")
             label = WORK_STATUS_LABELS[status]
-            html = render_work_status_email(cname, kind_label, doc.get("number", ""), label, company)
+            html = render_work_status_email(greeting, kind_label, doc.get("number", ""), label, job_title=doc.get("title"), company=company)
             await send_email(to=to, subject=f"Order update — {doc.get('number', '')} is now {label}", html=html)
             try:
                 await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} — {label}", html=html)
