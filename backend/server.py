@@ -1651,6 +1651,7 @@ _DUP_STRIP = {
     "paid_at", "amount_paid", "balance_due", "payments", "stripe_payment_intent_id", "stripe_session_id",
     "commission_po", "commission_po_number", "commission_paid_at", "commission_paid",
     "voided", "voided_at", "voided_by", "voided_reason", "fulfilled_at",
+    "terms_start_date", "payment_due_date", "past_due_sent_at",
     "customer_approved", "customer_approved_at", "customer_approved_by",
     "customer_name", "salesman_name", "contact_name", "internal_notes",
 }
@@ -4042,12 +4043,25 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
         await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} sent to {cname}", html=copy_html)
     except Exception as e:
         logger.warning(f"BCC copy to {BCC_COPY_EMAIL} failed: {e}")
-    await collection.update_one({"_id": oid(doc_id)}, {"$set": {
+    set_fields = {
         "email_status": "sent", "email_to": ", ".join(sent_to), "email_sent_at": now_iso(),
         "email_opened_at": None, "email_token": first_token, "email_id": last_email_id,
         "email_recipients": sent_to, "email_receipts": receipts,
-    }})
-    return {"status": "sent", "to": ", ".join(sent_to), "failed": failed}
+    }
+    payment_due = None
+    # Net terms clock starts when the invoice is first emailed to the customer.
+    if kind_label == "Invoice" and not doc.get("terms_start_date"):
+        term = doc.get("net_terms") or (cust or {}).get("net_terms") or "Net 15"
+        start = datetime.now(timezone.utc).date()
+        payment_due = (start + timedelta(days=_net_terms_days(term))).isoformat()
+        set_fields["net_terms"] = term
+        set_fields["terms_start_date"] = start.isoformat()
+        set_fields["payment_due_date"] = payment_due
+    await collection.update_one({"_id": oid(doc_id)}, {"$set": set_fields})
+    result = {"status": "sent", "to": ", ".join(sent_to), "failed": failed}
+    if payment_due:
+        result["payment_due_date"] = payment_due
+    return result
 
 
 def render_payment_receipt_email(inv: dict, amount_now: float, customer_name: str, company: Optional[dict] = None, pdf_link: Optional[str] = None) -> str:
@@ -4329,7 +4343,9 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         meta.append(("Shipped", str(doc.get("shipped_date"))))
     if doc.get("due_date"):
         meta.append(("Est. Complete date", str(doc.get("due_date"))))
-    terms = (customer or {}).get("net_terms")
+    if doc.get("payment_due_date"):
+        meta.append(("Payment due", str(doc.get("payment_due_date"))))
+    terms = doc.get("net_terms") or (customer or {}).get("net_terms")
     if terms:
         meta.append(("Terms", str(terms)))
     my = y
@@ -4941,8 +4957,16 @@ async def public_pdf(token: str):
 # ---------------------------------------------------------------------------
 # Past-due receivables notices
 # ---------------------------------------------------------------------------
+_NET_TERMS_DAYS = {"COD": 0, "50/50": 0, "Net 10": 10, "Net 15": 15, "Net 30": 30, "Net 45": 45, "Net 60": 60}
+
+
+def _net_terms_days(term: Optional[str]) -> int:
+    return _NET_TERMS_DAYS.get((term or "").strip(), 15)
+
+
 def _days_overdue(inv: dict) -> int:
-    ref = (inv.get("due_date") or str(inv.get("created_at", "")))[:10]
+    # Net-terms clock starts when the invoice is emailed (payment_due_date); fall back for legacy docs.
+    ref = (inv.get("payment_due_date") or inv.get("due_date") or str(inv.get("created_at", "")))[:10]
     try:
         d = datetime.strptime(ref, "%Y-%m-%d").date()
     except ValueError:

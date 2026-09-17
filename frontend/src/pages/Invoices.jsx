@@ -309,7 +309,7 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
-                  <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.due_date || "—")}</td>
+                  <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.payment_due_date || r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`invoice-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} shipType={r.shipping_type} shippedDate={r.shipped_date} testid={`invoice-tracking-${r.id}`} /></td>
@@ -438,6 +438,7 @@ export default function Invoices() {
                 <Field label="Issued" value={(detailInv.created_at || "").slice(0, 10) || "—"} />
                 <Field label="Est. Complete" value={detailInv.due_date || "—"} />
                 <Field label="Terms" value={detailInv.net_terms || "—"} />
+                <Field label="Payment due" value={detailInv.payment_due_date || (detailInv.email_sent_at ? "—" : "on email send")} />
                 <Field label="From SO" value={detailInv.from_sales_order || "—"} />
               </div>
 
