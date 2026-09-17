@@ -1,7 +1,9 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
+import api from "@/lib/api";
 import Layout from "@/components/Layout";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
@@ -56,13 +58,39 @@ function Root() {
   return <Navigate to={homeFor(user.role)} replace />;
 }
 
-function App() {
+// Handles the Emergent Google OAuth return: exchanges session_id for our session.
+function AuthCallback() {
+  const { setUser } = useAuth();
+  const navigate = useNavigate();
+  const hasProcessed = useRef(false);
+  useEffect(() => {
+    if (hasProcessed.current) return;
+    hasProcessed.current = true;
+    const hash = window.location.hash || "";
+    const m = hash.match(/session_id=([^&]+)/);
+    const sid = m ? decodeURIComponent(m[1]) : null;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    if (!sid) { navigate("/login", { replace: true }); return; }
+    (async () => {
+      try {
+        const { data } = await api.post("/auth/google/session", { session_id: sid });
+        setUser(data);
+        navigate(homeFor(data.role), { replace: true });
+      } catch (e) {
+        try { sessionStorage.setItem("google_error", e.response?.data?.detail || "Google sign-in failed. Please try again."); } catch { /* ignore */ }
+        setUser(false);
+        navigate("/login", { replace: true });
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <Loading />;
+}
+
+function AppRoutes() {
+  const location = useLocation(); // read hash from here, not window.location.hash (not reactive)
+  if (location.hash?.includes("session_id=")) return <AuthCallback />;
   return (
-    <div className="App">
-      <AuthProvider>
-        <Toaster position="top-right" richColors />
-        <BrowserRouter>
-          <Routes>
+    <Routes>
             <Route path="/login" element={<Login variant="staff" />} />
             <Route path="/portal-login" element={<Login variant="customer" />} />
             <Route path="/pay/:token" element={<PublicPay />} />
@@ -112,6 +140,16 @@ function App() {
             ))}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+  );
+}
+
+function App() {
+  return (
+    <div className="App">
+      <AuthProvider>
+        <Toaster position="top-right" richColors />
+        <BrowserRouter>
+          <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
     </div>

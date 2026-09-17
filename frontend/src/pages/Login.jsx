@@ -26,8 +26,19 @@ export default function Login({ variant = "staff" }) {
         sessionStorage.removeItem("idle_logout");
         setError("You were signed out after 90 minutes of inactivity. Please sign in again.");
       }
+      const gerr = sessionStorage.getItem("google_error");
+      if (gerr) {
+        sessionStorage.removeItem("google_error");
+        setError(gerr);
+      }
     } catch { /* ignore */ }
   }, []);
+
+  const googleSignIn = () => {
+    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    const redirectUrl = window.location.origin + "/dashboard";
+    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -83,6 +94,22 @@ export default function Login({ variant = "staff" }) {
             {loading ? "Please wait…" : mode === "register" ? "Create account" : "Sign in"}
           </button>
         </form>
+
+        {!isCustomer && (
+          <div className="mt-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-px bg-border flex-1" />
+              <span className="overline text-muted-foreground">or</span>
+              <div className="h-px bg-border flex-1" />
+            </div>
+            <button type="button" onClick={googleSignIn} data-testid="google-signin-btn"
+              className="w-full flex items-center justify-center gap-3 border border-input bg-card py-3 text-sm font-medium hover:bg-secondary transition-colors duration-150 rounded-none">
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" className="h-5 w-5" />
+              Sign in with Google
+            </button>
+            <p className="mt-2 text-xs text-muted-foreground">Use the Google account tied to your staff email.</p>
+          </div>
+        )}
 
         {isCustomer && (
           <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }} data-testid="toggle-mode"

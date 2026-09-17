@@ -156,6 +156,10 @@ class LoginInput(BaseModel):
     password: str
 
 
+class GoogleSessionInput(BaseModel):
+    session_id: str
+
+
 class LineItem(BaseModel):
     description: str = ""
     details: Optional[str] = ""
@@ -601,6 +605,33 @@ async def login(payload: LoginInput, response: Response, request: Request):
     await db.login_attempts.delete_one({"identifier": identifier})
     if user.get("suspended"):
         raise HTTPException(status_code=403, detail="Your portal access has been suspended. Please contact DBG Signs.")
+    uid = str(user["_id"])
+    set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
+    s = await get_settings()
+    return {"id": uid, "email": email, "name": user.get("name"), "role": user.get("role"),
+            "must_change_password": bool(user.get("must_change_password")),
+            "idle_timeout_min": int(s.get("idle_timeout_min", 90) or 90)}
+
+
+@api_router.post("/auth/google/session")
+async def google_session(payload: GoogleSessionInput, response: Response):
+    # REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get("https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                            headers={"X-Session-ID": payload.session_id})
+            r.raise_for_status()
+            data = r.json()
+    except Exception:
+        raise HTTPException(status_code=401, detail="Google sign-in could not be verified. Please try again.")
+    email = (data.get("email") or "").lower().strip()
+    if not email:
+        raise HTTPException(status_code=401, detail="Google did not return an email address.")
+    user = await db.users.find_one({"email": email})
+    if not user or user.get("role") not in ("admin", "salesman", "installer"):
+        raise HTTPException(status_code=403, detail="This Google account isn't authorized for staff access. Please ask an admin to add your email first.")
+    if user.get("suspended"):
+        raise HTTPException(status_code=403, detail="Your access has been suspended. Please contact DBG Signs.")
     uid = str(user["_id"])
     set_auth_cookies(response, create_access_token(uid, email), create_refresh_token(uid))
     s = await get_settings()

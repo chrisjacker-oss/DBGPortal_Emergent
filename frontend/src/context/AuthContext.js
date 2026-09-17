@@ -18,6 +18,8 @@ export function AuthProvider({ children }) {
   const resetRef = useRef(null);
 
   useEffect(() => {
+    // Returning from Google OAuth: let AuthCallback exchange the session_id first.
+    if (window.location.hash?.includes("session_id=")) return;
     api
       .get("/auth/me")
       .then((r) => setUser(r.data))
