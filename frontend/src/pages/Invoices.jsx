@@ -193,7 +193,14 @@ export default function Invoices() {
     catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
   };
 
-  const visible = rows.filter((r) => (tab === "voided" ? r.voided : tab === "paid" ? (!r.voided && r.status === "paid") : (!r.voided && r.status !== "paid")));
+  const visible = rows.filter((r) => {
+    if (r.voided) return tab === "voided";
+    if (r.status === "paid") return tab === "paid";
+    const emailed = !!r.email_sent_at;
+    if (tab === "invoiced") return emailed;
+    if (tab === "active") return !emailed;
+    return false;
+  });
   const isPaid = tab === "paid";
   const showComm = tab !== "voided";
   const filtered = isPaid ? visible.filter((r) => {
@@ -241,6 +248,7 @@ export default function Invoices() {
         <div className="flex flex-wrap items-end gap-3 mb-4">
           <div className="flex gap-2" data-testid="invoice-tabs">
             <Btn variant={tab === "active" ? "solid" : "outline"} onClick={() => setTab("active")} data-testid="tab-active">Active</Btn>
+            <Btn variant={tab === "invoiced" ? "solid" : "outline"} onClick={() => setTab("invoiced")} data-testid="tab-invoiced">Invoiced &amp; Waiting Payment</Btn>
             <Btn variant={tab === "paid" ? "solid" : "outline"} onClick={() => setTab("paid")} data-testid="tab-paid">Paid</Btn>
             <Btn variant={tab === "voided" ? "solid" : "outline"} onClick={() => setTab("voided")} data-testid="tab-voided">Voided</Btn>
           </div>

@@ -360,7 +360,7 @@ DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machin
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold", "idle_timeout_min"}
 
-PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Installation", "Shipping"]
+PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Decal Removal", "Installation", "Shipping"]
 
 
 async def get_settings() -> dict:
@@ -400,7 +400,7 @@ def compute_line(li: dict, s: dict) -> dict:
     labor_hours_raw = (area / sh_sqft if sh_sqft else 0.0) + float(li.get("extra_labor_hours") or 0)
     labor_cost = round(labor_hours_raw * float(s.get("shop_rate_per_hr") or 0), 2)
     # Shipping, Installation & CNC Router Time are flat charges — no shop/machine labor applied
-    if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time", "design time"):
+    if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time", "design time", "decal removal"):
         labor_cost = 0.0
         machine_cost = 0.0
     computed_total = round(material_cost + labor_cost + machine_cost, 2)
