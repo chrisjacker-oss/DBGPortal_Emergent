@@ -109,13 +109,19 @@ export default function Invoices() {
     const inv = detailInv; if (!inv) return;
     const paid = paidOf(inv);
     const bal = Math.round((Number(inv.total || 0) - paid) * 100) / 100;
-    const rowsHtml = (inv.line_items || []).map((li) => `
-      <tr>
-        <td>${(li.description || "").replace(/</g, "&lt;")}${li.details ? `<div style="color:#666;font-size:11px">${(li.details || "").replace(/</g, "&lt;")}</div>` : ""}</td>
-        <td style="text-align:center">${(li.width_in || 0)}" × ${(li.height_in || 0)}" × ${(li.quantity || 0)}</td>
-        <td style="text-align:right">${Number(li.area_sqft || 0).toFixed(2)}</td>
-        <td style="text-align:right">${currency(li.line_total)}</td>
-      </tr>`).join("");
+    const rowsHtml = (inv.line_items || []).map((li) => {
+      const flat = flatCustomerCharge(li);
+      const quantity = flat ? "—" : (li.quantity || 0);
+      const unitPrice = flat ? "—" : currency(customerUnitPrice(li));
+      return `
+        <tr>
+          <td>${(li.description || "").replace(/</g, "&lt;")}${li.details ? `<div style="color:#666;font-size:11px">${(li.details || "").replace(/</g, "&lt;")}</div>` : ""}</td>
+          <td style="text-align:center">${(li.width_in || 0)}" × ${(li.height_in || 0)}"</td>
+          <td style="text-align:right">${quantity}</td>
+          <td style="text-align:right">${unitPrice}</td>
+          <td style="text-align:right">${currency(li.line_total)}</td>
+        </tr>`;
+    }).join("");
     const paysHtml = (detailPays || []).map((p) => `
       <tr>
         <td>${p.date ? new Date(p.date).toLocaleString() : "—"}</td>
@@ -147,8 +153,9 @@ export default function Invoices() {
         <div style="text-align:right"><div class="muted">Issued: ${(inv.created_at || "").slice(0, 10)}</div>
         <div class="muted">Est. Complete: ${inv.due_date || "—"}</div>${inv.net_terms ? `<div class="muted">Terms: ${inv.net_terms}</div>` : ""}</div>
       </div>
+      ${inv.shipping_address ? `<div style="margin-top:12px;padding:10px;background:#f9fafb;border-left:3px solid #06b6d4"><div class="muted">SHIP TO</div><div style="white-space:pre-wrap">${String(inv.shipping_address).replace(/</g, "&lt;")}</div></div>` : ""}
       ${inv.title ? `<div style="margin-top:10px;font-weight:bold">${(inv.title || "").replace(/</g, "&lt;")}</div>` : ""}
-      <table><thead><tr><th>Description</th><th style="text-align:center">W × H × Qty</th><th style="text-align:right">Sqft</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      <table><thead><tr><th>Description</th><th style="text-align:center">W × H</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Amount</th></tr></thead><tbody>${rowsHtml}</tbody></table>
       <div style="margin-top:12px">
         <div class="tot"><span>Subtotal</span><b>${currency(inv.subtotal)}</b></div>
         ${Number(inv.tax_amount || 0) > 0 ? `<div class="tot"><span>Tax (${inv.tax_rate}%)</span><b>${currency(inv.tax_amount)}</b></div>` : ""}
@@ -319,7 +326,7 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{isPaid ? ((r.paid_at || "").slice(0, 10) || "—") : (r.payment_due_date || r.due_date || "—")}</td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
-                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`invoice-work-status-${r.id}`} /></td>
+                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={r.voided} testid={`invoice-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`invoice-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} shipType={r.shipping_type} shippedDate={r.shipped_date} testid={`invoice-tracking-${r.id}`} /></td>
                   {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
@@ -449,6 +456,15 @@ export default function Invoices() {
                 <Field label="Payment due" value={detailInv.payment_due_date || (detailInv.email_sent_at ? "—" : "on email send")} />
                 <Field label="From SO" value={detailInv.from_sales_order || "—"} />
               </div>
+              {detailInv.shipping_address && (
+                <div
+                  className="border-l-2 border-[#06B6D4] bg-secondary/30 px-4 py-3"
+                  data-testid="invoice-detail-shipping-address"
+                >
+                  <div className="overline text-muted-foreground">Ship To</div>
+                  <div className="mt-1 whitespace-pre-wrap">{detailInv.shipping_address}</div>
+                </div>
+              )}
 
               <div className="border border-border">
                 <table className="w-full text-sm">
@@ -456,6 +472,7 @@ export default function Invoices() {
                     <th className="px-3 py-2 font-mono">Description</th>
                     <th className="px-3 py-2 font-mono text-center">W × H × Qty</th>
                     <th className="px-3 py-2 font-mono text-right">Sqft</th>
+                    <th className="px-3 py-2 font-mono text-right">Unit price</th>
                     <th className="px-3 py-2 font-mono text-right">Amount</th>
                     {canSeeMargin && <th className="px-3 py-2 font-mono text-right text-[#0E7490]">Margin</th>}
                   </tr></thead>
@@ -465,6 +482,9 @@ export default function Invoices() {
                         <td className="px-3 py-2">{li.description}{li.details && <div className="text-xs text-muted-foreground">{li.details}</div>}</td>
                         <td className="px-3 py-2 text-center font-mono text-muted-foreground">{li.width_in}" × {li.height_in}" × {li.quantity}</td>
                         <td className="px-3 py-2 text-right font-mono">{Number(li.area_sqft || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right font-mono" data-testid={`detail-item-unit-${i}`}>
+                          {flatCustomerCharge(li) ? "—" : currency(customerUnitPrice(li))}
+                        </td>
                         <td className="px-3 py-2 text-right font-mono">{currency(li.line_total)}</td>
                         {canSeeMargin && <td className="px-3 py-2 text-right font-mono text-[#16A34A]" data-testid={`detail-item-margin-${i}`}>{Number(li.material_cost) > 0 ? ((Number(li.material_margin || 0) / Number(li.material_cost)) * 100).toFixed(0) : 0}%</td>}
                       </tr>
@@ -547,6 +567,18 @@ function Field({ label, value }) {
       <div className="font-mono">{value}</div>
     </div>
   );
+}
+
+function flatCustomerCharge(item) {
+  return ["shipping", "installation", "cnc router time", "design time", "decal removal"].includes(
+    String(item.category || "").trim().toLowerCase()
+  );
+}
+
+function customerUnitPrice(item) {
+  const quantity = Number(item.quantity || 0);
+  if (quantity <= 0) return 0;
+  return Number(item.line_total || 0) / quantity;
 }
 
 function StageTracker({ lineage, inv, paidOf, onGo }) {

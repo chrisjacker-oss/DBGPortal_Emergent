@@ -148,7 +148,7 @@ export default function SalesOrders() {
                     ) : "—"}
                   </td>
                   <td className="px-6 py-3"><StatusBadge status={r.status} /></td>
-                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={isSalesman || r.voided} testid={`so-work-status-${r.id}`} /></td>
+                  <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={r.voided} testid={`so-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} shipType={r.shipping_type} shippedDate={r.shipped_date} testid={`so-tracking-${r.id}`} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`so-margin-${r.id}`} />}

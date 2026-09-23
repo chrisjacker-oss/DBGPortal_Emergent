@@ -54,7 +54,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
         initial
           ? { ...initial, line_items: (initial.line_items || []).map((li) => ({ ...emptyItem, ...li, _key: li._key || uid() })) }
           : {
-              customer_id: "", contact_id: "", title: "", customer_po: "", line_items: [newItem()], tax_rate: 0, discount_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
+              customer_id: "", contact_id: "", title: "", customer_po: "", shipping_address: "", line_items: [newItem()], tax_rate: 0, discount_rate: 0, tax_exempt: false, tax_exempt_number: "", notes: "",
               status: statusOptions[0], order_date: new Date().toISOString().slice(0, 10), due_date: "", shipping_cost: 0,
               commission_rate: isAdmin ? 0 : (user?.commission_rate || 0), salesman_id: isAdmin ? "" : user?.id,
             }
@@ -168,6 +168,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       ...form,
       contact_id: form.contact_id || null,
       customer_po: form.customer_po || "",
+      shipping_address: form.shipping_address || "",
       tracking_number: form.tracking_number || "",
       shipping_type: form.shipping_type || "",
       shipped_date: form.shipped_date || "",
@@ -219,6 +220,17 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
             </label>
             <Inp label="Title / Job" value={form.title} onChange={(e) => set("title", e.target.value)} testid="doc-title" />
             <Inp label="Customer PO" value={form.customer_po || ""} onChange={(e) => set("customer_po", e.target.value)} testid="doc-customer-po" placeholder="Optional" />
+            <label className="block col-span-full">
+              <span className="overline text-muted-foreground">Shipping address</span>
+              <textarea
+                value={form.shipping_address || ""}
+                onChange={(e) => set("shipping_address", e.target.value)}
+                data-testid="doc-shipping-address"
+                placeholder="Enter the ship-to address manually"
+                rows={2}
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              />
+            </label>
             {!isEstimate && (
               <Inp label="Tracking #" value={form.tracking_number || ""} onChange={(e) => set("tracking_number", e.target.value)} testid="doc-tracking-number" placeholder="Optional" />
             )}

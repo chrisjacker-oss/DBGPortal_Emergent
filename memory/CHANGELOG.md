@@ -10,3 +10,11 @@
 - **Label changes**: work status "ready" → "Pickup / Shipping"; document "due date" → "Est. Complete date".
 - **Idle auto-logout**: 90-min default (admin-configurable in Settings → Security) with 1-min countdown warning dialog.
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
+
+## Sep 2026
+- **Salesman work statuses**: Salesmen can update work status on Estimates, Sales
+  Orders, and Invoices; each update follows the existing customer notification flow.
+- **Shipping address**: a manual Ship To field now carries from Estimate to Sales
+  Order to Invoice and appears on customer PDF and email documents.
+- **Customer line prices**: document PDFs/emails show quantity, unit price, and
+  amount for regular line items; flat service charges continue to display once.

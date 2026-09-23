@@ -26,6 +26,15 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Salesmen can now update customer work status on Estimates,
+  Sales Orders, and Invoices. Estimate status changes use the same customer-email
+  workflow as existing SO/Invoice updates.
+- **September 2026**: Documents now include an optional manual **Shipping address**
+  that carries Estimate → Sales Order → Invoice and is shown in customer email and
+  PDF exports as Ship To.
+- **September 2026**: Customer-facing Estimate, Sales Order, and Invoice PDFs/emails
+  show Size, Quantity, Unit Price, and Amount for standard items. Flat services
+  (Installation, Design Time, CNC, Decal Removal) remain a single visible charge.
 - **June 2026**: Work status visible to customers — shown as a "Work Status" line in the document PDF meta block (SO/Invoice) and as a colored "Progress" badge column in the customer portal "Order history" (`WorkStatusBadge`).
 - **June 2026**: Work status field + inline dropdown + customer email on change.
 - **June 2026**: Reorders bulk delete (admin checkboxes + password-confirmed).
@@ -87,3 +96,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Do NOT restore per-line Laminate checkbox.
 - Do NOT re-run markup multiplier migration.
 - Doc counters: next real doc = 29500.
+
+## Latest validation
+- September 2026: API workflow verified salesman work-status updates on all three
+  document types, shipping-address conversion, unit pricing, and invoice PDF export.
+- Generated PDF was rendered and visually checked. Test documents were deleted;
+  document number gaps are expected and preserved.

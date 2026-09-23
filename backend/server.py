@@ -207,6 +207,7 @@ class EstimateInput(BaseModel):
     contact_id: Optional[str] = None
     title: str
     customer_po: Optional[str] = None
+    shipping_address: Optional[str] = None
     tracking_number: Optional[str] = None
     shipping_type: Optional[str] = None
     shipped_date: Optional[str] = None
@@ -230,6 +231,7 @@ class InvoiceInput(BaseModel):
     contact_id: Optional[str] = None
     title: str
     customer_po: Optional[str] = None
+    shipping_address: Optional[str] = None
     tracking_number: Optional[str] = None
     shipping_type: Optional[str] = None
     shipped_date: Optional[str] = None
@@ -1437,6 +1439,7 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "contact_id": est.get("contact_id"),
         "title": est["title"],
         "customer_po": est.get("customer_po"),
+        "shipping_address": est.get("shipping_address"),
         "shipping_type": est.get("shipping_type"),
         "shipped_date": est.get("shipped_date"),
         "tax_exempt": est.get("tax_exempt", False),
@@ -1556,6 +1559,7 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "contact_id": so.get("contact_id"),
         "title": so["title"],
         "customer_po": so.get("customer_po"),
+        "shipping_address": so.get("shipping_address"),
         "tracking_number": so.get("tracking_number"),
         "shipping_type": so.get("shipping_type"),
         "shipped_date": so.get("shipped_date"),
@@ -3432,6 +3436,11 @@ async def set_so_work_status(sid: str, status: str, user: dict = Depends(require
     return await _set_work_status(db.sales_orders, sid, "Sales Order", status)
 
 
+@api_router.patch("/estimates/{eid}/work-status")
+async def set_estimate_work_status(eid: str, status: str, user: dict = Depends(require_staff)):
+    return await _set_work_status(db.estimates, eid, "Estimate", status)
+
+
 @api_router.patch("/invoices/{iid}/work-status")
 async def set_invoice_work_status(iid: str, status: str, user: dict = Depends(require_staff)):
     return await _set_work_status(db.invoices, iid, "Invoice", status)
@@ -3793,6 +3802,26 @@ def _dims_label(li: dict) -> str:
     return f"{area} sqft"
 
 
+def _is_flat_customer_charge(li: dict) -> bool:
+    category = str(li.get("category") or "").strip().lower()
+    return category in {
+        "shipping",
+        "installation",
+        "cnc router time",
+        "design time",
+        "decal removal",
+    }
+
+
+def _customer_unit_price(li: dict, factor: float = 1.0) -> Optional[float]:
+    if _is_flat_customer_charge(li):
+        return None
+    quantity = float(li.get("quantity") or 0)
+    if quantity <= 0:
+        return None
+    return round(float(li.get("line_total") or 0) * factor / quantity, 2)
+
+
 def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str, company: Optional[dict] = None, pdf_url: Optional[str] = None, track: bool = True, note: Optional[str] = None) -> str:
     co = company or {}
     cname = co.get("company_name") or "DBG Signs, Inc."
@@ -3807,10 +3836,16 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         bg = "#F7F7F8" if i % 2 else "#ffffff"
         det = str(li.get("details", "") or "").strip()
         det_html = f'<div style="color:#9CA3AF;font-size:11px;margin-top:2px">{escape(det)}</div>' if det else ""
+        is_flat = _is_flat_customer_charge(li)
+        quantity = "—" if is_flat else _num(li.get("quantity") or 0)
+        unit_price = _customer_unit_price(li, factor)
+        unit = "—" if unit_price is None else _money(unit_price)
         rows += (
             f'<tr style="background:{bg}">'
             f'<td style="padding:10px 14px;border-bottom:1px solid #eee">{escape(str(li.get("description", "")))}{det_html}</td>'
-            f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee;color:#6B7280">{escape(_dims_label(li))}</td>'
+            f'<td align="right" style="padding:10px 8px;border-bottom:1px solid #eee;color:#6B7280">{escape(_dims_label(li))}</td>'
+            f'<td align="right" style="padding:10px 8px;border-bottom:1px solid #eee">{quantity}</td>'
+            f'<td align="right" style="padding:10px 8px;border-bottom:1px solid #eee">{unit}</td>'
             f'<td align="right" style="padding:10px 14px;border-bottom:1px solid #eee">{_money(li.get("line_total", 0) * factor)}</td></tr>'
         )
     pixel = f'<img src="{PUBLIC_BASE_URL}/api/track/open/{token}" width="1" height="1" alt="" style="display:none" />' if track else ""
@@ -3825,6 +3860,17 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
     elif doc.get("shipping_type"):
         po_html += f'<div style="color:#6B7280;font-size:12px">Ship method: {escape(str(doc.get("shipping_type")))}</div>'
     attn_html = f'<div style="font-size:13px;color:#374151;margin-top:2px">Attn: {escape(str(doc.get("contact_name")))}</div>' if doc.get("contact_name") else ""
+    ship_to_html = ""
+    shipping_address = str(doc.get("shipping_address") or "").strip()
+    if shipping_address:
+        ship_to_html = (
+            '<div style="margin-top:14px;padding:10px 12px;background:#F7F7F8;'
+            'border-left:3px solid #06B6D4">'
+            '<div style="font-size:10px;letter-spacing:1px;color:#6B7280;'
+            'text-transform:uppercase">Ship To</div>'
+            f'<div style="font-size:13px;color:#374151;margin-top:3px;white-space:pre-wrap">{escape(shipping_address)}</div>'
+            '</div>'
+        )
     pay_btn = ""
     if kind_label in ("Invoice", "Sales Order") and not doc.get("voided"):
         pay_url = f"{PUBLIC_BASE_URL}/pay/{token}"
@@ -3873,6 +3919,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Bill To</div>'
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
         f'{attn_html}'
+        f'{ship_to_html}'
         f'<p style="margin:16px 0 0">Please find your {escape(kind_label.lower())} for <strong>{escape(str(doc.get("title", "")))}</strong> below.</p>'
         + (f'<div style="margin:14px 0 0;background:#F7F7F8;border-left:3px solid #06B6D4;padding:12px 14px;color:#374151;white-space:pre-wrap">{escape(str(note).strip())}</div>' if note and str(note).strip() else "")
         + f'</td></tr>'
@@ -3880,18 +3927,20 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<tr><td style="padding:16px 32px 0"><table role="presentation" width="100%" style="border-collapse:collapse">'
         f'<tr style="background:#0A0A0A;color:#fff">'
         f'<th align="left" style="padding:10px 14px;font-size:11px;letter-spacing:1px">DESCRIPTION</th>'
-        f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">SIZE</th>'
+        f'<th align="right" style="padding:10px 8px;font-size:11px;letter-spacing:1px">SIZE</th>'
+        f'<th align="right" style="padding:10px 8px;font-size:11px;letter-spacing:1px">QTY</th>'
+        f'<th align="right" style="padding:10px 8px;font-size:11px;letter-spacing:1px">UNIT</th>'
         f'<th align="right" style="padding:10px 14px;font-size:11px;letter-spacing:1px">AMOUNT</th></tr>'
         f'{rows}'
-        f'<tr><td></td><td align="right" style="padding:10px 14px;color:#6B7280">Subtotal</td>'
+        f'<tr><td colspan="3"></td><td align="right" style="padding:10px 14px;color:#6B7280">Subtotal</td>'
         f'<td align="right" style="padding:10px 14px">{_money(doc.get("subtotal", 0))}</td></tr>'
-        + (f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Discount ({doc.get("discount_rate", 0)}%)</td>'
+        + (f'<tr><td colspan="3"></td><td align="right" style="padding:6px 14px;color:#6B7280">Discount ({doc.get("discount_rate", 0)}%)</td>'
            f'<td align="right" style="padding:6px 14px;color:#16A34A">-{_money(doc.get("discount_amount", 0))}</td></tr>' if float(doc.get("discount_amount") or 0) > 0 else "")
-        + f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Tax ({doc.get("tax_rate", 0)}%)</td>'
+        + f'<tr><td colspan="3"></td><td align="right" style="padding:6px 14px;color:#6B7280">Tax ({doc.get("tax_rate", 0)}%)</td>'
         f'<td align="right" style="padding:6px 14px">{_money(doc.get("tax_amount", 0))}</td></tr>'
-        + (f'<tr><td></td><td align="right" style="padding:6px 14px;color:#6B7280">Shipping</td>'
+        + (f'<tr><td colspan="3"></td><td align="right" style="padding:6px 14px;color:#6B7280">Shipping</td>'
            f'<td align="right" style="padding:6px 14px">{_money(doc.get("shipping", 0))}</td></tr>' if float(doc.get("shipping") or 0) > 0 else "")
-        + (f'<tr><td></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
+        + (f'<tr><td colspan="3"></td><td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold">{label}</td>'
         f'<td align="right" style="padding:12px 14px;background:#0A0A0A;color:#fff;font-weight:bold;font-size:16px">{_money(doc.get("total", 0))}</td></tr>')
         + f'</table></td></tr>'
         f'{approve_btn}'
@@ -4342,6 +4391,8 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         meta.append(("Work Status", WORK_STATUS_LABELS[doc["work_status"]]))
     if doc.get("customer_po"):
         meta.append(("Customer PO", str(doc.get("customer_po"))))
+    if doc.get("shipping_address"):
+        meta.append(("Ship To", "See address"))
     if doc.get("shipping_type"):
         meta.append(("Ship Method", str(doc.get("shipping_type"))))
     if doc.get("tracking_number"):
@@ -4377,6 +4428,19 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         c.drawString(L, yy, str(customer["email"])); yy -= 13
     if customer and customer.get("phone"):
         c.drawString(L, yy, str(customer["phone"])); yy -= 13
+    shipping_address = str(doc.get("shipping_address") or "").strip()
+    if shipping_address:
+        from reportlab.lib.utils import simpleSplit
+
+        c.setFillColor(soft)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(L, yy - 4, "SHIP TO")
+        yy -= 17
+        c.setFont("Helvetica", 9)
+        for address_line in shipping_address.splitlines() or [shipping_address]:
+            for wrapped_line in simpleSplit(address_line, "Helvetica", 9, 230):
+                c.drawString(L, yy, wrapped_line)
+                yy -= 12
 
     y = min(yy, my) - 22
 
@@ -4384,7 +4448,9 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     c.setFillColor(ink); c.rect(L, y - 6, R - L, 24, fill=1, stroke=0)
     c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
     c.drawString(L + 10, y + 3, "DESCRIPTION")
-    c.drawRightString(ax - 150, y + 3, "SIZE")
+    c.drawRightString(ax - 230, y + 3, "SIZE")
+    c.drawRightString(ax - 160, y + 3, "QTY")
+    c.drawRightString(ax - 95, y + 3, "UNIT")
     c.drawRightString(ax - 10, y + 3, "AMOUNT")
     y -= 30
 
@@ -4397,7 +4463,13 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         c.setFillColor(ink); c.setFont("Helvetica", 10)
         c.drawString(L + 10, y, str(li.get("description", ""))[:40])
         c.setFont("Helvetica", 9)
-        c.drawRightString(ax - 150, y, _dims_label(li))
+        c.drawRightString(ax - 230, y, _dims_label(li))
+        is_flat = _is_flat_customer_charge(li)
+        qty_label = "—" if is_flat else _num(li.get("quantity") or 0)
+        unit_price = _customer_unit_price(li, factor)
+        unit_label = "—" if unit_price is None else _money(unit_price)
+        c.drawRightString(ax - 160, y, qty_label)
+        c.drawRightString(ax - 95, y, unit_label)
         c.setFont("Helvetica", 10)
         c.drawRightString(ax - 10, y, _money(li.get("line_total", 0) * factor))
         if det:
