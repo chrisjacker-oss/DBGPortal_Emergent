@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { CreditCard, EnvelopeSimple } from "@phosphor-icons/react";
 
+const roundCurrency = (value) => Math.round(Number(value || 0) * 100) / 100;
+
 export default function PaymentRequestDialog({ open, doc, path, kindLabel, onClose, onSent }) {
   const [options, setOptions] = useState([]);
   const [checked, setChecked] = useState({});
@@ -57,10 +59,9 @@ export default function PaymentRequestDialog({ open, doc, path, kindLabel, onClo
   );
   const total = Number(doc?.total || 0);
   const paid = Number(doc?.amount_paid || 0);
-  const balance = Math.max(0, total - paid);
-  const requestedAmount = paymentType === "deposit"
-    ? Math.max(0, Math.min(balance, Math.round((total * 0.5 - paid) * 100) / 100))
-    : balance;
+  const balance = roundCurrency(Math.max(0, total - paid));
+  const target = paymentType === "deposit" ? roundCurrency(total * 0.5) : total;
+  const requestedAmount = roundCurrency(Math.min(balance, Math.max(target - paid, 0)));
   const requestLabel = paymentType === "deposit" ? "50% deposit" : "COD payment in full";
 
   const submit = async () => {
@@ -79,9 +80,11 @@ export default function PaymentRequestDialog({ open, doc, path, kindLabel, onClo
         payment_type: paymentType,
       });
       if (data.failed?.length) {
-        toast.warning(`Payment link sent to ${data.to}; failed: ${data.failed.join(", ")}`);
+        const sentTo = data.sent_to?.join(", ") || `${data.to} recipient(s)`;
+        toast.warning(`Payment link sent to ${sentTo}; failed: ${data.failed.join(", ")}`);
       } else {
-        toast.success(`Payment link for ${currency(data.amount)} sent to ${data.to}`);
+        const sentTo = data.sent_to?.join(", ") || `${data.to} recipient(s)`;
+        toast.success(`Payment link for ${currency(data.amount)} sent to ${sentTo}`);
       }
       onSent?.();
       onClose();

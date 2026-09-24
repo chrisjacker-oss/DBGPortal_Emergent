@@ -2068,7 +2068,13 @@ async def _send_payment_request(
         {"_id": result.inserted_id},
         {"$set": {"status": status, "sent_at": now_iso(), "sent_to": sent, "failed_to": failed}},
     )
-    return {"to": len(sent), "failed": failed, "amount": amount, "payment_type": payment_type}
+    return {
+        "to": len(sent),
+        "sent_to": sent,
+        "failed": failed,
+        "amount": amount,
+        "payment_type": payment_type,
+    }
 
 
 @api_router.post("/estimates/{eid}/payment-request")

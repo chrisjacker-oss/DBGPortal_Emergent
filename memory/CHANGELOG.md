@@ -12,6 +12,10 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Payment request emails**: Staff can send a secure, fixed-amount payment link from
+  Estimates, Sales Orders, and Invoices. Choose 50/50 for a half-total deposit or COD
+  for the full remaining balance, then choose customer contacts. Links expire after 30
+  days and work through the existing Stripe card-payment page.
 - **CRM backup & restore**: Settings has admin-only JSON backup download and protected
   restore. Restore requires a selected backup, current admin password, and typed
   `RESTORE`, then signs out for a fresh session.

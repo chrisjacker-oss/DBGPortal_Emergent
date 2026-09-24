@@ -26,6 +26,13 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Estimates, Sales Orders, and Invoices now include a **Send payment
+  link** action for staff. The popup selects customer contacts and either requests a
+  50% deposit or the full COD balance. Each email uses a fixed, secure, 30-day public
+  payment link; the public page cannot alter the requested amount.
+- **September 2026**: Deposits paid on an Estimate carry into its Sales Order and then
+  Invoice during conversion. Payment-request records mark the specific link paid while
+  preserving existing Stripe portal payment flows.
 - **September 2026**: Admin-only CRM Backup & Restore in Settings. Backup exports every
   MongoDB CRM collection as a portable Extended JSON file; restore replaces current
   database records only after an admin password and typed `RESTORE` confirmation.
@@ -101,6 +108,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Payment-link QA passed 11 backend tests plus full admin/salesman UI
+  flows for Estimate, Sales Order, and Invoice. Test documents, customers, and payment
+  requests were removed. A managed-email rate limit caused one unrelated resend smoke
+  test to skip; payment-link request generation and public pages passed.
 - September 2026: CRM backup export was verified for an admin; salesman access is
   denied, malformed restore files are rejected before changes, and a rejection left
   exported collection counts unchanged. A real restore was not run against live data.
