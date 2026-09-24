@@ -33,7 +33,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - **September 2026**: Install Calendar now flags tentative customer requests as `REQ`.
   Staff can adjust and confirm them; confirmation sends the existing installation notice.
 - **September 2026**: Added a desktop sidebar collapse/expand control so staff can open
-  more workspace; the responsive mobile navigation drawer remains available.
+  more workspace; arrow controls now show **Close** and **Expand** labels. The responsive
+  mobile navigation drawer remains available.
 - **September 2026**: Added the admin-only **Automatic Backup Vault** in Settings.
   It stores complete Extended JSON CRM backups in durable private object storage, supports
   manual runs/downloads/removal, and keeps every accessible backup until an admin removes it.

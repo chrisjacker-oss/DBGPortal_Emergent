@@ -177,9 +177,10 @@ export const Navigation = () => {
                 onClick={() => setCollapsed(true)}
                 data-testid="collapse-sidebar-btn"
                 aria-label="Collapse sidebar"
-                className="p-2 text-muted-foreground hover:text-foreground"
+                className="flex flex-col items-center gap-0.5 p-2 text-[10px] text-muted-foreground hover:text-foreground"
               >
                 <CaretLeft size={18} weight="bold" />
+                <span>Close</span>
               </button>
             )}
           </div>
@@ -192,9 +193,10 @@ export const Navigation = () => {
               onClick={() => setCollapsed(false)}
               data-testid="expand-sidebar-btn"
               aria-label="Expand sidebar"
-              className="mt-3 w-full p-2 text-muted-foreground hover:text-foreground"
+                className="mt-3 flex w-full flex-col items-center gap-0.5 p-2 text-[10px] text-muted-foreground hover:text-foreground"
             >
               <CaretRight size={18} weight="bold" />
+                <span>Expand</span>
             </button>
           )}
         </div>
