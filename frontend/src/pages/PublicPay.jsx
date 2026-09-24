@@ -98,7 +98,10 @@ export default function PublicPay() {
                   <div className="border border-border divide-y divide-border font-mono text-sm">
                     <div className="flex justify-between px-4 py-2"><span className="text-muted-foreground">Total</span><span>{currency(info.total)}</span></div>
                     {info.amount_paid > 0 && <div className="flex justify-between px-4 py-2"><span className="text-muted-foreground">Already paid</span><span>{currency(info.amount_paid)}</span></div>}
-                    <div className="flex justify-between px-4 py-3 bg-[#0A0A0A] text-white font-semibold"><span>Balance due</span><span data-testid="public-pay-balance">{currency(info.balance)}</span></div>
+                    <div className="flex justify-between px-4 py-3 bg-[#0A0A0A] text-white font-semibold">
+                      <span>{info.payment_label || "Balance due"}</span>
+                      <span data-testid="public-pay-balance">{currency(info.requested_amount ?? info.balance)}</span>
+                    </div>
                   </div>
 
                   {!clientSecret ? (

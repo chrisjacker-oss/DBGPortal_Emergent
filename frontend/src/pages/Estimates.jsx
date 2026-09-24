@@ -7,11 +7,12 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
+import PaymentRequestDialog from "@/components/PaymentRequestDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
-import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye, Printer, CopySimple } from "@phosphor-icons/react";
+import { Plus, PencilSimple, Trash, CheckCircle, EnvelopeSimple, LockKey, Eye, Printer, CopySimple, CreditCard } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 const printDoc = (path) => {
   const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
@@ -35,6 +36,7 @@ export default function Estimates() {
   const [delEst, setDelEst] = useState(null);
   const [noteDoc, setNoteDoc] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
+  const [paymentDoc, setPaymentDoc] = useState(null);
   const [params] = useSearchParams();
   const focusId = params.get("focus");
   const focusRef = useRef(null);
@@ -162,6 +164,7 @@ export default function Estimates() {
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
+                        { label: "Send payment link", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-estimate-${r.id}` },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-estimate-${r.id}` },
                         { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: !!r.sales_order_id },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
@@ -181,6 +184,7 @@ export default function Estimates() {
 
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/estimates" kindLabel="estimate" onClose={() => setSendDoc(null)} onSent={load} />
+      <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/estimates" kindLabel="Estimate" onClose={() => setPaymentDoc(null)} onSent={load} />
       <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected estimate(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/estimates/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

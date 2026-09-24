@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
+import PaymentRequestDialog from "@/components/PaymentRequestDialog";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
@@ -26,6 +27,7 @@ export default function Invoices() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
+  const [paymentDoc, setPaymentDoc] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [delInv, setDelInv] = useState(null);
   const [recInv, setRecInv] = useState(null);
@@ -356,6 +358,7 @@ export default function Invoices() {
                         { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}`, hidden: isSalesman },
                         { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
+                        { label: "Send payment link", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-invoice-${r.id}`, hidden: isSalesman },
                         { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
                         { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
@@ -378,6 +381,7 @@ export default function Invoices() {
 
       <DocBuilder open={open} kind="invoice" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/invoices" kindLabel="invoice" onClose={() => setSendDoc(null)} onSent={load} />
+      <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/invoices" kindLabel="Invoice" onClose={() => setPaymentDoc(null)} onSent={load} />
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />

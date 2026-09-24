@@ -7,11 +7,12 @@ import { PageHeader } from "@/components/Layout";
 import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
+import PaymentRequestDialog from "@/components/PaymentRequestDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
-import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye, Printer, CopySimple } from "@phosphor-icons/react";
+import { Receipt, Trash, EnvelopeSimple, Plus, PencilSimple, Prohibit, ArrowCounterClockwise, LockKey, Eye, Printer, CopySimple, CreditCard } from "@phosphor-icons/react";
 const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
 const printDoc = (path) => {
   const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
@@ -35,6 +36,7 @@ export default function SalesOrders() {
   const [delSo, setDelSo] = useState(null);
   const [noteDoc, setNoteDoc] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
+  const [paymentDoc, setPaymentDoc] = useState(null);
   const [tab, setTab] = useState("active");
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -159,6 +161,7 @@ export default function SalesOrders() {
                         { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}`, hidden: isSalesman },
                         { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/sales-orders/${r.id}/pdf`), testid: `print-so-${r.id}` },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
+                        { label: "Send payment link", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-so-${r.id}`, hidden: r.voided },
                         { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-so-${r.id}` },
                         { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided || isSalesman },
@@ -180,6 +183,7 @@ export default function SalesOrders() {
 
       <DocBuilder open={open} kind="sales-order" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/sales-orders" kindLabel="sales order" onClose={() => setSendDoc(null)} onSent={load} />
+      <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/sales-orders" kindLabel="Sales Order" onClose={() => setPaymentDoc(null)} onSent={load} />
       <AdminDeleteDialog open={!!delSo} label={`sales order ${delSo?.number || ""}`} onClose={() => setDelSo(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected sales order(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/sales-orders/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

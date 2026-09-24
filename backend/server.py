@@ -335,6 +335,11 @@ class ChangePasswordInput(BaseModel):
     new_password: str
 
 
+class PaymentRequestInput(BaseModel):
+    recipients: List[EmailStr] = []
+    payment_type: str
+
+
 # ---------------------------------------------------------------------------
 # Utils
 # ---------------------------------------------------------------------------
@@ -1545,6 +1550,10 @@ async def approve_estimate(eid: str, user: dict = Depends(require_staff)):
         "commission_amount": est.get("commission_amount", 0),
         "salesman_id": est.get("salesman_id"),
         "salesman_name": est.get("salesman_name"),
+        "amount_paid": est.get("amount_paid", 0),
+        "payment_status": est.get("payment_status"),
+        "paid_at": est.get("paid_at"),
+        "paid_via": est.get("paid_via"),
         "status": "open",  # open / in_production / fulfilled
         "number": renumber(est.get("number"), "SO") or await next_number("SO", "sales_orders", db.sales_orders, start=29500),
         "from_estimate": est.get("number"),
@@ -1668,7 +1677,10 @@ async def convert_sales_order(sid: str, user: dict = Depends(require_staff)):
         "commission_amount": so.get("commission_amount", 0),
         "salesman_id": so.get("salesman_id"),
         "salesman_name": so.get("salesman_name"),
-        "status": "unpaid",
+        "amount_paid": so.get("amount_paid", 0),
+        "paid_at": so.get("paid_at"),
+        "paid_via": so.get("paid_via"),
+        "status": "paid" if float(so.get("amount_paid") or 0) >= float(so.get("total") or 0) - 0.005 else "unpaid",
         "due_date": (datetime.now(timezone.utc) + timedelta(days=30)).date().isoformat(),
         "number": renumber(so.get("number"), "INV") or await next_number("INV", "invoices", db.invoices, start=29500),
         "from_sales_order": so.get("number"),
@@ -1982,6 +1994,110 @@ async def delete_invoice(iid: str, payload: DeleteConfirm, user: dict = Depends(
 # ---------------------------------------------------------------------------
 # Stripe payments (embedded card / PaymentIntent)
 # ---------------------------------------------------------------------------
+_PAYMENT_REQUEST_TYPES = {"deposit", "cod"}
+
+
+def _payment_request_label(payment_type: str) -> str:
+    return "50% deposit" if payment_type == "deposit" else "COD payment in full"
+
+
+async def _send_payment_request(
+    collection,
+    document_id: str,
+    kind_label: str,
+    payload: PaymentRequestInput,
+    user: dict,
+) -> dict:
+    doc = await get_or_404(collection, document_id, kind_label)
+    if doc.get("voided"):
+        raise HTTPException(status_code=400, detail=f"This {kind_label.lower()} has been voided.")
+    payment_type = str(payload.payment_type or "").strip().lower()
+    if payment_type not in _PAYMENT_REQUEST_TYPES:
+        raise HTTPException(status_code=400, detail="Choose either 50/50 or COD payment")
+    recipients = list(dict.fromkeys(email.strip().lower() for email in payload.recipients if email.strip()))
+    if not recipients:
+        raise HTTPException(status_code=400, detail="Select at least one recipient")
+    total = round(float(doc.get("total") or 0), 2)
+    paid = round(float(doc.get("amount_paid") or 0), 2)
+    balance = round(total - paid, 2)
+    target = round(total * 0.5, 2) if payment_type == "deposit" else total
+    amount = round(min(balance, max(target - paid, 0)), 2)
+    if total <= 0 or balance <= 0 or amount <= 0:
+        raise HTTPException(status_code=400, detail="This document does not have a payment amount due")
+    token = secrets.token_urlsafe(24)
+    request_doc = {
+        "token": token,
+        "collection": collection.name,
+        "doc_id": document_id,
+        "number": doc.get("number"),
+        "payment_type": payment_type,
+        "amount": amount,
+        "recipients": recipients,
+        "status": "created",
+        "created_at": now_iso(),
+        "created_by": user.get("name") or user.get("email"),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+    }
+    result = await db.payment_requests.insert_one(request_doc)
+    customer_name = await _cust_name_of(doc)
+    company = await get_settings()
+    payment_url = f"{PUBLIC_BASE_URL}/pay/{token}"
+    html = render_payment_request_email(
+        kind_label,
+        doc,
+        customer_name,
+        _payment_request_label(payment_type),
+        amount,
+        payment_url,
+        company,
+    )
+    sent, failed = [], []
+    for recipient in recipients:
+        try:
+            await send_email(
+                to=recipient,
+                subject=f"Payment requested — {kind_label} {doc.get('number', '')} · DBG Signs, Inc.",
+                html=html,
+            )
+            sent.append(recipient)
+        except Exception as error:
+            logger.warning(f"Payment request email failed for {recipient}: {error}")
+            failed.append(recipient)
+    status = "sent" if sent else "failed"
+    await db.payment_requests.update_one(
+        {"_id": result.inserted_id},
+        {"$set": {"status": status, "sent_at": now_iso(), "sent_to": sent, "failed_to": failed}},
+    )
+    return {"to": len(sent), "failed": failed, "amount": amount, "payment_type": payment_type}
+
+
+@api_router.post("/estimates/{eid}/payment-request")
+async def send_estimate_payment_request(
+    eid: str,
+    payload: PaymentRequestInput,
+    user: dict = Depends(require_staff),
+):
+    return await _send_payment_request(db.estimates, eid, "Estimate", payload, user)
+
+
+@api_router.post("/sales-orders/{sid}/payment-request")
+async def send_sales_order_payment_request(
+    sid: str,
+    payload: PaymentRequestInput,
+    user: dict = Depends(require_staff),
+):
+    return await _send_payment_request(db.sales_orders, sid, "Sales Order", payload, user)
+
+
+@api_router.post("/invoices/{iid}/payment-request")
+async def send_invoice_payment_request(
+    iid: str,
+    payload: PaymentRequestInput,
+    user: dict = Depends(require_staff),
+):
+    return await _send_payment_request(db.invoices, iid, "Invoice", payload, user)
+
+
 class PayIntentInput(BaseModel):
     invoice_id: str
     amount: Optional[float] = None
@@ -2028,6 +2144,23 @@ async def _apply_amount_to_so(so_id: str, amount: float) -> None:
     await db.sales_orders.update_one({"_id": so["_id"]}, {"$set": upd})
 
 
+async def _apply_amount_to_estimate(estimate_id: str, amount: float) -> None:
+    estimate = await db.estimates.find_one({"_id": oid(estimate_id)})
+    if not estimate:
+        return
+    total = float(estimate.get("total") or 0)
+    paid = round(float(estimate.get("amount_paid") or 0) + float(amount or 0), 2)
+    fully = paid >= total - 0.005
+    update = {
+        "amount_paid": paid,
+        "payment_status": "paid" if fully else "partial",
+    }
+    if fully:
+        update["paid_at"] = now_iso()
+        update["paid_via"] = "stripe"
+    await db.estimates.update_one({"_id": estimate["_id"]}, {"$set": update})
+
+
 async def _apply_payment(payment_intent_id: str) -> None:
     # Idempotent: only the first flip pending->paid applies the amount(s)
     res = await db.payment_transactions.update_one(
@@ -2041,10 +2174,17 @@ async def _apply_payment(payment_intent_id: str) -> None:
     if allocations:
         for a in allocations:
             await _apply_amount_to_invoice(a["invoice_id"], a["amount"])
+    elif rec.get("collection") == "estimates" and rec.get("doc_id"):
+        await _apply_amount_to_estimate(rec["doc_id"], rec.get("amount"))
     elif rec.get("collection") == "sales_orders" and rec.get("doc_id"):
         await _apply_amount_to_so(rec["doc_id"], rec.get("amount"))
     elif rec.get("invoice_id"):
         await _apply_amount_to_invoice(rec["invoice_id"], rec.get("amount"))
+    if rec.get("payment_request_id") and ObjectId.is_valid(rec["payment_request_id"]):
+        await db.payment_requests.update_one(
+            {"_id": oid(rec["payment_request_id"])},
+            {"$set": {"status": "paid", "paid_at": now_iso()}},
+        )
 
 
 @api_router.post("/payments/create-intent")
@@ -2266,6 +2406,28 @@ class PubPayInput(BaseModel):
 
 
 async def _pub_doc_from_token(token: str):
+    request = await db.payment_requests.find_one({"token": token})
+    if request:
+        try:
+            expires_at = datetime.fromisoformat(str(request.get("expires_at", "")).replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=404, detail="This payment link is invalid or has expired.")
+        if expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=410, detail="This payment link has expired.")
+        collection_name = request.get("collection")
+        doc_id = request.get("doc_id")
+        collections = {
+            "estimates": db.estimates,
+            "sales_orders": db.sales_orders,
+            "invoices": db.invoices,
+        }
+        collection = collections.get(collection_name)
+        if collection is None or not ObjectId.is_valid(str(doc_id)):
+            raise HTTPException(status_code=404, detail="This payment link is invalid or has expired.")
+        doc = await collection.find_one({"_id": oid(doc_id)})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        return collection_name, doc, request
     tr = await db.email_tracking.find_one({"token": token})
     if not tr:
         raise HTTPException(status_code=404, detail="This payment link is invalid or has expired.")
@@ -2279,7 +2441,7 @@ async def _pub_doc_from_token(token: str):
         raise HTTPException(status_code=400, detail="This link is not payable.")
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found.")
-    return coll, doc
+    return coll, doc, None
 
 
 async def _cust_name_of(doc: dict) -> str:
@@ -2441,18 +2603,23 @@ async def sales_report(user: dict = Depends(require_admin)):
 
 @api_router.get("/pub/pay/{token}")
 async def pub_pay_info(token: str):
-    coll, doc = await _pub_doc_from_token(token)
+    coll, doc, payment_request = await _pub_doc_from_token(token)
     cust = await db.customers.find_one({"_id": oid(doc["customer_id"])}) if doc.get("customer_id") else None
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     total = float(doc.get("total") or 0)
     balance = round(total - float(doc.get("amount_paid") or 0), 2)
     s = await get_settings()
+    request_paid = bool(payment_request and payment_request.get("status") == "paid")
+    request_amount = payment_request.get("amount") if payment_request else balance
     return {
-        "kind": "Invoice" if coll == "invoices" else "Sales Order",
+        "kind": {"estimates": "Estimate", "invoices": "Invoice"}.get(coll, "Sales Order"),
         "number": doc.get("number"), "customer_name": cname,
         "total": total, "amount_paid": float(doc.get("amount_paid") or 0), "balance": balance,
         "voided": bool(doc.get("voided")),
-        "paid": doc.get("status") == "paid" or doc.get("payment_status") == "paid" or balance <= 0,
+        "paid": request_paid or doc.get("status") == "paid" or doc.get("payment_status") == "paid" or balance <= 0,
+        "payment_request": bool(payment_request),
+        "payment_label": _payment_request_label(payment_request["payment_type"]) if payment_request else None,
+        "requested_amount": round(float(request_amount or 0), 2),
         "company_name": s.get("company_name") or "DBG Signs, Inc.",
         "publishable_key": STRIPE_PUBLISHABLE_KEY,
     }
@@ -2460,14 +2627,20 @@ async def pub_pay_info(token: str):
 
 @api_router.post("/pub/pay/{token}/intent")
 async def pub_pay_intent(token: str, payload: PubPayInput = PubPayInput()):
-    coll, doc = await _pub_doc_from_token(token)
+    coll, doc, payment_request = await _pub_doc_from_token(token)
     if doc.get("voided"):
         raise HTTPException(status_code=400, detail="This document has been voided.")
     total = float(doc.get("total") or 0)
     balance = round(total - float(doc.get("amount_paid") or 0), 2)
+    if payment_request and payment_request.get("status") == "paid":
+        raise HTTPException(status_code=400, detail="This payment request has already been paid.")
     if doc.get("status") == "paid" or doc.get("payment_status") == "paid" or balance <= 0:
         raise HTTPException(status_code=400, detail="This is already paid in full.")
-    amount = round(float(payload.amount), 2) if payload.amount is not None else balance
+    amount = (
+        round(float(payment_request.get("amount") or 0), 2)
+        if payment_request
+        else round(float(payload.amount), 2) if payload.amount is not None else balance
+    )
     if amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be greater than zero.")
     if amount > balance + 0.005:
@@ -2475,7 +2648,7 @@ async def pub_pay_intent(token: str, payload: PubPayInput = PubPayInput()):
     s = await get_settings()
     surcharge = round(amount * float(s.get("card_surcharge_pct") or 0) / 100.0, 2) if s.get("card_surcharge_enabled") else 0.0
     charged = round(amount + surcharge, 2)
-    label = "Invoice" if coll == "invoices" else "Sales Order"
+    label = {"estimates": "Estimate", "invoices": "Invoice"}.get(coll, "Sales Order")
     intent = stripe.PaymentIntent.create(
         amount=int(round(charged * 100)), currency="usd", payment_method_types=["card"],
         description=f"{label} {doc.get('number', '')} - DBG Signs, Inc.",
@@ -2485,6 +2658,8 @@ async def pub_pay_intent(token: str, payload: PubPayInput = PubPayInput()):
         "payment_intent_id": intent.id, "collection": coll, "doc_id": str(doc["_id"]),
         "invoice_id": str(doc["_id"]) if coll == "invoices" else None,
         "invoice_number": doc.get("number"), "amount": amount, "surcharge": surcharge, "charged": charged,
+        "payment_request_id": str(payment_request["_id"]) if payment_request else None,
+        "payment_request_type": payment_request.get("payment_type") if payment_request else None,
         "currency": "usd", "status": "initiated", "payment_status": "pending", "public": True,
         "created_at": now_iso(), "updated_at": now_iso(),
     })
@@ -4134,6 +4309,64 @@ def render_statement_email(customer_name: str, period_label: str, invoices: list
         f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
         f'</div></td></tr>'
         f'</table></div>'
+    )
+
+
+def render_payment_request_email(
+    kind_label: str,
+    doc: dict,
+    customer_name: str,
+    payment_label: str,
+    amount: float,
+    payment_url: str,
+    company: Optional[dict] = None,
+) -> str:
+    co = company or {}
+    company_name = co.get("company_name") or "DBG Signs, Inc."
+    contact_bits = [
+        co.get("company_address"),
+        co.get("company_phone"),
+        co.get("company_web"),
+        co.get("company_email"),
+    ]
+    contact = " &nbsp;·&nbsp; ".join(escape(str(bit)) for bit in contact_bits if bit)
+    contact_html = (
+        f'<div style="color:#6B7280;font-size:11px;margin-top:8px">{contact}</div>'
+        if contact
+        else ""
+    )
+    title = escape(str(doc.get("title") or "your order"))
+    return (
+        '<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        '<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" '
+        'style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        '<tr><td style="padding:28px 32px 0">'
+        f'<img src="{LOGO_URL}" alt="{escape(company_name)}" height="46" style="height:46px;display:block" />'
+        '<div style="height:3px;background:#06B6D4;margin-top:18px"></div>'
+        '</td></tr>'
+        '<tr><td style="padding:24px 32px 0">'
+        '<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Payment requested</div>'
+        f'<div style="font-size:23px;font-weight:bold;margin-top:5px">{escape(payment_label)}</div>'
+        f'<p style="font-size:15px;line-height:1.5;margin:18px 0 0">Hello {escape(customer_name)},</p>'
+        f'<p style="font-size:15px;line-height:1.5;margin:10px 0 0">'
+        f'Please submit the {escape(payment_label.lower())} for {escape(kind_label.lower())} '
+        f'<strong>#{escape(str(doc.get("number") or ""))}</strong> · {title}.</p>'
+        '<div style="margin:20px 0;background:#F7F7F8;border-left:3px solid #06B6D4;padding:16px 18px">'
+        '<div style="font-size:10px;letter-spacing:1px;color:#6B7280;text-transform:uppercase">Amount requested</div>'
+        f'<div style="font-size:28px;font-weight:bold;margin-top:5px">{_money(amount)}</div>'
+        '</div>'
+        '</td></tr>'
+        '<tr><td style="padding:8px 32px 0" align="center">'
+        f'<a href="{payment_url}" style="display:inline-block;background:#06B6D4;color:#0A0A0A;text-decoration:none;padding:14px 36px;font-weight:bold;letter-spacing:1px;font-size:14px">PAY SECURELY ONLINE →</a>'
+        '<div style="color:#6B7280;font-size:11px;margin-top:9px">This secure link is valid for 30 days. Powered by Stripe.</div>'
+        '</td></tr>'
+        '<tr><td style="padding:26px 32px 28px">'
+        f'<div style="font-weight:bold">{escape(company_name)}</div>'
+        f'{contact_html}'
+        '<div style="color:#9CA3AF;font-size:11px;margin-top:8px">We never ask for your password or card details by email.</div>'
+        '</td></tr>'
+        f'{_disclaimer_html()}'
+        '</table></div>'
     )
 
 
