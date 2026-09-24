@@ -13,3 +13,10 @@ crons:
     method: POST
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     enabled: true
+  - name: monthly-crm-backup
+    description: "Creates and stores a complete CRM backup on the first of every month"
+    cron: "0 8 1 * *"
+    endpoint: "{{BASE_URL}}/api/cron/monthly-crm-backup"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

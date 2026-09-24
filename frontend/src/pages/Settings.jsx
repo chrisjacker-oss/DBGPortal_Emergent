@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
+import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import {
   ArrowCounterClockwise,
   Database,
@@ -34,8 +35,17 @@ export default function Settings() {
   const [restorePassword, setRestorePassword] = useState("");
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const [restoring, setRestoring] = useState(false);
+  const [vaultBackups, setVaultBackups] = useState([]);
+  const [vaultRunning, setVaultRunning] = useState(false);
+  const [vaultDelete, setVaultDelete] = useState(null);
 
-  useEffect(() => { api.get("/settings").then((r) => setForm(r.data)); }, []);
+  const loadVault = () => api.get("/settings/backup-vault")
+    .then((response) => setVaultBackups(response.data))
+    .catch(() => setVaultBackups([]));
+  useEffect(() => {
+    api.get("/settings").then((r) => setForm(r.data));
+    loadVault();
+  }, []);
   if (!form) return null;
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -128,6 +138,54 @@ export default function Settings() {
       setRestoring(false);
     }
   };
+  const runVaultBackup = async () => {
+    setVaultRunning(true);
+    try {
+      const { data } = await api.post("/settings/backup-vault/run");
+      toast.success(`Backup saved · ${data.filename}`);
+      loadVault();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not create the vault backup");
+    } finally {
+      setVaultRunning(false);
+    }
+  };
+  const downloadVaultBackup = async (backup) => {
+    try {
+      const response = await api.get(`/settings/backup-vault/${backup.id}/download`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = backup.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Vault backup downloaded");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Backup download failed");
+    }
+  };
+  const removeVaultBackup = async (password) => {
+    try {
+      await api.delete(`/settings/backup-vault/${vaultDelete.id}`, { data: { password } });
+      toast.success("Backup removed from the vault");
+      setVaultDelete(null);
+      loadVault();
+      return true;
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not remove backup");
+      return false;
+    }
+  };
+  const formatBytes = (bytes) => {
+    const size = Number(bytes || 0);
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
     <div>
@@ -171,6 +229,75 @@ export default function Settings() {
             >
               <ArrowCounterClockwise size={16} weight="bold" /> Restore backup
             </Btn>
+          </div>
+        </div>
+
+        <div className="border border-border bg-card p-8 space-y-4" data-testid="backup-vault-card">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <Database size={22} weight="bold" className="mt-0.5 text-[#0E7490]" />
+              <div>
+                <div className="overline text-muted-foreground">Automatic backup vault</div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  A complete CRM backup runs on the first of every month at 8:00 UTC.
+                  Every saved copy stays here until an admin removes it.
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  8:00 UTC is 2:00 AM Central Standard Time and 3:00 AM during daylight saving.
+                </p>
+              </div>
+            </div>
+            <Btn
+              variant="outline"
+              onClick={runVaultBackup}
+              disabled={vaultRunning}
+              data-testid="run-vault-backup-btn"
+            >
+              <UploadSimple size={16} weight="bold" />
+              {vaultRunning ? "Saving…" : "Run backup now"}
+            </Btn>
+          </div>
+
+          <div className="border border-border divide-y divide-border" data-testid="backup-vault-list">
+            {vaultBackups.map((backup) => (
+              <div
+                key={backup.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                data-testid={`vault-backup-${backup.id}`}
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-mono text-sm" data-testid={`vault-backup-name-${backup.id}`}>
+                    {backup.filename}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {new Date(backup.created_at).toLocaleString()} · {formatBytes(backup.size)} ·
+                    {" "}{backup.collection_count} collections · {backup.document_count} records ·
+                    {" "}{backup.source === "monthly" ? "monthly" : "manual"}
+                  </div>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Btn
+                    variant="outline"
+                    onClick={() => downloadVaultBackup(backup)}
+                    data-testid={`download-vault-backup-${backup.id}`}
+                  >
+                    <DownloadSimple size={16} weight="bold" /> Download
+                  </Btn>
+                  <Btn
+                    variant="ghost"
+                    onClick={() => setVaultDelete(backup)}
+                    data-testid={`remove-vault-backup-${backup.id}`}
+                  >
+                    <Trash size={16} />
+                  </Btn>
+                </div>
+              </div>
+            ))}
+            {vaultBackups.length === 0 && (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground" data-testid="backup-vault-empty">
+                No vault backups yet. The first monthly backup will appear here automatically.
+              </div>
+            )}
           </div>
         </div>
 
@@ -283,6 +410,12 @@ export default function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AdminDeleteDialog
+        open={!!vaultDelete}
+        label={vaultDelete?.filename || "backup"}
+        onClose={() => setVaultDelete(null)}
+        onConfirm={removeVaultBackup}
+      />
     </div>
   );
 }

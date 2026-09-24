@@ -4,14 +4,19 @@ export default function Layout({ children }) {
   return (
     <div className="flex min-h-screen bg-background">
       <Navigation />
-      <main className="flex-1 min-w-0">{children}</main>
+      <main className="flex-1 min-w-0 pt-14 md:pt-0">{children}</main>
     </div>
   );
 }
 
 export function PageHeader({ overline, title, children }) {
   return (
-    <div className="flex items-end justify-between border-b border-border px-8 py-6 bg-card sticky top-0 z-10">
+    <div
+      className={[
+        "flex items-end justify-between border-b border-border px-8 py-6",
+        "bg-card sticky top-0 z-10",
+      ].join(" ")}
+    >
       <div>
         <div className="overline text-muted-foreground">{overline}</div>
         <h1 className="font-display font-bold tracking-tight text-3xl mt-1">{title}</h1>

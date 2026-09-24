@@ -370,6 +370,7 @@ _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_h
 CRM_BACKUP_FORMAT = "dbg-signs-crm-backup"
 CRM_BACKUP_MAX_BYTES = 100 * 1024 * 1024
 crm_backup_lock = asyncio.Lock()
+CRM_VAULT_PREFIX = "crm-backups"
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Decal Removal", "Service Call", "Local Delivery Fee", "Installation", "Shipping"]
 
@@ -1379,6 +1380,37 @@ async def _crm_backup_payload() -> dict:
     }
 
 
+async def _create_crm_vault_backup(source: str, created_by: Optional[str] = None) -> dict:
+    async with crm_backup_lock:
+        backup = await _crm_backup_payload()
+        content = json_util.dumps(backup, indent=2).encode("utf-8")
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+        filename = f"dbg-signs-crm-backup-{stamp}.json"
+        path = f"{STORAGE_APP}/{CRM_VAULT_PREFIX}/{uuid.uuid4().hex}.json"
+        try:
+            stored = await storage_put(path, content, "application/json")
+        except Exception as error:
+            logger.error(f"CRM vault backup upload failed: {error}")
+            raise HTTPException(status_code=502, detail="Could not store the CRM backup")
+        collection_count = len(backup["collections"])
+        document_count = sum(len(documents) for documents in backup["collections"].values())
+        record = {
+            "storage_path": stored["path"],
+            "filename": filename,
+            "content_type": "application/json",
+            "size": int(stored.get("size") or len(content)),
+            "source": source,
+            "collection_count": collection_count,
+            "document_count": document_count,
+            "created_at": now_iso(),
+            "created_by": created_by,
+            "is_deleted": False,
+        }
+        result = await db.crm_backups.insert_one(record)
+        record["_id"] = result.inserted_id
+        return clean(record)
+
+
 def _validate_crm_backup(payload: object) -> dict:
     if not isinstance(payload, dict) or payload.get("format") != CRM_BACKUP_FORMAT:
         raise HTTPException(status_code=400, detail="This is not a DBG Signs CRM backup file")
@@ -1405,6 +1437,56 @@ async def export_crm_backup(user: dict = Depends(require_admin)):
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@api_router.get("/settings/backup-vault")
+async def list_crm_vault_backups(user: dict = Depends(require_admin)):
+    records = await db.crm_backups.find({"is_deleted": {"$ne": True}}).sort(
+        "created_at",
+        -1,
+    ).to_list(1000)
+    return [clean(record) for record in records]
+
+
+@api_router.post("/settings/backup-vault/run")
+async def run_crm_vault_backup(user: dict = Depends(require_admin)):
+    return await _create_crm_vault_backup(
+        source="manual",
+        created_by=user.get("email") or user.get("name"),
+    )
+
+
+@api_router.get("/settings/backup-vault/{bid}/download")
+async def download_crm_vault_backup(bid: str, user: dict = Depends(require_admin)):
+    record = await db.crm_backups.find_one({"_id": oid(bid), "is_deleted": {"$ne": True}})
+    if not record:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    try:
+        data, content_type = await storage_get(record["storage_path"])
+    except Exception as error:
+        logger.error(f"CRM vault backup download failed for {bid}: {error}")
+        raise HTTPException(status_code=502, detail="Stored backup is unavailable")
+    return Response(
+        content=data,
+        media_type=record.get("content_type") or content_type,
+        headers={"Content-Disposition": f'attachment; filename="{record["filename"]}"'},
+    )
+
+
+@api_router.delete("/settings/backup-vault/{bid}")
+async def remove_crm_vault_backup(
+    bid: str,
+    payload: DeleteConfirm,
+    user: dict = Depends(require_admin),
+):
+    await verify_admin_password(user, payload.password)
+    result = await db.crm_backups.update_one(
+        {"_id": oid(bid), "is_deleted": {"$ne": True}},
+        {"$set": {"is_deleted": True, "deleted_at": now_iso(), "deleted_by": user.get("email")}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    return {"message": "Backup removed from the vault"}
 
 
 @api_router.post("/settings/restore")
@@ -5559,6 +5641,46 @@ async def cron_install_reminders(request: Request):
         body = {}
     run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or secrets.token_hex(8)
     asyncio.create_task(_run_install_reminders(run_id))
+    return {"status": "accepted", "run_id": run_id}
+
+
+async def _run_monthly_crm_backup(run_id: str) -> None:
+    if await db.cron_runs.find_one({"run_id": run_id}):
+        return
+    result = await db.cron_runs.insert_one({
+        "run_id": run_id,
+        "job": "monthly-crm-backup",
+        "at": now_iso(),
+        "status": "running",
+    })
+    try:
+        backup = await _create_crm_vault_backup(source="monthly")
+        await db.cron_runs.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"status": "complete", "backup_id": backup["id"], "completed_at": now_iso()}},
+        )
+        logger.info(f"Monthly CRM backup run {run_id}: {backup['filename']}")
+    except Exception as error:
+        await db.cron_runs.update_one(
+            {"_id": result.inserted_id},
+            {"$set": {"status": "failed", "error": str(error), "completed_at": now_iso()}},
+        )
+        logger.error(f"Monthly CRM backup run {run_id} failed: {error}")
+
+
+@api_router.post("/cron/monthly-crm-backup")
+async def cron_monthly_crm_backup(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    auth = request.headers.get("authorization", "")
+    token = auth[7:] if auth.lower().startswith("bearer ") else ""
+    if not WEBHOOK_CRON_SECRET or not hmac.compare_digest(token, WEBHOOK_CRON_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    run_id = request.headers.get("x-webhook-id") or (body or {}).get("run_id") or secrets.token_hex(8)
+    asyncio.create_task(_run_monthly_crm_backup(run_id))
     return {"status": "accepted", "run_id": run_id}
 
 
