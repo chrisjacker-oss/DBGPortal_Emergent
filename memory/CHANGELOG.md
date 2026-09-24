@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Editable customer contacts**: Staff can edit contacts directly inside the customer
+  Contacts dialog. Portal-linked contacts retain their password and session while their
+  email/login is updated; duplicate portal email addresses are rejected.
 - **Document Action confirmations**: Direct Actions-menu tasks now show a short
   Cancel/Confirm popup before opening, copying, converting, downloading, printing,
   voiding, or reactivating an Estimate, Sales Order, or Invoice.

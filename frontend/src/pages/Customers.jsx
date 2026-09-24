@@ -32,6 +32,14 @@ export default function Customers() {
   const [portalPw, setPortalPw] = useState("");
   const [portalBusy, setPortalBusy] = useState(false);
   const [cForm, setCForm] = useState({ name: "", email: "", phone: "", title: "" });
+  const [editingContact, setEditingContact] = useState(null);
+  const [editContactForm, setEditContactForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    title: "",
+  });
+  const [savingContact, setSavingContact] = useState(false);
   const [del, setDel] = useState(null); // { url, label, after }
   const [importOpen, setImportOpen] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -88,6 +96,40 @@ export default function Customers() {
     if (!cForm.name.trim()) { toast.error("Contact name is required"); return; }
     try { await api.post(`/customers/${contactCust.id}/contacts`, cForm); setCForm({ name: "", email: "", phone: "", title: "" }); loadContacts(contactCust.id); toast.success("Contact added"); }
     catch { toast.error("Could not add contact"); }
+  };
+  const openEditContact = (contact) => {
+    setEditingContact(contact);
+    setEditContactForm({
+      name: contact.name || "",
+      email: contact.email || "",
+      phone: contact.phone || "",
+      title: contact.title || "",
+    });
+  };
+  const saveContact = async () => {
+    if (!editingContact || !editContactForm.name.trim()) {
+      toast.error("Contact name is required");
+      return;
+    }
+    setSavingContact(true);
+    try {
+      const { data } = await api.put(`/contacts/${editingContact.id}`, {
+        ...editContactForm,
+        name: editContactForm.name.trim(),
+        email: editContactForm.email.trim() || null,
+        phone: editContactForm.phone.trim() || null,
+        title: editContactForm.title.trim() || null,
+      });
+      setContacts((current) => current.map((contact) => (
+        contact.id === data.id ? data : contact
+      )));
+      setEditingContact(null);
+      toast.success("Contact updated");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update contact");
+    } finally {
+      setSavingContact(false);
+    }
   };
   const delContact = (c) => setDel({ url: `/contacts/${c.id}`, label: `contact ${c.name}`, after: () => loadContacts(contactCust.id) });
   const onPortalToggle = (c, checked) => {
@@ -299,6 +341,16 @@ export default function Customers() {
                   {c.has_portal && <div className="text-[11px] text-[#16A34A] font-mono">● portal login</div>}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  {(isAdmin || user?.role === "salesman") && (
+                    <Btn
+                      variant="ghost"
+                      onClick={() => openEditContact(c)}
+                      data-testid={`edit-contact-${c.id}`}
+                      title={`Edit ${c.name}`}
+                    >
+                      <PencilSimple size={16} />
+                    </Btn>
+                  )}
                   {isAdmin && (
                     <label className="flex items-center gap-1.5 cursor-pointer select-none" title="Give this contact a customer portal login" data-testid={`portal-label-${c.id}`}>
                       <input type="checkbox" checked={!!c.has_portal} onChange={(e) => onPortalToggle(c, e.target.checked)} data-testid={`portal-checkbox-${c.id}`} className="h-4 w-4 accent-[#0A0A0A]" />
@@ -324,6 +376,86 @@ export default function Customers() {
           </div>
           <DialogFooter>
             <Btn variant="outline" onClick={() => setContactCust(null)}>Done</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!editingContact}
+        onOpenChange={(open) => !open && !savingContact && setEditingContact(null)}
+      >
+        <DialogContent className="rounded-none max-w-md" data-testid="edit-contact-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Edit contact</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              Update this customer contact’s details.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Inp
+                label="Name"
+                value={editContactForm.name}
+                onChange={(event) => setEditContactForm({
+                  ...editContactForm,
+                  name: event.target.value,
+                })}
+                testid="edit-contact-name"
+              />
+              <Inp
+                label="Title"
+                value={editContactForm.title}
+                onChange={(event) => setEditContactForm({
+                  ...editContactForm,
+                  title: event.target.value,
+                })}
+                testid="edit-contact-title"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Inp
+                label={editingContact?.has_portal ? "Email (portal sign-in)" : "Email"}
+                type="email"
+                value={editContactForm.email}
+                onChange={(event) => setEditContactForm({
+                  ...editContactForm,
+                  email: event.target.value,
+                })}
+                testid="edit-contact-email"
+              />
+              <Inp
+                label="Phone"
+                value={editContactForm.phone}
+                onChange={(event) => setEditContactForm({
+                  ...editContactForm,
+                  phone: event.target.value,
+                })}
+                testid="edit-contact-phone"
+              />
+            </div>
+            {editingContact?.has_portal && (
+              <p className="border-l-2 border-[#06B6D4] bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                Updating this email also updates the customer portal sign-in. The contact’s
+                password and active session stay unchanged.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Btn
+              variant="outline"
+              onClick={() => setEditingContact(null)}
+              disabled={savingContact}
+              data-testid="cancel-edit-contact-btn"
+            >
+              Cancel
+            </Btn>
+            <Btn
+              onClick={saveContact}
+              disabled={savingContact || !editContactForm.name.trim()}
+              data-testid="save-edit-contact-btn"
+            >
+              {savingContact ? "Saving…" : "Save contact"}
+            </Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>

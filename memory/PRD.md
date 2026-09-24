@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Customer Contacts now has an in-place **Edit** control for name,
+  title, email, and phone. When a contact has portal access, an email update safely
+  synchronizes the linked portal sign-in without changing its password or active session.
 - **September 2026**: Every immediate task in the Estimate, Sales Order, and Invoice
   Actions menus now opens a shared summary popup with **Cancel** and **Confirm**.
   Existing task-specific dialogs (email, payments, edit, notes, history, delete) remain

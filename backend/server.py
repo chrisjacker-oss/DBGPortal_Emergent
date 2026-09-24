@@ -899,9 +899,28 @@ async def create_contact(cid: str, payload: ContactInput, user: dict = Depends(r
 
 @api_router.put("/contacts/{ctid}")
 async def update_contact(ctid: str, payload: ContactInput, user: dict = Depends(require_staff)):
-    await get_or_404(db.contacts, ctid, "Contact")
-    await db.contacts.update_one({"_id": oid(ctid)}, {"$set": payload.model_dump()})
-    await db.users.update_one({"contact_id": ctid}, {"$set": {"name": payload.name}})
+    contact = await get_or_404(db.contacts, ctid, "Contact")
+    changes = payload.model_dump()
+    changes["email"] = changes["email"].strip().lower() if changes.get("email") else None
+    portal_user = await db.users.find_one({"contact_id": ctid})
+    if portal_user:
+        if not changes["email"]:
+            raise HTTPException(status_code=400, detail="Portal contacts must keep an email address")
+        duplicate = await db.users.find_one({
+            "email": changes["email"],
+            "_id": {"$ne": portal_user["_id"]},
+        })
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail="That email is already assigned to another portal user",
+            )
+    await db.contacts.update_one({"_id": oid(ctid)}, {"$set": changes})
+    if portal_user:
+        await db.users.update_one(
+            {"_id": portal_user["_id"]},
+            {"$set": {"name": changes["name"], "email": changes["email"]}},
+        )
     return await _contact_out(await db.contacts.find_one({"_id": oid(ctid)}))
 
 
