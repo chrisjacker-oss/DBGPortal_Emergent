@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Tentative install decisions**: Staff can approve a customer-selected installation date
+  or select an open replacement date. Replacement offers are emailed with a secure customer
+  acceptance button; calendar entries remain `OFFER` until the customer accepts.
 - **Completed installation scheduling**: Added the `Completed / Installation Schedule`
   status. Its customer email links to a public tentative-install calendar: Monday–Thursday
   AM/PM and Friday AM, with notes. Requests enter the staff calendar as tentative until

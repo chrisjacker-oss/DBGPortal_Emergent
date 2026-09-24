@@ -278,7 +278,7 @@ class ReorderInput(BaseModel):
 class InstallInput(BaseModel):
     date: str
     time_of_day: str = "morning"  # morning | afternoon
-    status: str = "confirmed"  # tentative | confirmed
+    status: str = "confirmed"  # tentative | offered | confirmed
     customer_id: str
     contact_id: Optional[str] = None
     description: str = ""
@@ -290,6 +290,16 @@ class TentativeInstallScheduleInput(BaseModel):
     preferred_date: str
     time_of_day: str
     notes: str = ""
+
+
+class OfferInstallDateInput(BaseModel):
+    offered_date: str
+    time_of_day: str
+    note: str = ""
+
+
+class AcceptOfferedInstallInput(BaseModel):
+    note: str = ""
 
 
 class SettingsInput(BaseModel):
@@ -3748,6 +3758,57 @@ def render_install_schedule_email(
     )
 
 
+def render_install_date_decision_email(
+    greeting_name: str,
+    decision: str,
+    date_value: str,
+    time_label: str,
+    schedule_url: Optional[str] = None,
+    note: str = "",
+    company: Optional[dict] = None,
+) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    is_accepted = decision == "accepted"
+    heading = "Your Installation Date Is Accepted" if is_accepted else "Your Requested Date Is Taken"
+    color = "#16A34A" if is_accepted else "#D97706"
+    if is_accepted:
+        message = "Your installation date has been accepted. Please keep your equipment cleaned and staged for our team."
+        action = ""
+    else:
+        message = "The date you selected is no longer open. We have the following date and time available for your installation."
+        action = (
+            '<div style="text-align:center;margin:22px 0">'
+            f'<a href="{schedule_url}" style="display:inline-block;background:#D97706;color:#ffffff;text-decoration:none;padding:14px 26px;font-weight:bold;letter-spacing:1px;font-size:13px">ACCEPT THIS DATE →</a>'
+            '</div>'
+        )
+    note_html = (
+        f'<p style="margin:12px 0 0"><strong>Note from DBG Signs:</strong><br />{escape(note)}</p>'
+        if note.strip()
+        else ""
+    )
+    return (
+        '<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        '<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" '
+        'style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="{escape(cname)}" height="46" style="height:46px;display:block" /></td></tr>'
+        f'<tr><td style="padding:14px 32px 0"><div style="height:3px;background:{color}"></div></td></tr>'
+        '<tr><td style="padding:22px 32px">'
+        f'<div style="font-size:20px;font-weight:bold">{heading}</div>'
+        f'<p style="margin:14px 0 0">Hi {escape(greeting_name)},</p>'
+        f'<p style="margin:12px 0 0">{message}</p>'
+        '<div style="margin:18px 0;background:#F7F7F8;border-left:3px solid #0A0A0A;padding:14px 16px">'
+        '<div style="font-size:10px;letter-spacing:1px;color:#6B7280;text-transform:uppercase">Installation time</div>'
+        f'<div style="font-size:19px;font-weight:bold;margin-top:5px">{escape(date_value)} · {escape(time_label)}</div>'
+        '</div>'
+        f'{note_html}{action}'
+        '<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        '<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        '</div></td></tr></table></div>'
+    )
+
+
 async def _create_install_schedule_request(
     collection,
     doc: dict,
@@ -4059,7 +4120,7 @@ async def list_installs(month: Optional[str] = None, user: dict = Depends(requir
 async def create_install(payload: InstallInput, user: dict = Depends(require_staff)):
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
-    doc["status"] = payload.status if payload.status in ("tentative", "confirmed") else "confirmed"
+    doc["status"] = payload.status if payload.status in ("tentative", "offered", "confirmed") else "confirmed"
     doc["created_at"] = now_iso()
     res = await db.installs.insert_one(doc)
     notify = await _notify_install(str(res.inserted_id))
@@ -4073,7 +4134,7 @@ async def update_install(iid: str, payload: InstallInput, user: dict = Depends(r
     existing = await get_or_404(db.installs, iid, "Install")
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
-    doc["status"] = payload.status if payload.status in ("tentative", "confirmed") else "confirmed"
+    doc["status"] = payload.status if payload.status in ("tentative", "offered", "confirmed") else "confirmed"
     date_changed = (existing.get("date") or "") != (payload.date or "")
     if date_changed:
         # allow the day-before reminder to fire again for the new date
@@ -4162,6 +4223,9 @@ async def pub_install_schedule_info(token: str):
         "selected_date": request.get("preferred_date"),
         "selected_time": request.get("time_of_day"),
         "selected_notes": request.get("notes"),
+        "offered_date": request.get("offered_date"),
+        "offered_time": request.get("offered_time"),
+        "offer_note": request.get("offer_note"),
         "date_from": datetime.now(timezone.utc).date().isoformat(),
         "date_to": (datetime.now(timezone.utc).date() + timedelta(days=90)).isoformat(),
     }
@@ -4252,6 +4316,173 @@ async def submit_tentative_install_schedule(token: str, payload: TentativeInstal
         "preferred_date": chosen.isoformat(),
         "time_of_day": payload.time_of_day,
     }
+
+
+async def _schedule_request_contact_name(request: dict) -> str:
+    if ObjectId.is_valid(str(request.get("contact_id") or "")):
+        contact = await db.contacts.find_one({"_id": oid(request["contact_id"])})
+        if contact and contact.get("name"):
+            return contact["name"]
+    if ObjectId.is_valid(str(request.get("customer_id") or "")):
+        customer = await db.customers.find_one({"_id": oid(request["customer_id"])})
+        if customer:
+            return customer.get("company") or customer.get("name") or "Customer"
+    return "Customer"
+
+
+async def _send_install_date_decision(
+    request: dict,
+    decision: str,
+    date_value: str,
+    time_of_day: str,
+    note: str = "",
+) -> None:
+    recipient = request.get("recipient")
+    if not recipient:
+        return
+    company = await get_settings()
+    greeting = await _schedule_request_contact_name(request)
+    time_label = INSTALL_TIME_LABELS[time_of_day]
+    schedule_url = f"{PUBLIC_BASE_URL}/installation-schedule/{request['token']}"
+    html = render_install_date_decision_email(
+        greeting,
+        decision,
+        date_value,
+        time_label,
+        schedule_url=schedule_url,
+        note=note,
+        company=company,
+    )
+    subject = "Installation date accepted" if decision == "accepted" else "Installation date update"
+    try:
+        await send_email(to=recipient, subject=subject, html=html)
+    except Exception as error:
+        logger.warning(f"Installation date decision email failed: {error}")
+
+
+async def _tentative_install_for_staff(iid: str) -> tuple:
+    install = await get_or_404(db.installs, iid, "Install")
+    request_id = install.get("customer_request_id")
+    if not request_id or not ObjectId.is_valid(str(request_id)):
+        raise HTTPException(status_code=400, detail="This is not a customer scheduling request")
+    request = await db.install_schedule_requests.find_one({"_id": oid(request_id)})
+    if not request:
+        raise HTTPException(status_code=404, detail="Customer scheduling request not found")
+    return install, request
+
+
+@api_router.post("/installs/{iid}/approve-tentative")
+async def approve_tentative_install(iid: str, user: dict = Depends(require_staff)):
+    install, request = await _tentative_install_for_staff(iid)
+    if install.get("status") != "tentative" or request.get("status") != "submitted":
+        raise HTTPException(status_code=400, detail="This tentative request is no longer awaiting approval")
+    now = now_iso()
+    await db.installs.update_one(
+        {"_id": install["_id"], "status": "tentative"},
+        {"$set": {"status": "confirmed", "confirmed_at": now, "confirmed_by": user.get("email")}},
+    )
+    await db.install_schedule_requests.update_one(
+        {"_id": request["_id"], "status": "submitted"},
+        {"$set": {"status": "approved", "approved_at": now, "approved_by": user.get("email")}},
+    )
+    await _send_install_date_decision(
+        request,
+        "accepted",
+        install["date"],
+        install.get("time_of_day") or "morning",
+    )
+    return await _enrich_install(await db.installs.find_one({"_id": install["_id"]}))
+
+
+@api_router.post("/installs/{iid}/offer-open-date")
+async def offer_open_install_date(
+    iid: str,
+    payload: OfferInstallDateInput,
+    user: dict = Depends(require_staff),
+):
+    install, request = await _tentative_install_for_staff(iid)
+    if install.get("status") != "tentative" or request.get("status") != "submitted":
+        raise HTTPException(status_code=400, detail="This tentative request is no longer awaiting a new date")
+    offered = _validate_tentative_install_slot(payload.offered_date, payload.time_of_day)
+    note = payload.note.strip()
+    now = now_iso()
+    await db.installs.update_one(
+        {"_id": install["_id"], "status": "tentative"},
+        {"$set": {
+            "date": offered.isoformat(),
+            "time_of_day": payload.time_of_day,
+            "status": "offered",
+            "offer_note": note,
+            "offered_at": now,
+            "offered_by": user.get("email"),
+        }},
+    )
+    await db.install_schedule_requests.update_one(
+        {"_id": request["_id"], "status": "submitted"},
+        {"$set": {
+            "status": "alternative_offered",
+            "offered_date": offered.isoformat(),
+            "offered_time": payload.time_of_day,
+            "offer_note": note,
+            "offered_at": now,
+            "offered_by": user.get("email"),
+        }},
+    )
+    await _send_install_date_decision(
+        request,
+        "offered",
+        offered.isoformat(),
+        payload.time_of_day,
+        note,
+    )
+    return await _enrich_install(await db.installs.find_one({"_id": install["_id"]}))
+
+
+@api_router.post("/pub/install-schedule/{token}/accept-offer")
+async def accept_offered_install_date(token: str, payload: AcceptOfferedInstallInput):
+    request, _ = await _public_install_schedule_request(token)
+    if request.get("status") != "alternative_offered":
+        raise HTTPException(status_code=400, detail="There is no open date offer awaiting acceptance")
+    install_id = request.get("tentative_install_id")
+    if not install_id or not ObjectId.is_valid(str(install_id)):
+        raise HTTPException(status_code=404, detail="The offered installation slot was not found")
+    accepted = await db.install_schedule_requests.find_one_and_update(
+        {"_id": request["_id"], "status": "alternative_offered"},
+        {"$set": {"status": "accepting"}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not accepted:
+        raise HTTPException(status_code=409, detail="This open date was already answered")
+    note = payload.note.strip()
+    try:
+        updated = await db.installs.update_one(
+            {"_id": oid(install_id), "status": "offered"},
+            {"$set": {
+                "status": "confirmed",
+                "customer_acceptance_note": note,
+                "customer_accepted_at": now_iso(),
+            }},
+        )
+        if updated.modified_count != 1:
+            raise RuntimeError("The offered installation slot is no longer available")
+        await db.install_schedule_requests.update_one(
+            {"_id": accepted["_id"]},
+            {"$set": {"status": "accepted", "accepted_at": now_iso(), "acceptance_note": note}},
+        )
+    except Exception:
+        await db.install_schedule_requests.update_one(
+            {"_id": accepted["_id"], "status": "accepting"},
+            {"$set": {"status": "alternative_offered"}},
+        )
+        raise
+    await _send_install_date_decision(
+        accepted,
+        "accepted",
+        accepted["offered_date"],
+        accepted["offered_time"],
+        note,
+    )
+    return {"status": "accepted", "date": accepted["offered_date"], "time_of_day": accepted["offered_time"]}
 
 
 

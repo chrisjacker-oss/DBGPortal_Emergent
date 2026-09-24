@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Tentative install requests now support staff decisions: **Approved**
+  emails acceptance of the selected date, while **Date taken / offer open date** lets staff
+  select a replacement slot and email a secure customer **Accept this date** action.
+  Offered dates show as `OFFER` in the calendar and become confirmed only after acceptance.
 - **September 2026**: Added **Completed / Installation Schedule** work status across
   Estimates, Sales Orders, and Invoices. It sends the completed-decals email and a
   30-day secure scheduling link. Customers can request Monday–Thursday AM/PM or Friday
@@ -138,6 +142,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Alternate-date workflow was API-verified end-to-end: customer tentative
+  request → staff offer → public offered-date view → customer acceptance → confirmed install.
 - September 2026: Tentative-install QA passed 17 sequential API tests, including status
   email/token creation, public-date validation, duplicate protection, tentative calendar
   creation, estimate links, and confirmation. Browser checks passed for the public

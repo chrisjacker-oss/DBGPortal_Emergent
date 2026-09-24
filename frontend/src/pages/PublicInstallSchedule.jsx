@@ -33,6 +33,7 @@ export default function PublicInstallSchedule() {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [offerAccepted, setOfferAccepted] = useState(false);
 
   useEffect(() => {
     api.get(`/pub/install-schedule/${token}`)
@@ -83,6 +84,18 @@ export default function PublicInstallSchedule() {
     }
   };
 
+  const acceptOffer = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/pub/install-schedule/${token}/accept-offer`, { note: notes });
+      setOfferAccepted(true);
+    } catch (acceptError) {
+      toast.error(acceptError.response?.data?.detail || "Could not accept the offered date.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#EEF4F4] px-4 py-8 sm:py-12">
       <div className="mx-auto w-full max-w-5xl border border-border bg-card" data-testid="public-install-schedule-page">
@@ -99,18 +112,59 @@ export default function PublicInstallSchedule() {
           {error && <div className="py-10 text-center text-sm text-destructive" data-testid="public-install-schedule-error">{error}</div>}
           {!error && !info && <div className="py-10 text-center text-sm text-muted-foreground">Loading calendar…</div>}
 
-          {!error && info && (done || info.status === "submitted") && (
+          {!error && info && (done || offerAccepted || info.status === "submitted" || info.status === "accepted") && (
             <div className="mx-auto max-w-lg py-12 text-center" data-testid="public-install-schedule-success">
               <CheckCircle size={48} weight="fill" className="mx-auto text-[#16A34A]" />
-              <h1 className="mt-4 font-display text-3xl">Tentative date received</h1>
+              <h1 className="mt-4 font-display text-3xl">
+                {offerAccepted || info.status === "accepted" ? "Installation date accepted" : "Tentative date received"}
+              </h1>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                We received your tentative installation request. Our team will check the schedule
-                and contact you to confirm whether the selected slot is available.
+                {offerAccepted || info.status === "accepted"
+                  ? "Thank you. Your installation date is confirmed and our team will follow up with any final details."
+                  : "We received your tentative installation request. Our team will check the schedule and contact you to confirm whether the selected slot is available."}
               </p>
             </div>
           )}
 
-          {!error && info && !done && info.status !== "submitted" && (
+          {!error && info && !done && !offerAccepted && info.status === "alternative_offered" && (
+            <div className="mx-auto max-w-xl space-y-6" data-testid="public-install-offer">
+              <div>
+                <div className="overline text-muted-foreground">Alternative date available</div>
+                <h1 className="mt-2 font-display text-3xl sm:text-4xl">Your requested date is taken</h1>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  We have an open installation date ready for you. Accept it below to confirm the appointment.
+                </p>
+              </div>
+              <div className="border-l-4 border-[#D97706] bg-[#D97706]/10 p-5">
+                <div className="overline text-muted-foreground">Open installation date</div>
+                <div className="mt-2 font-mono text-2xl font-semibold" data-testid="public-install-offered-date">
+                  {info.offered_date} · {info.offered_time}
+                </div>
+                {info.offer_note && <p className="mt-3 text-sm text-muted-foreground">{info.offer_note}</p>}
+              </div>
+              <label className="block">
+                <span className="overline text-muted-foreground">Reply / confirmation note</span>
+                <textarea
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  rows={4}
+                  data-testid="public-install-offer-notes"
+                  placeholder="Add any notes for the installation team."
+                  className="mt-2 w-full border border-input bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              </label>
+              <Btn
+                onClick={acceptOffer}
+                disabled={busy}
+                data-testid="public-install-accept-offer"
+                className="w-full justify-center bg-[#16A34A] hover:bg-[#166534] text-white"
+              >
+                {busy ? "Accepting…" : "Accept this date"}
+              </Btn>
+            </div>
+          )}
+
+          {!error && info && !done && !offerAccepted && info.status === "sent" && (
             <div className="space-y-7">
               <div className="max-w-2xl">
                 <div className="overline text-muted-foreground">Completed decals</div>

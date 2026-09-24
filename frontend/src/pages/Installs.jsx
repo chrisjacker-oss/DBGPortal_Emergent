@@ -9,7 +9,7 @@ import { Inp } from "@/pages/Customers";
 import SearchSelect from "@/components/SearchSelect";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { CaretLeft, CaretRight, Plus, PencilSimple, Trash, EnvelopeSimple, CalendarBlank } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Plus, PencilSimple, Trash, EnvelopeSimple, CalendarBlank, CheckCircle, CalendarPlus } from "@phosphor-icons/react";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -33,6 +33,9 @@ export default function Installs() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [del, setDel] = useState(null);
+  const [offerTarget, setOfferTarget] = useState(null);
+  const [offerForm, setOfferForm] = useState({ offered_date: "", time_of_day: "morning", note: "" });
+  const [decisionBusy, setDecisionBusy] = useState(false);
 
   const ym = ymOf(cursor);
   const load = () => api.get(`/installs?month=${ym}`).then((r) => setInstalls(r.data)).catch(() => setInstalls([]));
@@ -85,6 +88,27 @@ export default function Installs() {
     try { const { data } = await api.post(`/installs/${it.id}/notify`); data.status === "sent" ? toast.success(`Alert re-sent to ${data.to}`) : toast.warning("No email on file to send to"); load(); }
     catch (e) { toast.error(e.response?.data?.detail || "Send failed"); }
   };
+  const approveTentative = async (it) => {
+    setDecisionBusy(true);
+    try {
+      await api.post(`/installs/${it.id}/approve-tentative`);
+      toast.success("Installation date approved and customer emailed");
+      setOpen(false);
+      load();
+    } catch (error) { toast.error(error.response?.data?.detail || "Could not approve installation date"); }
+    finally { setDecisionBusy(false); }
+  };
+  const offerOpenDate = async () => {
+    setDecisionBusy(true);
+    try {
+      await api.post(`/installs/${offerTarget.id}/offer-open-date`, offerForm);
+      toast.success("Open date offer emailed to customer");
+      setOfferTarget(null);
+      setOpen(false);
+      load();
+    } catch (error) { toast.error(error.response?.data?.detail || "Could not send the open date offer"); }
+    finally { setDecisionBusy(false); }
+  };
   const confirmDelete = async (password) => {
     try { await api.delete(`/installs/${del.id}`, { data: { password } }); toast.success("Install removed"); setDel(null); load(); return true; }
     catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
@@ -136,8 +160,8 @@ export default function Installs() {
                       <div className="mt-1 space-y-1 overflow-y-auto">
                         {items.map((it) => (
                           <button key={it.id} onClick={() => openEdit(it)} data-testid={`install-item-${it.id}`}
-                            className={`w-full text-left px-1.5 py-1 text-[11px] leading-tight ${it.status === "tentative" ? "bg-[#F59E0B]/15 text-[#78350F] hover:bg-[#F59E0B]/25" : "bg-[#0A0A0A] text-white hover:bg-[#0A0A0A]/85"}`}>
-                            <span className={`inline-block text-[9px] font-bold uppercase px-1 mr-1 ${it.status === "tentative" ? "bg-[#F59E0B] text-[#0A0A0A]" : "bg-[#06B6D4] text-white"}`}>{it.status === "tentative" ? "REQ" : it.time_label === "Afternoon" ? "PM" : "AM"}</span>
+                            className={`w-full text-left px-1.5 py-1 text-[11px] leading-tight ${it.status === "tentative" || it.status === "offered" ? "bg-[#F59E0B]/15 text-[#78350F] hover:bg-[#F59E0B]/25" : "bg-[#0A0A0A] text-white hover:bg-[#0A0A0A]/85"}`}>
+                            <span className={`inline-block text-[9px] font-bold uppercase px-1 mr-1 ${it.status === "tentative" || it.status === "offered" ? "bg-[#F59E0B] text-[#0A0A0A]" : "bg-[#06B6D4] text-white"}`}>{it.status === "tentative" ? "REQ" : it.status === "offered" ? "OFFER" : it.time_label === "Afternoon" ? "PM" : "AM"}</span>
                             <span className="font-medium">{it.customer_name}</span>
                             {it.linked_number ? (
                               <span role="link" tabIndex={0}
@@ -178,10 +202,11 @@ export default function Installs() {
             </div>
             <label className="block">
               <span className="overline text-muted-foreground">Schedule state</span>
-              <select value={form.status} onChange={(e) => set("status", e.target.value)} data-testid="install-status"
+              <select value={form.status} onChange={(e) => set("status", e.target.value)} disabled={!!editing?.customer_request_id} data-testid="install-status"
                 className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
                 <option value="confirmed">Confirmed installation</option>
                 <option value="tentative">Tentative customer request</option>
+                <option value="offered">Open date offered to customer</option>
               </select>
             </label>
             <div className="block">
@@ -216,10 +241,36 @@ export default function Installs() {
             </label>
           </div>
           <DialogFooter className="flex-wrap gap-2">
-            {editing && editing.status !== "tentative" && <Btn variant="outline" onClick={() => resend(editing)} data-testid="install-resend-btn"><EnvelopeSimple size={16} weight="bold" /> Resend alert</Btn>}
+            {editing?.status === "tentative" && (
+              <>
+                <Btn variant="outline" onClick={() => approveTentative(editing)} disabled={decisionBusy} data-testid="approve-tentative-install-btn"><CheckCircle size={16} weight="bold" /> Approved</Btn>
+                <Btn variant="outline" onClick={() => { setOfferTarget(editing); setOfferForm({ offered_date: editing.date, time_of_day: editing.time_of_day || "morning", note: "" }); }} disabled={decisionBusy} data-testid="offer-open-date-btn"><CalendarPlus size={16} weight="bold" /> Date taken / offer open date</Btn>
+              </>
+            )}
+            {editing?.status === "confirmed" && <Btn variant="outline" onClick={() => resend(editing)} data-testid="install-resend-btn"><EnvelopeSimple size={16} weight="bold" /> Resend alert</Btn>}
             {editing && isAdmin && <Btn variant="danger" onClick={() => { setDel(editing); setOpen(false); }} data-testid="install-delete-btn"><Trash size={16} weight="bold" /> Delete</Btn>}
             <Btn variant="outline" onClick={() => { setOpen(false); setEditing(null); }} disabled={saving}>Cancel</Btn>
             <Btn onClick={save} disabled={saving || !form.customer_id || !form.date} data-testid="install-save-btn">{saving ? "Saving…" : (editing ? form.status === "confirmed" && editing.status === "tentative" ? "Confirm & Notify" : "Save" : "Schedule & Notify")}</Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!offerTarget} onOpenChange={(nextOpen) => !nextOpen && !decisionBusy && setOfferTarget(null)}>
+        <DialogContent className="rounded-none max-w-md" data-testid="offer-open-date-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Offer an open installation date</DialogTitle>
+            <DialogDescription className="font-mono text-xs">The customer receives a secure Accept this date button.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Inp label="Open date" type="date" value={offerForm.offered_date} onChange={(e) => setOfferForm({ ...offerForm, offered_date: e.target.value })} testid="offer-open-date-input" />
+              <label className="block"><span className="overline text-muted-foreground">Open time</span><select value={offerForm.time_of_day} onChange={(e) => setOfferForm({ ...offerForm, time_of_day: e.target.value })} data-testid="offer-open-time-select" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none"><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
+            </div>
+            <label className="block"><span className="overline text-muted-foreground">Note to customer</span><textarea value={offerForm.note} onChange={(e) => setOfferForm({ ...offerForm, note: e.target.value })} data-testid="offer-open-note-input" rows={4} placeholder="Optional scheduling details" className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none" /></label>
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={() => setOfferTarget(null)} disabled={decisionBusy} data-testid="cancel-offer-open-date-btn">Cancel</Btn>
+            <Btn onClick={offerOpenDate} disabled={decisionBusy || !offerForm.offered_date} data-testid="send-offer-open-date-btn">{decisionBusy ? "Sending…" : "Send open date"}</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>
