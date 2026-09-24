@@ -26,6 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Renamed the document Actions menu payment command to
+  **COD/Deposit Email** on Estimates, Sales Orders, and Invoices.
 - **September 2026**: Estimates, Sales Orders, and Invoices now include a **Send payment
   link** action for staff. The popup selects customer contacts and either requests a
   50% deposit or the full COD balance. Each email uses a fixed, secure, 30-day public
