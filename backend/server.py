@@ -173,6 +173,7 @@ class LineItem(BaseModel):
     unit_price: Optional[float] = None
     line_total_override: Optional[float] = None
     extra_labor_hours: float = 0.0
+    miles: Optional[float] = None
 
 
 class CustomerInput(BaseModel):
@@ -370,7 +371,7 @@ CRM_BACKUP_FORMAT = "dbg-signs-crm-backup"
 CRM_BACKUP_MAX_BYTES = 100 * 1024 * 1024
 crm_backup_lock = asyncio.Lock()
 
-PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Decal Removal", "Installation", "Shipping"]
+PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Decal Removal", "Service Call", "Local Delivery Fee", "Installation", "Shipping"]
 
 
 async def get_settings() -> dict:
@@ -409,8 +410,16 @@ def compute_line(li: dict, s: dict) -> dict:
     sh_sqft = float(s.get("shop_sqft_per_hr") or 0)
     labor_hours_raw = (area / sh_sqft if sh_sqft else 0.0) + float(li.get("extra_labor_hours") or 0)
     labor_cost = round(labor_hours_raw * float(s.get("shop_rate_per_hr") or 0), 2)
-    # Shipping, Installation & CNC Router Time are flat charges — no shop/machine labor applied
-    if str(li.get("category") or "").strip().lower() in ("shipping", "installation", "cnc router time", "design time", "decal removal"):
+    # Flat service charges do not accrue square-foot shop or machine labor.
+    if str(li.get("category") or "").strip().lower() in (
+        "shipping",
+        "installation",
+        "cnc router time",
+        "design time",
+        "decal removal",
+        "service call",
+        "local delivery fee",
+    ):
         labor_cost = 0.0
         machine_cost = 0.0
     computed_total = round(material_cost + labor_cost + machine_cost, 2)
@@ -4079,6 +4088,9 @@ def _num(n) -> str:
 def _dims_label(li: dict) -> str:
     if str(li.get("category") or "").strip().lower() == "shipping":
         return ""
+    if str(li.get("category") or "").strip().lower() == "local delivery fee":
+        miles = float(li.get("miles") or 0)
+        return f"{_num(miles)} miles" if miles > 0 else "Local delivery"
     w = float(li.get("width_in") or 0)
     h = float(li.get("height_in") or 0)
     area = li.get("area_sqft", 0)
@@ -4097,6 +4109,8 @@ def _is_flat_customer_charge(li: dict) -> bool:
         "cnc router time",
         "design time",
         "decal removal",
+        "service call",
+        "local delivery fee",
     }
 
 

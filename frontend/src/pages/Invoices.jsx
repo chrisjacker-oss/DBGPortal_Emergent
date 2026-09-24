@@ -662,7 +662,7 @@ function Field({ label, value }) {
 }
 
 function flatCustomerCharge(item) {
-  return ["shipping", "installation", "cnc router time", "design time", "decal removal"].includes(
+  return ["shipping", "installation", "cnc router time", "design time", "decal removal", "service call", "local delivery fee"].includes(
     String(item.category || "").trim().toLowerCase()
   );
 }

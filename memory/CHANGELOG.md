@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Service Call & Local Delivery Fee**: Added two built-in service categories. Service
+  Call has a manual cost; Local Delivery Fee has miles and a manual fee. Both calculate
+  as customer-facing flat charges and retain their data across document conversion.
 - **Editable customer contacts**: Staff can edit contacts directly inside the customer
   Contacts dialog. Portal-linked contacts retain their password and session while their
   email/login is updated; duplicate portal email addresses are rejected.

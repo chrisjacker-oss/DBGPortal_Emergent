@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Added preset **Service Call** and **Local Delivery Fee**
+  categories. Service Call uses a manual price; Local Delivery Fee stores miles plus a
+  manual fee. Both are flat charges and carry through Estimate → Sales Order → Invoice,
+  including customer PDF/email output.
 - **September 2026**: Customer Contacts now has an in-place **Edit** control for name,
   title, email, and phone. When a contact has portal access, an email update safely
   synchronizes the linked portal sign-in without changing its password or active session.
@@ -117,6 +121,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Service Call and Local Delivery Fee were verified in category APIs,
+  document-builder inputs, calculation totals, Estimate → SO → Invoice conversion, and
+  invoice PDF output. Test documents were deleted.
 - September 2026: Payment-link QA passed 11 backend tests plus full admin/salesman UI
   flows for Estimate, Sales Order, and Invoice. Test documents, customers, and payment
   requests were removed. A managed-email rate limit caused one unrelated resend smoke

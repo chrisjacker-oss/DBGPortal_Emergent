@@ -8,7 +8,7 @@ import { Plus, Trash } from "@phosphor-icons/react";
 import SearchSelect from "@/components/SearchSelect";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, unit_price: "", line_total_override: "", extra_labor_hours: 0 };
+const emptyItem = { description: "", details: "", category: "", material_id: "", width_in: "", height_in: "", quantity: 1, price_per_sqft: 0, cost_per_sqft: 0, unit_price: "", line_total_override: "", extra_labor_hours: 0, miles: "" };
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 const newItem = () => ({ ...emptyItem, _key: uid() });
 
@@ -97,6 +97,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
       if (cv === "cnc router time") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = Number(settings.cnc_rate_per_min || 1.30); items[i].line_total_override = ""; if (!items[i].description) items[i].description = "CNC Router Time"; }
       if (cv === "design time") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = Number(settings.design_rate_per_min || 1.08); items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Design Time"; }
       if (cv === "decal removal") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = 0; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Decal Removal"; }
+      if (cv === "service call") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = 0; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Service Call"; }
+      if (cv === "local delivery fee") { items[i].width_in = 0; items[i].height_in = 0; items[i].quantity = 1; items[i].material_id = ""; items[i].cost_per_sqft = 0; items[i].price_per_sqft = 0; items[i].line_total_override = ""; if (!items[i].description) items[i].description = "Local Delivery Fee"; }
     }
     setForm({ ...form, line_items: items });
   };
@@ -128,7 +130,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
   const breakdown = (li) => {
     const area = areaOf(li);
     const material = Number(li.price_per_sqft || 0) * area;
-    const flat = ["shipping", "installation", "cnc router time", "design time", "decal removal"].includes(String(li.category || "").trim().toLowerCase());
+    const flat = ["shipping", "installation", "cnc router time", "design time", "decal removal", "service call", "local delivery fee"].includes(String(li.category || "").trim().toLowerCase());
     const machineH = settings.machine_sqft_per_hr > 0 ? area / settings.machine_sqft_per_hr : 0;
     const machine = flat ? 0 : machineH * settings.machine_rate_per_hr;
     const laborH = (settings.shop_sqft_per_hr > 0 ? area / settings.shop_sqft_per_hr : 0) + Number(li.extra_labor_hours || 0);
@@ -187,6 +189,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
           unit_price: (li.unit_price === "" || li.unit_price == null) ? null : Number(li.unit_price),
           line_total_override: (li.line_total_override === "" || li.line_total_override == null) ? null : Number(li.line_total_override),
           extra_labor_hours: Number(li.extra_labor_hours || 0),
+          miles: (li.miles === "" || li.miles == null) ? null : Number(li.miles),
         })),
     });
   };
@@ -263,6 +266,8 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               const isCnc = String(cat).trim().toLowerCase() === "cnc router time";
               const isDesign = String(cat).trim().toLowerCase() === "design time";
               const isDecal = String(cat).trim().toLowerCase() === "decal removal";
+              const isServiceCall = String(cat).trim().toLowerCase() === "service call";
+              const isLocalDelivery = String(cat).trim().toLowerCase() === "local delivery fee";
               return (
               <div key={li._key} className="border-b border-border last:border-0 min-w-[1000px]">
                 <div className={`grid ${cols} gap-2 px-3 pt-2 items-center`}>
@@ -306,11 +311,42 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
                 </div>
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 </>
-                ) : isDecal ? (
+                ) : isDecal || isServiceCall ? (
                 <>
                 <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">Decal removal cost $</span>
-                  <input type="number" value={li.price_per_sqft} onChange={(e) => setItem(i, "price_per_sqft", e.target.value)} data-testid={`item-decal-${i}`} className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {isServiceCall ? "Service call cost $" : "Decal removal cost $"}
+                  </span>
+                  <input
+                    type="number"
+                    value={li.price_per_sqft}
+                    onChange={(e) => setItem(i, "price_per_sqft", e.target.value)}
+                    data-testid={isServiceCall ? `item-service-call-${i}` : `item-decal-${i}`}
+                    className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
+                <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
+                </>
+                ) : isLocalDelivery ? (
+                <>
+                <div style={{ gridColumn: "span 8" }} className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Miles</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={li.miles ?? ""}
+                    onChange={(e) => setItem(i, "miles", e.target.value)}
+                    data-testid={`item-delivery-miles-${i}`}
+                    className="w-24 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">Delivery fee $</span>
+                  <input
+                    type="number"
+                    value={li.price_per_sqft}
+                    onChange={(e) => setItem(i, "price_per_sqft", e.target.value)}
+                    data-testid={`item-delivery-price-${i}`}
+                    className="w-36 border border-input px-2 py-1.5 text-sm rounded-none text-right focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
                 </div>
                 <div className="text-right font-mono text-sm" data-testid={`item-line-${i}`}>{currency(lineTotal(li))}</div>
                 </>
