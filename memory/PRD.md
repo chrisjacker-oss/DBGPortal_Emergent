@@ -26,6 +26,12 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Added the admin-only **Automatic Backup Vault** in Settings.
+  It stores complete Extended JSON CRM backups in durable private object storage, supports
+  manual runs/downloads/removal, and keeps every accessible backup until an admin removes it.
+- **September 2026**: Added an idempotent monthly backup cron for the first of each month
+  at `08:00 UTC` (2:00 AM Central Standard Time / 3:00 AM daylight time). Backup metadata
+  is exposed to admins only; storage paths and backup contents stay server-side.
 - **September 2026**: Added preset **Service Call** and **Local Delivery Fee**
   categories. Service Call uses a manual price; Local Delivery Fee stores miles plus a
   manual fee. Both are flat charges and carry through Estimate → Sales Order → Invoice,
@@ -74,9 +80,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - **June 2026**: Removed laminator cost from commission calculation entirely. Commission base = gross profit.
 
 ## Backlog / P1-P2
-- Google Drive monthly CRM backup: paused pending Google OAuth Client ID and Client
-  Secret. Preferred schedule is the 1st at 2:00 AM America/Chicago in the configured
-  Drive backup folder.
+- Optional Google Drive copy of the monthly CRM backup: paused pending Google OAuth
+  Client ID and Client Secret. The secure in-app vault is active now.
 - Admin dashboard "clocked-in today" widget.
 - Customer monthly statement from customer popup.
 - N+1 optimization for large endpoints.
@@ -124,6 +129,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Backup vault QA passed 15 backend tests and full Settings/mobile flows.
+  Verified protected upload, Extended JSON download, role gating, soft removal, cron auth,
+  and same-run idempotency. Two real backups (one manual, one monthly) remain in the vault.
 - September 2026: Service Call and Local Delivery Fee were verified in category APIs,
   document-builder inputs, calculation totals, Estimate → SO → Invoice conversion, and
   invoice PDF output. Test documents were deleted.

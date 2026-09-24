@@ -31,6 +31,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib import colors
 from bson import ObjectId, json_util
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query, Header
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -1411,6 +1412,22 @@ async def _create_crm_vault_backup(source: str, created_by: Optional[str] = None
         return clean(record)
 
 
+def _vault_backup_out(record: dict) -> dict:
+    cleaned = clean(record) if "_id" in record else dict(record)
+    allowed = {
+        "id",
+        "filename",
+        "content_type",
+        "size",
+        "source",
+        "collection_count",
+        "document_count",
+        "created_at",
+        "created_by",
+    }
+    return {key: value for key, value in cleaned.items() if key in allowed}
+
+
 def _validate_crm_backup(payload: object) -> dict:
     if not isinstance(payload, dict) or payload.get("format") != CRM_BACKUP_FORMAT:
         raise HTTPException(status_code=400, detail="This is not a DBG Signs CRM backup file")
@@ -1445,15 +1462,16 @@ async def list_crm_vault_backups(user: dict = Depends(require_admin)):
         "created_at",
         -1,
     ).to_list(1000)
-    return [clean(record) for record in records]
+    return [_vault_backup_out(record) for record in records]
 
 
 @api_router.post("/settings/backup-vault/run")
 async def run_crm_vault_backup(user: dict = Depends(require_admin)):
-    return await _create_crm_vault_backup(
+    record = await _create_crm_vault_backup(
         source="manual",
         created_by=user.get("email") or user.get("name"),
     )
+    return _vault_backup_out(record)
 
 
 @api_router.get("/settings/backup-vault/{bid}/download")
@@ -5645,14 +5663,15 @@ async def cron_install_reminders(request: Request):
 
 
 async def _run_monthly_crm_backup(run_id: str) -> None:
-    if await db.cron_runs.find_one({"run_id": run_id}):
+    try:
+        result = await db.cron_runs.insert_one({
+            "run_id": run_id,
+            "job": "monthly-crm-backup",
+            "at": now_iso(),
+            "status": "running",
+        })
+    except DuplicateKeyError:
         return
-    result = await db.cron_runs.insert_one({
-        "run_id": run_id,
-        "job": "monthly-crm-backup",
-        "at": now_iso(),
-        "status": "running",
-    })
     try:
         backup = await _create_crm_vault_backup(source="monthly")
         await db.cron_runs.update_one(
@@ -6147,6 +6166,7 @@ async def startup():
     await db.users.create_index("email", unique=True)
     await db.login_attempts.create_index("identifier")
     await db.proof_tokens.create_index("token")
+    await db.cron_runs.create_index("run_id", unique=True)
     try:
         await init_storage()
         logger.info("Object storage initialized")

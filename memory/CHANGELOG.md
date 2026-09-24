@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Automatic CRM backup vault**: Admin Settings now retains complete CRM JSON backups in
+  secure object storage. Run one on demand, download it through the protected API, or
+  remove it from the vault. An idempotent monthly cron runs on the first at 08:00 UTC.
 - **Service Call & Local Delivery Fee**: Added two built-in service categories. Service
   Call has a manual cost; Local Delivery Fee has miles and a manual fee. Both calculate
   as customer-facing flat charges and retain their data across document conversion.
