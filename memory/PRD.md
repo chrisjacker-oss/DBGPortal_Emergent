@@ -74,6 +74,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - **June 2026**: Removed laminator cost from commission calculation entirely. Commission base = gross profit.
 
 ## Backlog / P1-P2
+- Google Drive monthly CRM backup: paused pending Google OAuth Client ID and Client
+  Secret. Preferred schedule is the 1st at 2:00 AM America/Chicago in the configured
+  Drive backup folder.
 - Admin dashboard "clocked-in today" widget.
 - Customer monthly statement from customer popup.
 - N+1 optimization for large endpoints.
