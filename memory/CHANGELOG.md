@@ -12,6 +12,12 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Completed installation scheduling**: Added the `Completed / Installation Schedule`
+  status. Its customer email links to a public tentative-install calendar: Monday–Thursday
+  AM/PM and Friday AM, with notes. Requests enter the staff calendar as tentative until
+  confirmed.
+- **Collapsible desktop sidebar**: Staff can collapse the left navigation to maximize the
+  work area and expand it again; mobile navigation keeps its drawer behavior.
 - **Automatic CRM backup vault**: Admin Settings now retains complete CRM JSON backups in
   secure object storage. Run one on demand, download it through the protected API, or
   remove it from the vault. An idempotent monthly cron runs on the first at 08:00 UTC.

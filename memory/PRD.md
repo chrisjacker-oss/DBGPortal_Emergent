@@ -26,6 +26,14 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Added **Completed / Installation Schedule** work status across
+  Estimates, Sales Orders, and Invoices. It sends the completed-decals email and a
+  30-day secure scheduling link. Customers can request Monday–Thursday AM/PM or Friday
+  AM, leave notes, and create a tentative calendar entry for staff review/confirmation.
+- **September 2026**: Install Calendar now flags tentative customer requests as `REQ`.
+  Staff can adjust and confirm them; confirmation sends the existing installation notice.
+- **September 2026**: Added a desktop sidebar collapse/expand control so staff can open
+  more workspace; the responsive mobile navigation drawer remains available.
 - **September 2026**: Added the admin-only **Automatic Backup Vault** in Settings.
   It stores complete Extended JSON CRM backups in durable private object storage, supports
   manual runs/downloads/removal, and keeps every accessible backup until an admin removes it.
@@ -129,6 +137,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Tentative-install QA passed 17 sequential API tests, including status
+  email/token creation, public-date validation, duplicate protection, tentative calendar
+  creation, estimate links, and confirmation. Browser checks passed for the public
+  calendar/mobile layout and desktop sidebar toggle; temporary records were removed.
 - September 2026: Backup vault QA passed 15 backend tests and full Settings/mobile flows.
   Verified protected upload, Extended JSON download, role gating, soft removal, cron auth,
   and same-run idempotency. Two real backups (one manual, one monthly) remain in the vault.

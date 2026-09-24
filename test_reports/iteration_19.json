@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 19 - end-to-end verification of the new 'Completed / Installation Schedule' work status + customer tentative install scheduling feature. Backend (17/17 pytest cases in /app/backend/tests/test_iteration19_install_schedule.py, all passing in 3.0s under -n 0): (a) PATCH /api/estimates/{id}/work-status with status=completed_install_schedule stores work_status, creates an install_schedule_requests row (status=sent, recipient=delivered@resend.dev, 30-day expires_at ±1d) and idempotent re-invocation does NOT create a second token; unknown status -> 400. (b) GET /api/pub/install-schedule/{token} returns doc number/title/customer_name, status='sent', date_from=today, date_to=today+90d; invalid token -> 404; force-expired token -> 410. (c) POST /api/pub/install-schedule/{token} rejects (400) past date, >90 days, Saturday, Sunday, Friday afternoon, unknown time_of_day, malformed date; accepts Tuesday morning. (d) On accept, install_schedule_requests.status flips to submitted, notes are copied, tentative_install_id points at a newly inserted installs row with status=tentative, linked_type=estimate, linked_id=<estimate id>, tentative_notes copied, description contains the customer note; GET /api/installs?month=YYYY-MM includes it with status=tentative. (e) Second submit against same token -> 409. (f) PUT /api/installs/{id} status=confirmed on the same row flips status to confirmed (regular install-notify path runs; email to delivered@resend.dev is best-effort). (g) Approving the estimate creates a sales order and PATCH /api/sales-orders/{sid}/work-status accepts the same 'completed_install_schedule' status producing a distinct schedule token.\n\nFrontend (Playwright at 390x844 on /installation-schedule/<token> after seeding via backend API): public page renders, no horizontal overflow (scrollWidth=clientWidth=390), estimate number is visible, Friday afternoon toggle is disabled after selecting a Friday, Tuesday morning path submits successfully and the SUCCESS screen ('Tentative date received') renders. Screenshots captured. All test customers, contacts, estimates, sales orders, install_schedule_requests and installs created during this run were deleted from Mongo at teardown (verified: no residual TEST_ rows).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Installs calendar (Installs.jsx)",
+        "issue": "Estimate-linked tentative installs never render the underlined 'linked_number' jump-link because backend _enrich_install (server.py ~line 3993) only enriches when linked_type is 'sales_order' or 'invoice': `coll = db.sales_orders if d[\"linked_type\"] == \"sales_order\" else db.invoices` — for linked_type=='estimate' it queries db.invoices with the estimate id, gets nothing, and linked_number stays null. Verified with a real tentative row (linked_type='estimate', linked_id set, linked_number=null in GET /api/installs response). Frontend already handles the 'estimate' navigation target correctly, but the link never renders. Feature #7 (Install Calendar supports estimate-linked navigation) is therefore partially broken.",
+        "selector": "[data-testid^=install-linked-]",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration19_install_schedule.py",
+    "/app/test_reports/pytest/iteration19.xml"
+  ],
+  "action_items": [
+    "Fix _enrich_install in backend/server.py (~line 3993) to also enrich linked_number when linked_type == 'estimate' by querying db.estimates. Suggested: `coll = {'sales_order': db.sales_orders, 'invoice': db.invoices, 'estimate': db.estimates}.get(d['linked_type'])` then guard `if coll is not None`."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 6465 lines - still well beyond the 700-line guideline. Splitting the install-schedule/work-status module (~lines 3686-4240) into its own file would improve maintainability.",
+    "_enrich_install branches on 'sales_order' vs else and defaults to db.invoices - this silently mislooks-up any new linked_type (already caused the estimate bug reported above). Prefer an explicit mapping and skip enrichment when the type is not recognized.",
+    "submit_tentative_install_schedule uses a claim-then-insert pattern with a rollback in the except block but the rollback only resets status back to 'sent'; if the insert succeeded and the update-to-submitted failed after, we'd have an orphan install row and the token would still say 'submitting'. Consider transactional handling or explicit compensating delete on failure.",
+    "_public_install_schedule_request raises 404 for both an unknown token and a link whose expires_at is malformed - fine, but the same 404 is also raised when the linked document was deleted; leaking that vs. 'invalid link' is subtle. Not a blocker."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration19_install_schedule.py"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17 passed)",
+    "frontend": "100% of public scheduling flow verified at 390px"
+  },
+  "test_credentials": "admin: sales@dbgsigns.com / 10297099 (used for seeding). Public flow requires no auth (token-based).",
+  "seed_data_creation": "Pytest and the UI test each created a TEST_ customer + contact + estimate (and one sales order in the Sales Order sub-test) + associated install_schedule_requests + a tentative install row. All test-created rows were deleted from Mongo at teardown (verified 0 residual TEST_ customers/estimates).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Endpoints: PATCH /api/{estimates|sales-orders|invoices}/{id}/work-status?status=completed_install_schedule triggers schedule email + token creation; GET/POST /api/pub/install-schedule/{token} is the anonymous public route. TentativeInstallScheduleInput = {preferred_date: YYYY-MM-DD, time_of_day: morning|afternoon, notes: str}. Valid slot rules: Mon-Thu AM/PM, Fri AM only, dates within [today, today+90]. install_schedule_requests.status transitions sent -> submitting (claim) -> submitted. Tentative installs are visually distinguished on Installs calendar with amber 'REQ' pill. Frontend testids: public-install-schedule-page, public-install-schedule-error, public-install-schedule-success, public-install-month-{y}-{m}, public-install-date-{YYYY-MM-DD}, public-install-morning, public-install-afternoon, public-install-notes, public-install-selection, public-install-submit; kit.jsx work-status select exposes 'completed_install_schedule' option with amber-green badge classes.",
+  "rca of the issue": "Estimate-linked navigation: server.py _enrich_install treats any non-'sales_order' linked_type as if it were 'invoice' and queries db.invoices with the estimate's ObjectId. The estimate id has no matching invoices row so linked_number resolves to null; the frontend then hides the link element. Reproduction: PATCH an estimate's work-status to completed_install_schedule, submit the tentative slot via /pub/install-schedule/{token}, GET /api/installs?month=YYYY-MM, observe linked_type='estimate' with linked_number=null. Mitigation: use explicit mapping `{'sales_order': db.sales_orders, 'invoice': db.invoices, 'estimate': db.estimates}[linked_type]`, skip enrichment when linked_type is unknown, and ensure Installs.jsx renders the linked_number badge only when it is present."
+}

@@ -3990,9 +3990,18 @@ async def _enrich_install(d: dict) -> dict:
         d["contact_email"] = ct.get("email") if ct else None
     d["time_label"] = INSTALL_TIME_LABELS.get(d.get("time_of_day"), "Morning")
     if d.get("linked_type") and d.get("linked_id") and ObjectId.is_valid(str(d["linked_id"])):
-        coll = db.sales_orders if d["linked_type"] == "sales_order" else db.invoices
-        ld = await coll.find_one({"_id": oid(str(d["linked_id"]))}, {"number": 1})
-        d["linked_number"] = ld.get("number") if ld else None
+        collections = {
+            "estimate": db.estimates,
+            "sales_order": db.sales_orders,
+            "invoice": db.invoices,
+        }
+        collection = collections.get(d["linked_type"])
+        if collection is not None:
+            linked_doc = await collection.find_one(
+                {"_id": oid(str(d["linked_id"]))},
+                {"number": 1},
+            )
+            d["linked_number"] = linked_doc.get("number") if linked_doc else None
     return d
 
 
@@ -4196,9 +4205,11 @@ async def submit_tentative_install_schedule(token: str, payload: TentativeInstal
         "requested_at": now_iso(),
         "created_at": now_iso(),
     }
+    inserted_install_id = None
     try:
         result = await db.installs.insert_one(install_doc)
-        await db.install_schedule_requests.update_one(
+        inserted_install_id = result.inserted_id
+        updated = await db.install_schedule_requests.update_one(
             {"_id": claimed["_id"]},
             {"$set": {
                 "status": "submitted",
@@ -4209,9 +4220,13 @@ async def submit_tentative_install_schedule(token: str, payload: TentativeInstal
                 "tentative_install_id": str(result.inserted_id),
             }},
         )
+        if updated.modified_count != 1:
+            raise RuntimeError("Could not finalize tentative installation request")
     except Exception:
+        if inserted_install_id is not None:
+            await db.installs.delete_one({"_id": inserted_install_id})
         await db.install_schedule_requests.update_one(
-            {"_id": claimed["_id"]},
+            {"_id": claimed["_id"], "status": "submitting"},
             {"$set": {"status": "sent"}},
         )
         raise

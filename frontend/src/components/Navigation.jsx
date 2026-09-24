@@ -24,6 +24,8 @@ import {
   Image,
   Gear,
   List,
+  CaretLeft,
+  CaretRight,
   SignOut,
   X,
 } from "@phosphor-icons/react";
@@ -70,6 +72,7 @@ export const Navigation = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const isCustomer = user?.role === "customer";
   const links = isCustomer
     ? [{ to: "/portal", label: "My Orders", icon: ArrowsClockwise }]
@@ -90,7 +93,7 @@ export const Navigation = () => {
     }
   };
 
-  const linkBaseClass = "flex items-center gap-3 px-6 py-2.5 text-sm border-l-2 transition-colors";
+  const linkBaseClass = "flex items-center gap-3 py-2.5 text-sm border-l-2 transition-colors";
   const activeLinkClass = "border-[#06B6D4] bg-secondary text-foreground font-medium";
   const inactiveLinkClass = [
     "border-transparent text-muted-foreground",
@@ -101,7 +104,8 @@ export const Navigation = () => {
     "border-b border-border bg-card px-4 text-left md:hidden",
   ].join(" ");
   const desktopSidebarClass = [
-    "sticky top-0 hidden h-screen w-60 shrink-0 flex-col",
+    "sticky top-0 hidden h-screen shrink-0 flex-col transition-[width] duration-200",
+    collapsed ? "w-16" : "w-60",
     "border-r border-border bg-card md:flex",
   ].join(" ");
   const logoutClass = [
@@ -120,12 +124,16 @@ export const Navigation = () => {
             /\s/g,
             "-"
           )}`}
-          className={({ isActive }) =>
-            `${linkBaseClass} ${isActive ? activeLinkClass : inactiveLinkClass}`
-          }
+          title={!mobile && collapsed ? label : undefined}
+          className={({ isActive }) => {
+            const compact = !mobile && collapsed;
+            return `${linkBaseClass} ${compact ? "justify-center px-2" : "px-6"} ${
+              isActive ? activeLinkClass : inactiveLinkClass
+            }`;
+          }}
         >
           <Icon size={18} weight="bold" />
-          {label}
+          {(mobile || !collapsed) && label}
         </NavLink>
       ))}
     </nav>
@@ -151,32 +159,63 @@ export const Navigation = () => {
         className={desktopSidebarClass}
         data-testid="sidebar"
       >
-        <div className="px-6 py-6 border-b border-border">
-          <img
-            src={LOGO_URL}
-            alt="DBG Signs, Inc."
-            className="h-16 w-auto max-w-[260px] object-contain"
-            data-testid="sidebar-logo"
-          />
-          <div className="overline text-muted-foreground mt-2">Image Is Everything</div>
+        <div className={`${collapsed ? "px-2" : "px-6"} py-5 border-b border-border`}>
+          <div
+            className={`flex items-center ${collapsed ? "justify-center" : "justify-between"}`}
+          >
+            <img
+              src={LOGO_URL}
+              alt="DBG Signs, Inc."
+              className={
+                collapsed ? "h-8 w-8 object-contain" : "h-16 w-auto max-w-[260px] object-contain"
+              }
+              data-testid="sidebar-logo"
+            />
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={() => setCollapsed(true)}
+                data-testid="collapse-sidebar-btn"
+                aria-label="Collapse sidebar"
+                className="p-2 text-muted-foreground hover:text-foreground"
+              >
+                <CaretLeft size={18} weight="bold" />
+              </button>
+            )}
+          </div>
+          {!collapsed && (
+            <div className="overline text-muted-foreground mt-2">Image Is Everything</div>
+          )}
+          {collapsed && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              data-testid="expand-sidebar-btn"
+              aria-label="Expand sidebar"
+              className="mt-3 w-full p-2 text-muted-foreground hover:text-foreground"
+            >
+              <CaretRight size={18} weight="bold" />
+            </button>
+          )}
         </div>
-        {!isCustomer && (
+        {!isCustomer && !collapsed && (
           <div className="px-3 py-3 border-b border-border">
             <SearchBar />
           </div>
         )}
         {linksNav()}
-        <div className="border-t border-border p-4">
-          <div className="mb-3">
+        <div className={`${collapsed ? "p-2" : "p-4"} border-t border-border`}>
+          {!collapsed && <div className="mb-3">
             <div className="text-sm font-medium truncate">{user?.name}</div>
             <div className="overline text-muted-foreground mt-0.5">{user?.role}</div>
-          </div>
+          </div>}
           <button
             onClick={handleLogout}
             data-testid="logout-btn"
+            title={collapsed ? "Sign out" : undefined}
             className={logoutClass}
           >
-            <SignOut size={16} weight="bold" /> Sign out
+            <SignOut size={16} weight="bold" /> {!collapsed && "Sign out"}
           </button>
         </div>
       </aside>
