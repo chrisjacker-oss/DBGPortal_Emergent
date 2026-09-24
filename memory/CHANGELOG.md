@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Document Action confirmations**: Direct Actions-menu tasks now show a short
+  Cancel/Confirm popup before opening, copying, converting, downloading, printing,
+  voiding, or reactivating an Estimate, Sales Order, or Invoice.
 - **Payment request emails**: Staff can send a secure, fixed-amount payment link from
   Estimates, Sales Orders, and Invoices. Choose 50/50 for a half-total deposit or COD
   for the full remaining balance, then choose customer contacts. Links expire after 30

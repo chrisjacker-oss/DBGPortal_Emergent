@@ -8,6 +8,7 @@ import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
+import ActionConfirmDialog from "@/components/ActionConfirmDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
@@ -37,6 +38,7 @@ export default function SalesOrders() {
   const [noteDoc, setNoteDoc] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
   const [paymentDoc, setPaymentDoc] = useState(null);
+  const [actionConfirm, setActionConfirm] = useState(null);
   const [tab, setTab] = useState("active");
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -158,15 +160,80 @@ export default function SalesOrders() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`so-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/sales-orders/${r.id}/pdf`), testid: `view-so-doc-${r.id}`, hidden: isSalesman },
-                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/sales-orders/${r.id}/pdf`), testid: `print-so-${r.id}` },
+                        {
+                          label: "Web view",
+                          icon: <Eye size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Open Sales Order ${r.number}`,
+                            description: "Open this sales order PDF in a new browser tab.",
+                            confirmLabel: "Open PDF",
+                            onConfirm: () => viewDocPdf(`/sales-orders/${r.id}/pdf`),
+                          }),
+                          testid: `view-so-doc-${r.id}`,
+                          hidden: isSalesman,
+                        },
+                        {
+                          label: "Print",
+                          icon: <Printer size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Print Sales Order ${r.number}`,
+                            description: "Open the print view for this sales order.",
+                            confirmLabel: "Open print view",
+                            onConfirm: () => printDoc(`/sales-orders/${r.id}/pdf`),
+                          }),
+                          testid: `print-so-${r.id}`,
+                        },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-so-${r.id}`, hidden: r.voided },
                         { label: "COD/Deposit Email", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-so-${r.id}`, hidden: r.voided },
-                        { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-so-${r.id}` },
-                        { label: "Convert to invoice", icon: <Receipt size={16} />, onClick: () => convert(r.id), testid: `invoice-so-${r.id}`, hidden: r.voided || !!r.invoice_id },
+                        {
+                          label: "Create a copy",
+                          icon: <CopySimple size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Copy Sales Order ${r.number}`,
+                            description: "Create a new editable copy of this sales order.",
+                            confirmLabel: "Create copy",
+                            onConfirm: () => duplicate(r.id),
+                          }),
+                          testid: `duplicate-so-${r.id}`,
+                        },
+                        {
+                          label: "Convert to invoice",
+                          icon: <Receipt size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Invoice Sales Order ${r.number}`,
+                            description: "Create an invoice from this sales order.",
+                            confirmLabel: "Create invoice",
+                            onConfirm: () => convert(r.id),
+                          }),
+                          testid: `invoice-so-${r.id}`,
+                          hidden: r.voided || !!r.invoice_id,
+                        },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-so-${r.id}`, hidden: r.voided || isSalesman },
-                        { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-so-${r.id}`, hidden: !isAdmin || r.voided },
-                        { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-so-${r.id}`, hidden: !isAdmin || !r.voided },
+                        {
+                          label: "Void",
+                          icon: <Prohibit size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Void Sales Order ${r.number}`,
+                            description: "Void this sales order. It can be reactivated later.",
+                            confirmLabel: "Void sales order",
+                            danger: true,
+                            onConfirm: () => setVoid(r.id, true),
+                          }),
+                          testid: `void-so-${r.id}`,
+                          hidden: !isAdmin || r.voided,
+                        },
+                        {
+                          label: "Reactivate",
+                          icon: <ArrowCounterClockwise size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Reactivate Sales Order ${r.number}`,
+                            description: "Return this sales order to its active workflow.",
+                            confirmLabel: "Reactivate",
+                            onConfirm: () => setVoid(r.id, false),
+                          }),
+                          testid: `reactivate-so-${r.id}`,
+                          hidden: !isAdmin || !r.voided,
+                        },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-so-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },
                         { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelSo(r), testid: `delete-so-${r.id}`, danger: true, hidden: !isAdmin },
@@ -184,6 +251,7 @@ export default function SalesOrders() {
       <DocBuilder open={open} kind="sales-order" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/sales-orders" kindLabel="sales order" onClose={() => setSendDoc(null)} onSent={load} />
       <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/sales-orders" kindLabel="Sales Order" onClose={() => setPaymentDoc(null)} onSent={load} />
+      <ActionConfirmDialog action={actionConfirm} onClose={() => setActionConfirm(null)} />
       <AdminDeleteDialog open={!!delSo} label={`sales order ${delSo?.number || ""}`} onClose={() => setDelSo(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected sales order(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/sales-orders/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

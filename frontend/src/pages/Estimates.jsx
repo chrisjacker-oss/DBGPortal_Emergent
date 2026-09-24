@@ -8,6 +8,7 @@ import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/k
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
+import ActionConfirmDialog from "@/components/ActionConfirmDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import InternalNoteDialog from "@/components/InternalNoteDialog";
 import ActionsMenu from "@/components/ActionsMenu";
@@ -37,6 +38,7 @@ export default function Estimates() {
   const [noteDoc, setNoteDoc] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
   const [paymentDoc, setPaymentDoc] = useState(null);
+  const [actionConfirm, setActionConfirm] = useState(null);
   const [params] = useSearchParams();
   const focusId = params.get("focus");
   const focusRef = useRef(null);
@@ -161,12 +163,54 @@ export default function Estimates() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`estimate-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewDocPdf(`/estimates/${r.id}/pdf`), testid: `view-estimate-${r.id}`, hidden: isSalesman },
-                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/estimates/${r.id}/pdf`), testid: `print-estimate-${r.id}` },
+                        {
+                          label: "Web view",
+                          icon: <Eye size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Open Estimate ${r.number}`,
+                            description: "Open this estimate PDF in a new browser tab.",
+                            confirmLabel: "Open PDF",
+                            onConfirm: () => viewDocPdf(`/estimates/${r.id}/pdf`),
+                          }),
+                          testid: `view-estimate-${r.id}`,
+                          hidden: isSalesman,
+                        },
+                        {
+                          label: "Print",
+                          icon: <Printer size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Print Estimate ${r.number}`,
+                            description: "Open the print view for this estimate.",
+                            confirmLabel: "Open print view",
+                            onConfirm: () => printDoc(`/estimates/${r.id}/pdf`),
+                          }),
+                          testid: `print-estimate-${r.id}`,
+                        },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
                         { label: "COD/Deposit Email", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-estimate-${r.id}` },
-                        { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-estimate-${r.id}` },
-                        { label: "Approve → Sales Order", icon: <CheckCircle size={16} />, onClick: () => approve(r.id), testid: `approve-estimate-${r.id}`, hidden: !!r.sales_order_id },
+                        {
+                          label: "Create a copy",
+                          icon: <CopySimple size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Copy Estimate ${r.number}`,
+                            description: "Create a new editable copy of this estimate.",
+                            confirmLabel: "Create copy",
+                            onConfirm: () => duplicate(r.id),
+                          }),
+                          testid: `duplicate-estimate-${r.id}`,
+                        },
+                        {
+                          label: "Approve → Sales Order",
+                          icon: <CheckCircle size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Approve Estimate ${r.number}`,
+                            description: "Create a sales order from this approved estimate.",
+                            confirmLabel: "Create sales order",
+                            onConfirm: () => approve(r.id),
+                          }),
+                          testid: `approve-estimate-${r.id}`,
+                          hidden: !!r.sales_order_id,
+                        },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },
@@ -185,6 +229,7 @@ export default function Estimates() {
       <DocBuilder open={open} kind="estimate" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/estimates" kindLabel="estimate" onClose={() => setSendDoc(null)} onSent={load} />
       <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/estimates" kindLabel="Estimate" onClose={() => setPaymentDoc(null)} onSent={load} />
+      <ActionConfirmDialog action={actionConfirm} onClose={() => setActionConfirm(null)} />
       <AdminDeleteDialog open={!!delEst} label={`estimate ${delEst?.number || ""}`} onClose={() => setDelEst(null)} onConfirm={confirmDelete} />
       <AdminDeleteDialog open={bulkOpen} label={`${selIds.length} selected estimate(s)`} onClose={() => setBulkOpen(false)} onConfirm={bulkDelete} />
       <InternalNoteDialog open={!!noteDoc} number={noteDoc?.number} url={`/estimates/${noteDoc?.id}/internal-notes`} value={noteDoc?.internal_notes}

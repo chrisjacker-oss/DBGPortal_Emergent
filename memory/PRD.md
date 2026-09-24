@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Every immediate task in the Estimate, Sales Order, and Invoice
+  Actions menus now opens a shared summary popup with **Cancel** and **Confirm**.
+  Existing task-specific dialogs (email, payments, edit, notes, history, delete) remain
+  unchanged.
 - **September 2026**: Renamed the document Actions menu payment command to
   **COD/Deposit Email** on Estimates, Sales Orders, and Invoices.
 - **September 2026**: Estimates, Sales Orders, and Invoices now include a **Send payment

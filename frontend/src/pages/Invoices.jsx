@@ -8,6 +8,7 @@ import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
+import ActionConfirmDialog from "@/components/ActionConfirmDialog";
 import PayNowDialog from "@/components/PayNowDialog";
 import AdminDeleteDialog from "@/components/AdminDeleteDialog";
 import RecordPaymentDialog from "@/components/RecordPaymentDialog";
@@ -28,6 +29,7 @@ export default function Invoices() {
   const [editing, setEditing] = useState(null);
   const [sendDoc, setSendDoc] = useState(null);
   const [paymentDoc, setPaymentDoc] = useState(null);
+  const [actionConfirm, setActionConfirm] = useState(null);
   const [payInv, setPayInv] = useState(null);
   const [delInv, setDelInv] = useState(null);
   const [recInv, setRecInv] = useState(null);
@@ -353,19 +355,104 @@ export default function Invoices() {
                   <td className="px-6 py-3">
                     <div className="flex justify-end">
                       <ActionsMenu testid={`invoice-actions-${r.id}`} items={[
-                        { label: "Web view", icon: <Eye size={16} />, onClick: () => viewPdf(`/invoices/${r.id}/pdf`), testid: `view-invoice-${r.id}`, hidden: isSalesman },
-                        { label: "Print", icon: <Printer size={16} />, onClick: () => printDoc(`/invoices/${r.id}/pdf`), testid: `print-invoice-${r.id}` },
-                        { label: "Download PDF", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/pdf`, `${r.number}.pdf`, "application/pdf"), testid: `pdf-invoice-${r.id}`, hidden: isSalesman },
+                        {
+                          label: "Web view",
+                          icon: <Eye size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Open Invoice ${r.number}`,
+                            description: "Open this invoice PDF in a new browser tab.",
+                            confirmLabel: "Open PDF",
+                            onConfirm: () => viewPdf(`/invoices/${r.id}/pdf`),
+                          }),
+                          testid: `view-invoice-${r.id}`,
+                          hidden: isSalesman,
+                        },
+                        {
+                          label: "Print",
+                          icon: <Printer size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Print Invoice ${r.number}`,
+                            description: "Open the print view for this invoice.",
+                            confirmLabel: "Open print view",
+                            onConfirm: () => printDoc(`/invoices/${r.id}/pdf`),
+                          }),
+                          testid: `print-invoice-${r.id}`,
+                        },
+                        {
+                          label: "Download PDF",
+                          icon: <FilePdf size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Download Invoice ${r.number}`,
+                            description: "Download this invoice as a PDF file.",
+                            confirmLabel: "Download PDF",
+                            onConfirm: () => downloadFile(
+                              `/invoices/${r.id}/pdf`,
+                              `${r.number}.pdf`,
+                              "application/pdf"
+                            ),
+                          }),
+                          testid: `pdf-invoice-${r.id}`,
+                          hidden: isSalesman,
+                        },
                         { label: "Payment history", icon: <ClockCounterClockwise size={16} />, onClick: () => openHistory(r), testid: `history-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
                         { label: "COD/Deposit Email", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
-                        { label: "Create a copy", icon: <CopySimple size={16} />, onClick: () => duplicate(r.id), testid: `duplicate-invoice-${r.id}`, hidden: isSalesman },
+                        {
+                          label: "Create a copy",
+                          icon: <CopySimple size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Copy Invoice ${r.number}`,
+                            description: "Create a new editable copy of this invoice.",
+                            confirmLabel: "Create copy",
+                            onConfirm: () => duplicate(r.id),
+                          }),
+                          testid: `duplicate-invoice-${r.id}`,
+                          hidden: isSalesman,
+                        },
                         { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
                         { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
-                        { label: "Download to accounting", icon: <FilePdf size={16} />, onClick: () => downloadFile(`/invoices/${r.id}/accounting-pdf`, `Accounting-${r.number}.pdf`, "application/pdf"), testid: `acct-pdf-invoice-${r.id}`, hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman },
+                        {
+                          label: "Download to accounting",
+                          icon: <FilePdf size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Export Invoice ${r.number}`,
+                            description: "Download this invoice for your accounting records.",
+                            confirmLabel: "Download export",
+                            onConfirm: () => downloadFile(
+                              `/invoices/${r.id}/accounting-pdf`,
+                              `Accounting-${r.number}.pdf`,
+                              "application/pdf"
+                            ),
+                          }),
+                          testid: `acct-pdf-invoice-${r.id}`,
+                          hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman,
+                        },
                         { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || isSalesman },
-                        { label: "Void", icon: <Prohibit size={16} />, onClick: () => setVoid(r.id, true), testid: `void-invoice-${r.id}`, hidden: !isAdmin || r.voided },
-                        { label: "Reactivate", icon: <ArrowCounterClockwise size={16} />, onClick: () => setVoid(r.id, false), testid: `reactivate-invoice-${r.id}`, hidden: !isAdmin || !r.voided },
+                        {
+                          label: "Void",
+                          icon: <Prohibit size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Void Invoice ${r.number}`,
+                            description: "Void this invoice. It can be reactivated later.",
+                            confirmLabel: "Void invoice",
+                            danger: true,
+                            onConfirm: () => setVoid(r.id, true),
+                          }),
+                          testid: `void-invoice-${r.id}`,
+                          hidden: !isAdmin || r.voided,
+                        },
+                        {
+                          label: "Reactivate",
+                          icon: <ArrowCounterClockwise size={16} />,
+                          onClick: () => setActionConfirm({
+                            title: `Reactivate Invoice ${r.number}`,
+                            description: "Return this invoice to its active workflow.",
+                            confirmLabel: "Reactivate",
+                            onConfirm: () => setVoid(r.id, false),
+                          }),
+                          testid: `reactivate-invoice-${r.id}`,
+                          hidden: !isAdmin || !r.voided,
+                        },
                         { separator: true, hidden: !isAdmin },
                         { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelInv(r), testid: `delete-invoice-${r.id}`, danger: true, hidden: !isAdmin },
                       ]} />
@@ -382,6 +469,7 @@ export default function Invoices() {
       <DocBuilder open={open} kind="invoice" initial={editing} onClose={() => { setOpen(false); setEditing(null); }} onSave={save} />
       <SendDialog open={!!sendDoc} doc={sendDoc} path="/invoices" kindLabel="invoice" onClose={() => setSendDoc(null)} onSent={load} />
       <PaymentRequestDialog open={!!paymentDoc} doc={paymentDoc} path="/invoices" kindLabel="Invoice" onClose={() => setPaymentDoc(null)} onSent={load} />
+      <ActionConfirmDialog action={actionConfirm} onClose={() => setActionConfirm(null)} />
       <PayNowDialog open={!!payInv} invoice={payInv} onClose={() => setPayInv(null)} onPaid={() => { setPayInv(null); load(); }} />
       <RecordPaymentDialog open={!!recInv} invoice={recInv} onClose={() => setRecInv(null)} onSaved={() => { setRecInv(null); load(); }} />
       <AdminDeleteDialog open={!!delInv} label={`invoice ${delInv?.number || ""}`} onClose={() => setDelInv(null)} onConfirm={confirmDelete} />
