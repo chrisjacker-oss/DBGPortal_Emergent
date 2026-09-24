@@ -17,7 +17,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const ymOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 
-const emptyForm = { date: "", time_of_day: "morning", customer_id: "", contact_id: "", description: "", linked_type: "", linked_id: "" };
+const emptyForm = { date: "", time_of_day: "morning", status: "confirmed", customer_id: "", contact_id: "", description: "", linked_type: "", linked_id: "" };
 
 export default function Installs() {
   const navigate = useNavigate();
@@ -54,7 +54,7 @@ export default function Installs() {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const openAdd = (dateStr) => { setEditing(null); setForm({ ...emptyForm, date: dateStr || todayStr() }); setOpen(true); };
-  const openEdit = (it) => { setEditing(it); setForm({ date: it.date, time_of_day: it.time_of_day || "morning", customer_id: it.customer_id || "", contact_id: it.contact_id || "", description: it.description || "", linked_type: it.linked_type || "", linked_id: it.linked_id || "" }); setOpen(true); };
+  const openEdit = (it) => { setEditing(it); setForm({ date: it.date, time_of_day: it.time_of_day || "morning", status: it.status || "confirmed", customer_id: it.customer_id || "", contact_id: it.contact_id || "", description: it.description || "", linked_type: it.linked_type || "", linked_id: it.linked_id || "" }); setOpen(true); };
 
   const save = async () => {
     if (!form.customer_id) { toast.error("Select a customer"); return; }
@@ -136,12 +136,12 @@ export default function Installs() {
                       <div className="mt-1 space-y-1 overflow-y-auto">
                         {items.map((it) => (
                           <button key={it.id} onClick={() => openEdit(it)} data-testid={`install-item-${it.id}`}
-                            className="w-full text-left bg-[#0A0A0A] text-white px-1.5 py-1 text-[11px] leading-tight hover:bg-[#0A0A0A]/85">
-                            <span className="inline-block bg-[#06B6D4] text-[9px] font-bold uppercase px-1 mr-1">{it.time_label === "Afternoon" ? "PM" : "AM"}</span>
+                            className={`w-full text-left px-1.5 py-1 text-[11px] leading-tight ${it.status === "tentative" ? "bg-[#F59E0B]/15 text-[#78350F] hover:bg-[#F59E0B]/25" : "bg-[#0A0A0A] text-white hover:bg-[#0A0A0A]/85"}`}>
+                            <span className={`inline-block text-[9px] font-bold uppercase px-1 mr-1 ${it.status === "tentative" ? "bg-[#F59E0B] text-[#0A0A0A]" : "bg-[#06B6D4] text-white"}`}>{it.status === "tentative" ? "REQ" : it.time_label === "Afternoon" ? "PM" : "AM"}</span>
                             <span className="font-medium">{it.customer_name}</span>
                             {it.linked_number ? (
                               <span role="link" tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); navigate(`${it.linked_type === "invoice" ? "/invoices" : "/sales-orders"}?focus=${it.linked_id}`); }}
+                                onClick={(e) => { e.stopPropagation(); const path = it.linked_type === "invoice" ? "/invoices" : it.linked_type === "estimate" ? "/estimates" : "/sales-orders"; navigate(`${path}?focus=${it.linked_id}`); }}
                                 data-testid={`install-linked-${it.id}`}
                                 className="block text-[10px] text-[#67E8F9] underline hover:text-white cursor-pointer">{it.linked_number}</span>
                             ) : null}
@@ -162,7 +162,7 @@ export default function Installs() {
         <DialogContent className="rounded-none max-w-lg" data-testid="install-dialog">
           <DialogHeader>
             <DialogTitle className="font-display">{editing ? "Edit" : "Schedule"} Install</DialogTitle>
-            <DialogDescription className="font-mono text-xs">The selected contact (or customer) will be emailed an installation alert with prep instructions.</DialogDescription>
+            <DialogDescription className="font-mono text-xs">Tentative customer requests stay in review until staff confirms the appointment.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -176,6 +176,14 @@ export default function Installs() {
                 </select>
               </label>
             </div>
+            <label className="block">
+              <span className="overline text-muted-foreground">Schedule state</span>
+              <select value={form.status} onChange={(e) => set("status", e.target.value)} data-testid="install-status"
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <option value="confirmed">Confirmed installation</option>
+                <option value="tentative">Tentative customer request</option>
+              </select>
+            </label>
             <div className="block">
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="install-customer" value={form.customer_id} placeholder="Select customer…"
@@ -208,10 +216,10 @@ export default function Installs() {
             </label>
           </div>
           <DialogFooter className="flex-wrap gap-2">
-            {editing && <Btn variant="outline" onClick={() => resend(editing)} data-testid="install-resend-btn"><EnvelopeSimple size={16} weight="bold" /> Resend alert</Btn>}
+            {editing && editing.status !== "tentative" && <Btn variant="outline" onClick={() => resend(editing)} data-testid="install-resend-btn"><EnvelopeSimple size={16} weight="bold" /> Resend alert</Btn>}
             {editing && isAdmin && <Btn variant="danger" onClick={() => { setDel(editing); setOpen(false); }} data-testid="install-delete-btn"><Trash size={16} weight="bold" /> Delete</Btn>}
             <Btn variant="outline" onClick={() => { setOpen(false); setEditing(null); }} disabled={saving}>Cancel</Btn>
-            <Btn onClick={save} disabled={saving || !form.customer_id || !form.date} data-testid="install-save-btn">{saving ? "Saving…" : (editing ? "Save" : "Schedule & Notify")}</Btn>
+            <Btn onClick={save} disabled={saving || !form.customer_id || !form.date} data-testid="install-save-btn">{saving ? "Saving…" : (editing ? form.status === "confirmed" && editing.status === "tentative" ? "Confirm & Notify" : "Save" : "Schedule & Notify")}</Btn>
           </DialogFooter>
         </DialogContent>
       </Dialog>

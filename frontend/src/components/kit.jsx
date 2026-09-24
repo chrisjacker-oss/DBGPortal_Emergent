@@ -101,6 +101,7 @@ export const WORK_STATUS = [
   { value: "in_production", label: "In Production" },
   { value: "in_finishing", label: "In Finishing" },
   { value: "ready", label: "Pickup / Shipping" },
+  { value: "completed_install_schedule", label: "Completed / Installation Schedule" },
 ];
 
 export function WorkStatusSelect({ value, onChange, disabled, testid }) {
@@ -121,6 +122,7 @@ const workStatusColors = {
   in_production: "bg-[#06B6D4]/10 text-[#0E7490] border-[#06B6D4]/30",
   in_finishing: "bg-[#F59E0B]/10 text-[#B45309] border-[#F59E0B]/30",
   ready: "bg-[#D946EF]/10 text-[#A21CAF] border-[#D946EF]/30",
+  completed_install_schedule: "bg-[#16A34A]/10 text-[#15803D] border-[#16A34A]/30",
 };
 
 export function WorkStatusBadge({ status, testid }) {

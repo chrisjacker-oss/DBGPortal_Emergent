@@ -278,11 +278,18 @@ class ReorderInput(BaseModel):
 class InstallInput(BaseModel):
     date: str
     time_of_day: str = "morning"  # morning | afternoon
+    status: str = "confirmed"  # tentative | confirmed
     customer_id: str
     contact_id: Optional[str] = None
     description: str = ""
     linked_type: Optional[str] = None  # sales_order | invoice
     linked_id: Optional[str] = None
+
+
+class TentativeInstallScheduleInput(BaseModel):
+    preferred_date: str
+    time_of_day: str
+    notes: str = ""
 
 
 class SettingsInput(BaseModel):
@@ -3681,6 +3688,7 @@ WORK_STATUS_LABELS = {
     "in_production": "In Production",
     "in_finishing": "In Finishing",
     "ready": "Pickup / Shipping",
+    "completed_install_schedule": "Completed / Installation Schedule",
 }
 
 
@@ -3708,6 +3716,62 @@ def render_work_status_email(greeting_name: str, doc_label: str, number: str, st
     )
 
 
+def render_install_schedule_email(
+    greeting_name: str,
+    doc_label: str,
+    number: str,
+    schedule_url: str,
+    company: Optional[dict] = None,
+) -> str:
+    co = company or {}
+    cname = co.get("company_name") or "DBG Signs, Inc."
+    return (
+        '<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        '<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" '
+        'style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
+        f'<tr><td style="padding:28px 32px 0"><img src="{LOGO_URL}" alt="{escape(cname)}" height="46" style="height:46px;display:block" /></td></tr>'
+        '<tr><td style="padding:14px 32px 0"><div style="height:3px;background:#16A34A"></div></td></tr>'
+        '<tr><td style="padding:22px 32px">'
+        '<div style="font-size:20px;font-weight:bold">Your Decals Are Completed</div>'
+        f'<p style="margin:14px 0 0">Hi {escape(greeting_name)},</p>'
+        f'<p style="margin:12px 0 0">Your decals for <strong>{escape(doc_label)} {escape(str(number))}</strong> are completed and waiting on a scheduled installation date.</p>'
+        '<p style="margin:12px 0 0">Please make sure your equipment is cleaned and staged for your installation. Once we have a date selected, we will put you on our installation schedule and let you know if we have that day open.</p>'
+        '<p style="margin:12px 0 0">Choose a tentative date, preferred time, and share any installation notes using the calendar below.</p>'
+        '<div style="text-align:center;margin:22px 0">'
+        f'<a href="{schedule_url}" style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;padding:14px 26px;font-weight:bold;letter-spacing:1px;font-size:13px">CHOOSE A TENTATIVE DATE →</a>'
+        '</div>'
+        '<p style="margin:0;color:#6B7280;font-size:12px">Tentative requests are reviewed by our team before an installation is confirmed.</p>'
+        '<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
+        f'<div style="font-weight:bold">{escape(cname)}</div>'
+        '<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
+        '</div></td></tr></table></div>'
+    )
+
+
+async def _create_install_schedule_request(
+    collection,
+    doc: dict,
+    recipient: str,
+    customer_id: str,
+    contact_id: Optional[str],
+) -> dict:
+    token = secrets.token_urlsafe(24)
+    request = {
+        "token": token,
+        "doc_collection": collection.name,
+        "doc_id": str(doc["_id"]),
+        "customer_id": customer_id,
+        "contact_id": contact_id,
+        "recipient": recipient,
+        "status": "sent",
+        "created_at": now_iso(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+    }
+    result = await db.install_schedule_requests.insert_one(request)
+    request["_id"] = result.inserted_id
+    return request
+
+
 async def _set_work_status(collection, doc_id: str, kind_label: str, status: str):
     if status not in WORK_STATUS_LABELS:
         raise HTTPException(status_code=400, detail="Invalid work status")
@@ -3731,10 +3795,29 @@ async def _set_work_status(collection, doc_id: str, kind_label: str, status: str
             company = await get_settings()
             greeting = (contact or {}).get("name") or ((cust.get("company") or cust.get("name")) if cust else "Customer")
             label = WORK_STATUS_LABELS[status]
-            html = render_work_status_email(greeting, kind_label, doc.get("number", ""), label, job_title=doc.get("title"), company=company)
-            await send_email(to=to, subject=f"Order update — {doc.get('number', '')} is now {label}", html=html)
+            if status == "completed_install_schedule":
+                request = await _create_install_schedule_request(
+                    collection,
+                    doc,
+                    to,
+                    cid,
+                    str(doc.get("contact_id")) if doc.get("contact_id") else None,
+                )
+                schedule_url = f"{PUBLIC_BASE_URL}/installation-schedule/{request['token']}"
+                html = render_install_schedule_email(
+                    greeting,
+                    kind_label,
+                    doc.get("number", ""),
+                    schedule_url,
+                    company,
+                )
+                subject = f"Your Decals Are Completed — choose an installation date"
+            else:
+                html = render_work_status_email(greeting, kind_label, doc.get("number", ""), label, job_title=doc.get("title"), company=company)
+                subject = f"Order update — {doc.get('number', '')} is now {label}"
+            await send_email(to=to, subject=subject, html=html)
             try:
-                await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {kind_label} {doc.get('number', '')} — {label}", html=html)
+                await send_email(to=BCC_COPY_EMAIL, subject=f"[Copy] {subject}", html=html)
             except Exception as e:
                 logger.warning(f"BCC work-status copy failed: {e}")
     except Exception as e:
@@ -3967,6 +4050,7 @@ async def list_installs(month: Optional[str] = None, user: dict = Depends(requir
 async def create_install(payload: InstallInput, user: dict = Depends(require_staff)):
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
+    doc["status"] = payload.status if payload.status in ("tentative", "confirmed") else "confirmed"
     doc["created_at"] = now_iso()
     res = await db.installs.insert_one(doc)
     notify = await _notify_install(str(res.inserted_id))
@@ -3980,14 +4064,16 @@ async def update_install(iid: str, payload: InstallInput, user: dict = Depends(r
     existing = await get_or_404(db.installs, iid, "Install")
     doc = payload.model_dump()
     doc["time_of_day"] = payload.time_of_day if payload.time_of_day in INSTALL_TIME_LABELS else "morning"
+    doc["status"] = payload.status if payload.status in ("tentative", "confirmed") else "confirmed"
     date_changed = (existing.get("date") or "") != (payload.date or "")
     if date_changed:
         # allow the day-before reminder to fire again for the new date
         await db.installs.update_one({"_id": oid(iid)}, {"$unset": {"reminder_sent_at": ""}})
     await db.installs.update_one({"_id": oid(iid)}, {"$set": doc})
     out = await _enrich_install(await db.installs.find_one({"_id": oid(iid)}))
-    if date_changed:
-        out["notify"] = await _notify_install(iid, reschedule=True)
+    is_confirming = existing.get("status") == "tentative" and doc["status"] == "confirmed"
+    if doc["status"] == "confirmed" and (date_changed or is_confirming):
+        out["notify"] = await _notify_install(iid, reschedule=date_changed and not is_confirming)
     return out
 
 
@@ -4004,6 +4090,153 @@ async def delete_install(iid: str, payload: DeleteConfirm, user: dict = Depends(
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Install not found")
     return {"message": "deleted"}
+
+
+def _schedule_request_collection(name: str):
+    collections = {
+        "estimates": db.estimates,
+        "sales_orders": db.sales_orders,
+        "invoices": db.invoices,
+    }
+    return collections.get(name)
+
+
+async def _public_install_schedule_request(token: str) -> tuple:
+    request = await db.install_schedule_requests.find_one({"token": token})
+    if not request:
+        raise HTTPException(status_code=404, detail="This installation scheduling link is invalid.")
+    try:
+        expires_at = datetime.fromisoformat(str(request.get("expires_at", "")).replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="This installation scheduling link is invalid.")
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="This installation scheduling link has expired.")
+    collection = _schedule_request_collection(request.get("doc_collection"))
+    if collection is None or not ObjectId.is_valid(str(request.get("doc_id") or "")):
+        raise HTTPException(status_code=404, detail="This installation scheduling link is invalid.")
+    doc = await collection.find_one({"_id": oid(request["doc_id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="This order is no longer available.")
+    return request, doc
+
+
+def _validate_tentative_install_slot(preferred_date: str, time_of_day: str) -> datetime.date:
+    try:
+        chosen = datetime.strptime(preferred_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Choose a valid installation date")
+    today = datetime.now(timezone.utc).date()
+    if chosen < today or chosen > today + timedelta(days=90):
+        raise HTTPException(status_code=400, detail="Choose a date within the next 90 days")
+    weekday = chosen.weekday()
+    if weekday > 4:
+        raise HTTPException(status_code=400, detail="Tentative installation dates are Monday through Friday")
+    if weekday == 4 and time_of_day != "morning":
+        raise HTTPException(status_code=400, detail="Friday tentative installations are available in the morning only")
+    if time_of_day not in INSTALL_TIME_LABELS:
+        raise HTTPException(status_code=400, detail="Choose a valid installation time")
+    return chosen
+
+
+@api_router.get("/pub/install-schedule/{token}")
+async def pub_install_schedule_info(token: str):
+    request, doc = await _public_install_schedule_request(token)
+    customer = None
+    customer_id = str(request.get("customer_id") or doc.get("customer_id") or "")
+    if ObjectId.is_valid(customer_id):
+        customer = await db.customers.find_one({"_id": oid(customer_id)})
+    return {
+        "number": doc.get("number"),
+        "title": doc.get("title"),
+        "customer_name": (customer or {}).get("company") or (customer or {}).get("name") or "Customer",
+        "status": request.get("status"),
+        "selected_date": request.get("preferred_date"),
+        "selected_time": request.get("time_of_day"),
+        "selected_notes": request.get("notes"),
+        "date_from": datetime.now(timezone.utc).date().isoformat(),
+        "date_to": (datetime.now(timezone.utc).date() + timedelta(days=90)).isoformat(),
+    }
+
+
+@api_router.post("/pub/install-schedule/{token}")
+async def submit_tentative_install_schedule(token: str, payload: TentativeInstallScheduleInput):
+    request, doc = await _public_install_schedule_request(token)
+    if request.get("status") == "submitted":
+        raise HTTPException(status_code=409, detail="Your tentative installation request was already submitted")
+    chosen = _validate_tentative_install_slot(payload.preferred_date, payload.time_of_day)
+    claimed = await db.install_schedule_requests.find_one_and_update(
+        {"_id": request["_id"], "status": "sent"},
+        {"$set": {"status": "submitting"}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed:
+        raise HTTPException(status_code=409, detail="Your tentative installation request was already submitted")
+    notes = payload.notes.strip()
+    link_type = {
+        "estimates": "estimate",
+        "sales_orders": "sales_order",
+        "invoices": "invoice",
+    }.get(claimed["doc_collection"])
+    description = f"Tentative customer request · {doc.get('number', '')}"
+    if doc.get("title"):
+        description += f" · {doc['title']}"
+    if notes:
+        description += f"\nCustomer notes: {notes}"
+    install_doc = {
+        "date": chosen.isoformat(),
+        "time_of_day": payload.time_of_day,
+        "status": "tentative",
+        "customer_id": claimed["customer_id"],
+        "contact_id": claimed.get("contact_id"),
+        "description": description,
+        "linked_type": link_type,
+        "linked_id": claimed["doc_id"],
+        "customer_request_id": str(claimed["_id"]),
+        "tentative_notes": notes,
+        "requested_at": now_iso(),
+        "created_at": now_iso(),
+    }
+    try:
+        result = await db.installs.insert_one(install_doc)
+        await db.install_schedule_requests.update_one(
+            {"_id": claimed["_id"]},
+            {"$set": {
+                "status": "submitted",
+                "preferred_date": chosen.isoformat(),
+                "time_of_day": payload.time_of_day,
+                "notes": notes,
+                "submitted_at": now_iso(),
+                "tentative_install_id": str(result.inserted_id),
+            }},
+        )
+    except Exception:
+        await db.install_schedule_requests.update_one(
+            {"_id": claimed["_id"]},
+            {"$set": {"status": "sent"}},
+        )
+        raise
+    customer_name = "Customer"
+    if ObjectId.is_valid(str(claimed.get("customer_id") or "")):
+        customer = await db.customers.find_one({"_id": oid(claimed["customer_id"])})
+        customer_name = (customer or {}).get("company") or (customer or {}).get("name") or customer_name
+    time_label = INSTALL_TIME_LABELS[payload.time_of_day]
+    subject = f"Tentative installation request — {doc.get('number', '')}"
+    internal_html = (
+        f'<p><strong>{escape(customer_name)}</strong> requested a tentative installation slot.</p>'
+        f'<p><strong>Date:</strong> {escape(chosen.isoformat())}<br />'
+        f'<strong>Time:</strong> {escape(time_label)}<br />'
+        f'<strong>Order:</strong> {escape(str(doc.get("number") or ""))}</p>'
+        f'<p><strong>Customer notes:</strong><br />{escape(notes or "None provided")}</p>'
+    )
+    try:
+        await send_email(to=BCC_COPY_EMAIL, subject=subject, html=internal_html)
+    except Exception as error:
+        logger.warning(f"Tentative installation request notification failed: {error}")
+    return {
+        "status": "submitted",
+        "preferred_date": chosen.isoformat(),
+        "time_of_day": payload.time_of_day,
+    }
 
 
 

@@ -30,6 +30,7 @@ import Proofs from "@/pages/Proofs";
 import Reports from "@/pages/Reports";
 import TimeClock from "@/pages/TimeClock";
 import Installs from "@/pages/Installs";
+import PublicInstallSchedule from "@/pages/PublicInstallSchedule";
 
 function Loading() {
   return (
@@ -96,6 +97,7 @@ function AppRoutes() {
             <Route path="/pay/:token" element={<PublicPay />} />
             <Route path="/approve/:token" element={<PublicApprove />} />
             <Route path="/proof/:token" element={<PublicProof />} />
+            <Route path="/installation-schedule/:token" element={<PublicInstallSchedule />} />
             <Route path="/" element={<Root />} />
             <Route
               path="/portal"
