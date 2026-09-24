@@ -6448,7 +6448,7 @@ async def send_proof(pid: str, payload: ProofSendInput = ProofSendInput(), user:
     cust = await db.customers.find_one({"_id": oid(proof["customer_id"])}) if proof.get("customer_id") else None
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     company = await get_settings()
-    sent_to, failed = [], []
+    sent_to, failed, receipts = [], [], []
     for addr in to_list:
         token = secrets.token_urlsafe(16)
         html = render_proof_email(proof, v, cname, token, company)
@@ -6457,14 +6457,15 @@ async def send_proof(pid: str, payload: ProofSendInput = ProofSendInput(), user:
         except Exception as e:
             logger.warning(f"Proof email to {addr} failed: {e}")
             failed.append(addr); continue
-        await db.proof_tokens.insert_one({"token": token, "proof_id": pid, "version": v["version"], "email": addr, "created_at": now_iso()})
+        await db.proof_tokens.insert_one({"token": token, "proof_id": pid, "version": v["version"], "email": addr, "created_at": now_iso(), "opened_at": None})
         sent_to.append(addr)
+        receipts.append({"email": addr, "token": token, "opened_at": None})
     if not sent_to:
         raise HTTPException(status_code=502, detail="Could not send to any of the selected recipients")
     # mark the current version as sent
     await db.proofs.update_one(
         {"_id": oid(pid), "versions.version": v["version"]},
-        {"$set": {"versions.$.sent_at": now_iso(), "versions.$.sent_to": ", ".join(sent_to),
+        {"$set": {"versions.$.sent_at": now_iso(), "versions.$.sent_to": ", ".join(sent_to), "versions.$.sent_recipients": receipts,
                   "status": "sent", "updated_at": now_iso()}},
     )
     try:
@@ -6506,6 +6507,23 @@ async def pub_proof_info(token: str):
         "decision": ver.get("decision") if ver else None,
         "change_notes": ver.get("change_notes") if ver else None,
     }
+
+
+@api_router.get("/track/proof-open/{token}")
+async def track_proof_open(token: str):
+    record = await db.proof_tokens.find_one({"token": token})
+    if record and not record.get("opened_at"):
+        now = now_iso()
+        await db.proof_tokens.update_one({"_id": record["_id"], "opened_at": None}, {"$set": {"opened_at": now}})
+        await db.proofs.update_one(
+            {"_id": oid(record["proof_id"])},
+            {"$set": {"versions.$[version].sent_recipients.$[recipient].opened_at": now}},
+            array_filters=[
+                {"version.version": record["version"]},
+                {"recipient.token": token, "recipient.opened_at": None},
+            ],
+        )
+    return Response(content=_PIXEL, media_type="image/gif", headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @api_router.get("/pub/proof/{token}/file")
@@ -6583,6 +6601,7 @@ def render_proof_email(proof: dict, ver: dict, customer_name: str, token: str, c
         f'<div style="margin-top:10px"><a href="{file_url}" style="color:#0E7490;font-size:12px">View / download the file &rarr;</a></div>'
         f'</td></tr>'
     )
+    pixel = "" if internal else f'<img src="{PUBLIC_BASE_URL}/api/track/proof-open/{token}" width="1" height="1" alt="" style="display:none" />'
     return (
         f'<div style="background:#F0F1F3;padding:24px 0;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
         f'<table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB">'
@@ -6595,7 +6614,8 @@ def render_proof_email(proof: dict, ver: dict, customer_name: str, token: str, c
         f'<tr><td style="padding:20px 32px 0">'
         f'<div style="font-size:10px;letter-spacing:2px;color:#6B7280;text-transform:uppercase">Prepared for</div>'
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
-        f'<p style="margin:16px 0 0">Please review the artwork proof for <strong>{escape(str(proof.get("title", "")))}</strong>.</p>'
+        f'<p style="margin:16px 0 0">Please review the attached artwork. If everything looks good, please click the &quot;Approve&quot; button so we can finalize the files for production.</p>'
+        f'<p style="margin:12px 0 0">If you need any changes, let us know what you would like updated, and we will revise the design and resend it for your approval.</p>'
         f'{notes_html}'
         f'</td></tr>'
         f'{preview}'
@@ -6607,7 +6627,7 @@ def render_proof_email(proof: dict, ver: dict, customer_name: str, token: str, c
         f'<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
         f'</div></td></tr>'
         f'{_disclaimer_html()}'
-        f'</table></div>'
+        f'</table></div>{pixel}'
     )
 
 

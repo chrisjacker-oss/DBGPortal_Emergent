@@ -37,6 +37,14 @@ function ProofStatus({ status }) {
   );
 }
 
+function ProofReadState({ version, testid }) {
+  const recipients = version?.sent_recipients || [];
+  if (!recipients.length) return <span className="text-xs text-muted-foreground" data-testid={testid}>Not tracked</span>;
+  const opened = recipients.filter((recipient) => recipient.opened_at).length;
+  const title = recipients.map((recipient) => `${recipient.email}: ${recipient.opened_at ? "Opened" : "Unread"}`).join("\n");
+  return <span title={title} data-testid={testid} className={opened ? "text-xs font-mono text-[#15803D]" : "text-xs font-mono text-[#B45309]"}>{opened ? `Opened ${opened}/${recipients.length}` : `Unread 0/${recipients.length}`}</span>;
+}
+
 const empty = () => ({ customer_id: "", contact_id: "", title: "", notes: "", link_kind: "", link_id: "" });
 
 export default function Proofs() {
@@ -132,6 +140,7 @@ export default function Proofs() {
                 <th className="px-5 py-3 font-mono text-center">Ver.</th>
                 <th className="px-5 py-3 font-mono">Status</th>
                 <th className="px-5 py-3 font-mono">Sent To</th>
+                <th className="px-5 py-3 font-mono">Read</th>
                 <th className="px-5 py-3 font-mono text-right">Actions</th>
               </tr>
             </thead>
@@ -152,6 +161,7 @@ export default function Proofs() {
                       ) : null}
                     </td>
                     <td className="px-5 py-3 text-xs text-muted-foreground">{dec?.sent_to || "—"}</td>
+                    <td className="px-5 py-3"><ProofReadState version={dec} testid={`proof-read-${r.id}`} /></td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end">
                         <ActionsMenu testid={`proof-actions-${r.id}`} items={[
@@ -167,7 +177,7 @@ export default function Proofs() {
                   </tr>
                 );
               })}
-              {rows.length === 0 && <tr><td colSpan={8} className="px-6 py-12 text-center text-muted-foreground"><ImageIcon size={22} className="mx-auto mb-2 opacity-50" />No artwork proofs yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={9} className="px-6 py-12 text-center text-muted-foreground"><ImageIcon size={22} className="mx-auto mb-2 opacity-50" />No artwork proofs yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -249,6 +259,7 @@ export default function Proofs() {
                 <div className="text-xs text-muted-foreground mt-1">
                   Uploaded {String(v.uploaded_at).slice(0, 10)}{v.uploaded_by ? ` by ${v.uploaded_by}` : ""}
                   {v.sent_at ? ` · Sent ${String(v.sent_at).slice(0, 10)} to ${v.sent_to || ""}` : ""}
+                  {v.sent_recipients?.length ? ` · Opened ${v.sent_recipients.filter((recipient) => recipient.opened_at).length}/${v.sent_recipients.length}` : ""}
                   {v.decided_at ? ` · Responded ${String(v.decided_at).slice(0, 10)}${v.decided_by ? ` by ${v.decided_by}` : ""}` : ""}
                 </div>
                 {v.change_notes && <div className="mt-2 text-xs text-[#B45309] bg-[#F59E0B]/10 border border-[#F59E0B]/30 p-2 whitespace-pre-wrap">“{v.change_notes}”</div>}

@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Artwork Proof emails now include the customer approval instructions
+  requested by the shop. Each proof recipient gets an individual open-tracking pixel;
+  Artwork Proofs shows `Unread X/N` or `Opened X/N` per current version and history.
 - **September 2026**: Tentative install requests now support staff decisions: **Approved**
   emails acceptance of the selected date, while **Date taken / offer open date** lets staff
   select a replacement slot and email a secure customer **Accept this date** action.
@@ -142,6 +145,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Proof email-read tracking pixel and the Artwork Proofs `Opened 1/1`
+  indicator were API/browser verified. The temporary verification proof was removed.
 - September 2026: Alternate-date workflow was API-verified end-to-end: customer tentative
   request → staff offer → public offered-date view → customer acceptance → confirmed install.
 - September 2026: Tentative-install QA passed 17 sequential API tests, including status

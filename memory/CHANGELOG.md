@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Artwork proof read receipts**: Proof emails now include the customer approval/change
+  instructions and per-recipient open tracking. Artwork Proofs and version history show
+  unread/opened counts for each sent version.
 - **Tentative install decisions**: Staff can approve a customer-selected installation date
   or select an open replacement date. Replacement offers are emailed with a secure customer
   acceptance button; calendar entries remain `OFFER` until the customer accepts.
