@@ -4,7 +4,23 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
 import { Btn } from "@/components/kit";
 import { Inp } from "@/pages/Customers";
-import { Gear, UploadSimple, Trash } from "@phosphor-icons/react";
+import {
+  ArrowCounterClockwise,
+  Database,
+  DownloadSimple,
+  Gear,
+  Trash,
+  UploadSimple,
+  Warning,
+} from "@phosphor-icons/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const LOGO_URL = `${process.env.REACT_APP_BACKEND_URL}/api/pub/logo`;
 
@@ -12,6 +28,12 @@ export default function Settings() {
   const [form, setForm] = useState(null);
   const [logoTs, setLogoTs] = useState(Date.now());
   const fileRef = useRef(null);
+  const backupFileRef = useRef(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [backupFile, setBackupFile] = useState(null);
+  const [restorePassword, setRestorePassword] = useState("");
+  const [restoreConfirmation, setRestoreConfirmation] = useState("");
+  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => { api.get("/settings").then((r) => setForm(r.data)); }, []);
   if (!form) return null;
@@ -58,6 +80,54 @@ export default function Settings() {
     try { await api.delete("/settings/logo"); setLogoTs(Date.now()); toast.success("Reverted to default logo"); }
     catch { toast.error("Failed"); }
   };
+  const downloadBackup = async () => {
+    try {
+      const response = await api.get("/settings/backup", { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `dbg-signs-crm-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success("CRM backup downloaded");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Backup export failed");
+    }
+  };
+  const closeRestore = () => {
+    if (restoring) return;
+    setRestoreOpen(false);
+    setBackupFile(null);
+    setRestorePassword("");
+    setRestoreConfirmation("");
+  };
+  const restoreBackup = async () => {
+    if (!backupFile) {
+      toast.error("Choose a CRM backup file");
+      return;
+    }
+    if (restoreConfirmation.trim().toUpperCase() !== "RESTORE") {
+      toast.error('Type "RESTORE" to confirm');
+      return;
+    }
+    setRestoring(true);
+    const formData = new FormData();
+    formData.append("file", backupFile);
+    formData.append("password", restorePassword);
+    formData.append("confirmation", restoreConfirmation);
+    try {
+      await api.post("/settings/restore", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      toast.success("CRM restore completed. Signing out for a fresh session…");
+      window.setTimeout(() => window.location.assign("/login"), 900);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Restore failed before any data was changed");
+      setRestoring(false);
+    }
+  };
 
   return (
     <div>
@@ -76,6 +146,31 @@ export default function Settings() {
               <Btn variant="outline" onClick={() => fileRef.current?.click()} data-testid="upload-logo-btn"><UploadSimple size={16} weight="bold" /> Upload logo</Btn>
               <Btn variant="ghost" onClick={resetLogo} data-testid="reset-logo-btn"><Trash size={16} /> Use default</Btn>
             </div>
+          </div>
+        </div>
+
+        <div className="border border-border bg-card p-8 space-y-4" data-testid="backup-card">
+          <div className="flex items-start gap-3">
+            <Database size={22} weight="bold" className="mt-0.5 text-[#0E7490]" />
+            <div>
+              <div className="overline text-muted-foreground">CRM backup & restore</div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Download a complete JSON copy of the CRM database for safe keeping.
+                Restoring replaces the current CRM data with the selected backup.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Btn variant="outline" onClick={downloadBackup} data-testid="download-crm-backup-btn">
+              <DownloadSimple size={16} weight="bold" /> Download backup
+            </Btn>
+            <Btn
+              variant="danger"
+              onClick={() => setRestoreOpen(true)}
+              data-testid="open-crm-restore-btn"
+            >
+              <ArrowCounterClockwise size={16} weight="bold" /> Restore backup
+            </Btn>
           </div>
         </div>
 
@@ -125,6 +220,69 @@ export default function Settings() {
           </div>
         </div>
       </div>
+
+      <Dialog open={restoreOpen} onOpenChange={(open) => !open && closeRestore()}>
+        <DialogContent className="rounded-none max-w-lg" data-testid="crm-restore-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Restore CRM backup</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              This permanently replaces current CRM database records with the selected backup.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div
+              className="flex gap-3 border border-[#DC2626]/30 bg-[#DC2626]/5 p-3 text-sm"
+              data-testid="crm-restore-warning"
+            >
+              <Warning size={20} weight="fill" className="shrink-0 text-[#DC2626]" />
+              <span>Back up current data first. You will need to sign in again after restoring.</span>
+            </div>
+            <label className="block">
+              <span className="overline text-muted-foreground">Backup file (.json)</span>
+              <input
+                ref={backupFileRef}
+                type="file"
+                accept=".json,application/json"
+                disabled={restoring}
+                onChange={(event) => setBackupFile(event.target.files?.[0] || null)}
+                data-testid="crm-restore-file-input"
+                className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none file:mr-3 file:border-0 file:bg-foreground file:text-primary-foreground file:px-3 file:py-1 file:text-xs"
+              />
+              {backupFile && (
+                <div className="mt-1 text-xs text-muted-foreground" data-testid="crm-restore-file-name">
+                  {backupFile.name}
+                </div>
+              )}
+            </label>
+            <Inp
+              label="Admin password"
+              type="password"
+              value={restorePassword}
+              onChange={(event) => setRestorePassword(event.target.value)}
+              testid="crm-restore-password"
+            />
+            <Inp
+              label='Type "RESTORE" to confirm'
+              value={restoreConfirmation}
+              onChange={(event) => setRestoreConfirmation(event.target.value)}
+              testid="crm-restore-confirmation"
+            />
+          </div>
+          <DialogFooter>
+            <Btn variant="outline" onClick={closeRestore} disabled={restoring} data-testid="cancel-crm-restore-btn">
+              Cancel
+            </Btn>
+            <Btn
+              variant="danger"
+              onClick={restoreBackup}
+              disabled={restoring || !backupFile || !restorePassword}
+              data-testid="confirm-crm-restore-btn"
+            >
+              {restoring ? "Restoring…" : "Replace CRM data"}
+            </Btn>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

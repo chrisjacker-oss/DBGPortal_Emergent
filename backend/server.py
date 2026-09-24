@@ -29,7 +29,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.lib.utils import ImageReader
 from reportlab.lib import colors
-from bson import ObjectId
+from bson import ObjectId, json_util
 from pymongo import ReturnDocument
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query, Header
 from starlette.middleware.cors import CORSMiddleware
@@ -361,6 +361,9 @@ DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machin
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0, "idle_timeout_min": 90.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold", "idle_timeout_min"}
+CRM_BACKUP_FORMAT = "dbg-signs-crm-backup"
+CRM_BACKUP_MAX_BYTES = 100 * 1024 * 1024
+crm_backup_lock = asyncio.Lock()
 
 PRESET_CATEGORIES = ["Cut Vinyl", "Digital Vinyl", "Banner", "Substrates", "Laminates", "Marketing Materials", "CNC Router Time", "Design Time", "Decal Removal", "Installation", "Shipping"]
 
@@ -1326,6 +1329,90 @@ async def upload_logo(file: UploadFile = File(...), user: dict = Depends(require
 async def reset_logo(user: dict = Depends(require_admin)):
     await db.settings.update_one({"key": "shop"}, {"$unset": {"logo_b64": "", "logo_mime": ""}})
     return {"status": "reset", "has_custom_logo": False}
+
+
+async def _crm_backup_payload() -> dict:
+    collections = {}
+    names = await db.list_collection_names()
+    for name in sorted(names):
+        if name.startswith("system."):
+            continue
+        collections[name] = await db[name].find({}).to_list(length=None)
+    return {
+        "format": CRM_BACKUP_FORMAT,
+        "version": 1,
+        "exported_at": now_iso(),
+        "collections": collections,
+    }
+
+
+def _validate_crm_backup(payload: object) -> dict:
+    if not isinstance(payload, dict) or payload.get("format") != CRM_BACKUP_FORMAT:
+        raise HTTPException(status_code=400, detail="This is not a DBG Signs CRM backup file")
+    collections = payload.get("collections")
+    if not isinstance(collections, dict) or not collections:
+        raise HTTPException(status_code=400, detail="Backup file has no CRM collection data")
+    for name, documents in collections.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_]+", name):
+            raise HTTPException(status_code=400, detail="Backup contains an invalid collection name")
+        if not isinstance(documents, list) or not all(isinstance(doc, dict) for doc in documents):
+            raise HTTPException(status_code=400, detail=f"Backup collection {name} is invalid")
+    return collections
+
+
+@api_router.get("/settings/backup")
+async def export_crm_backup(user: dict = Depends(require_admin)):
+    async with crm_backup_lock:
+        backup = await _crm_backup_payload()
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
+    content = json_util.dumps(backup, indent=2)
+    filename = f"dbg-signs-crm-backup-{stamp}.json"
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@api_router.post("/settings/restore")
+async def restore_crm_backup(
+    file: UploadFile = File(...),
+    password: str = Form(...),
+    confirmation: str = Form(...),
+    user: dict = Depends(require_admin),
+):
+    await verify_admin_password(user, password)
+    if confirmation.strip().upper() != "RESTORE":
+        raise HTTPException(status_code=400, detail='Type "RESTORE" to confirm the replacement')
+    if not (file.filename or "").lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Choose a .json CRM backup file")
+    raw = await file.read(CRM_BACKUP_MAX_BYTES + 1)
+    if len(raw) > CRM_BACKUP_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Backup file must be 100 MB or smaller")
+    try:
+        payload = json_util.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Backup file could not be read")
+    collections = _validate_crm_backup(payload)
+    document_count = sum(len(documents) for documents in collections.values())
+    async with crm_backup_lock:
+        existing = await db.list_collection_names()
+        names_to_clear = {
+            name
+            for name in existing
+            if not name.startswith("system.")
+        } | set(collections)
+        for name in sorted(names_to_clear):
+            await db[name].delete_many({})
+        for name, documents in collections.items():
+            if documents:
+                await db[name].insert_many(documents)
+    return {
+        "status": "restored",
+        "collections": len(collections),
+        "documents": document_count,
+        "message": "CRM restore completed. Sign in again to continue.",
+    }
 
 
 @api_router.get("/pub/logo")

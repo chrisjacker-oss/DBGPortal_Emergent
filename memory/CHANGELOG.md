@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **CRM backup & restore**: Settings has admin-only JSON backup download and protected
+  restore. Restore requires a selected backup, current admin password, and typed
+  `RESTORE`, then signs out for a fresh session.
 - **Salesman work statuses**: Salesmen can update work status on Estimates, Sales
   Orders, and Invoices; each update follows the existing customer notification flow.
 - **Shipping address**: a manual Ship To field now carries from Estimate to Sales

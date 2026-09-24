@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Admin-only CRM Backup & Restore in Settings. Backup exports every
+  MongoDB CRM collection as a portable Extended JSON file; restore replaces current
+  database records only after an admin password and typed `RESTORE` confirmation.
 - **September 2026**: Salesmen can now update customer work status on Estimates,
   Sales Orders, and Invoices. Estimate status changes use the same customer-email
   workflow as existing SO/Invoice updates.
@@ -98,6 +101,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: CRM backup export was verified for an admin; salesman access is
+  denied, malformed restore files are rejected before changes, and a rejection left
+  exported collection counts unchanged. A real restore was not run against live data.
 - September 2026: API workflow verified salesman work-status updates on all three
   document types, shipping-address conversion, unit pricing, and invoice PDF export.
 - Generated PDF was rendered and visually checked. Test documents were deleted;
