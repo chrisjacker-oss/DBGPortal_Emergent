@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Replaced the shared company logo with the supplied DBG Signs &
+  Graphics PNG. The stored logo is used by CRM navigation/settings, public email images,
+  and every PDF generator that reads the company logo setting.
 - **September 2026**: Artwork Proof emails now include the customer approval instructions
   requested by the shop. Each proof recipient gets an individual open-tracking pixel;
   Artwork Proofs shows `Unread X/N` or `Opened X/N` per current version and history.
