@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink, PaymentState } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
@@ -131,6 +131,7 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 font-mono">Work status</th>
                 <th className="px-6 py-3 font-mono">Tracking #</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                <th className="px-6 py-3 font-mono">Payment</th>
                 {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
@@ -155,6 +156,7 @@ export default function SalesOrders() {
                   <td className="px-6 py-3"><WorkStatusSelect value={r.work_status} onChange={(s) => changeWork(r, s)} disabled={r.voided} testid={`so-work-status-${r.id}`} /></td>
                   <td className="px-6 py-3 font-mono text-muted-foreground" data-testid={`so-tracking-cell-${r.id}`}><TrackingLink value={r.tracking_number} shipType={r.shipping_type} shippedDate={r.shipped_date} testid={`so-tracking-${r.id}`} /></td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  <td className="px-6 py-3"><PaymentState doc={r} testid={`so-payment-${r.id}`} /></td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`so-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
@@ -242,7 +244,7 @@ export default function SalesOrders() {
                   </td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={11 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={12 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} sales orders.</td></tr>}
             </tbody>
           </table>
         </div>

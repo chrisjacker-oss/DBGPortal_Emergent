@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Stripe COD/deposit receipts**: Confirmed payment-request charges now display payment
+  state on Estimates, Sales Orders, and Invoices. A one-time email notifies sales when a
+  50/50 down payment or COD charge confirms.
 - **Installation scheduling read receipts**: The Completed / Installation Schedule email
   now tracks opens. Staff see `OPENED` on tentative calendar cards and an opened timestamp
   or `Unread` in the request dialog.

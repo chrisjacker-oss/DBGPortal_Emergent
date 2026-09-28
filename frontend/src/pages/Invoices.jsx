@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, TrackingLink, PaymentState } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
@@ -335,6 +335,7 @@ export default function Invoices() {
                   {isPaid && <td className="px-6 py-3 text-muted-foreground" data-testid={`payment-type-${r.id}`}>{r.payment_method || "—"}</td>}
                   <td className="px-6 py-3 text-right font-mono">
                     {currency(r.total)}
+                    <div className="mt-1"><PaymentState doc={r} testid={`invoice-payment-${r.id}`} /></div>
                     {Number(r.amount_paid || 0) > 0 && r.status !== "paid" && (
                       <div className="text-[11px] text-[#F59E0B]" data-testid={`balance-${r.id}`}>Bal {currency(Number(r.total || 0) - Number(r.amount_paid || 0))}</div>
                     )}

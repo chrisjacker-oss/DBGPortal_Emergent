@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, PaymentState } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
@@ -121,6 +121,7 @@ export default function Estimates() {
                 <th className="px-6 py-3 font-mono">Work status</th>
                 <th className="px-6 py-3 font-mono text-right">Commission</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
+                <th className="px-6 py-3 font-mono">Payment</th>
                 {canSeeMargin && <th className="px-6 py-3 font-mono text-right text-[#0E7490]">Margin</th>}
                 <th className="px-6 py-3 font-mono">Email</th>
                 <th className="px-6 py-3 font-mono text-right">Actions</th>
@@ -158,6 +159,7 @@ export default function Estimates() {
                   </td>
                   <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
+                  <td className="px-6 py-3"><PaymentState doc={r} testid={`estimate-payment-${r.id}`} /></td>
                   {canSeeMargin && <MarginCell row={r} threshold={lowThreshold} testid={`estimate-margin-${r.id}`} />}
                   <td className="px-6 py-3"><ReceiptBadge doc={r} /></td>
                   <td className="px-6 py-3">
@@ -220,7 +222,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {visibleRows.length === 0 && <tr><td colSpan={11 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {visibleRows.length === 0 && <tr><td colSpan={12 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Confirmed Stripe COD/50-50 payments now show a clear `Deposit $…`
+  or `Paid $…` state on Estimate, Sales Order, and Invoice lists. The payment amount
+  continues through Estimate → Sales Order → Invoice conversion, and a confirmed
+  payment sends a one-time sales notification to `sales@dbgsigns.com`.
 - **September 2026**: Completed / Installation Schedule emails now include their own
   tracking pixel. Tentative install cards show `OPENED` when the customer loads the email,
   and the staff install dialog displays the opened timestamp or `Unread` status.
@@ -151,6 +155,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Controlled Stripe-confirmation verification proved a 50/50 payment
+  updates the Estimate, carries to Sales Order and Invoice, and triggers exactly one
+  sales notification after confirmation. Temporary records were removed.
 - September 2026: Completed/install schedule email pixel and Install Calendar
   Opened/Unread indicator were API and browser verified; temporary records were removed.
 - September 2026: Proof email-read tracking pixel and the Artwork Proofs `Opened 1/1`

@@ -2312,6 +2312,57 @@ async def _apply_amount_to_estimate(estimate_id: str, amount: float) -> None:
     await db.estimates.update_one({"_id": estimate["_id"]}, {"$set": update})
 
 
+async def _notify_sales_of_payment(rec: dict) -> None:
+    request_type = rec.get("payment_request_type")
+    if request_type not in _PAYMENT_REQUEST_TYPES:
+        return
+    collection = {
+        "estimates": db.estimates,
+        "sales_orders": db.sales_orders,
+        "invoices": db.invoices,
+    }.get(rec.get("collection"))
+    doc = None
+    if collection is not None and ObjectId.is_valid(str(rec.get("doc_id") or "")):
+        doc = await collection.find_one({"_id": oid(rec["doc_id"])})
+    customer_name = "Customer"
+    if doc and ObjectId.is_valid(str(doc.get("customer_id") or "")):
+        customer = await db.customers.find_one({"_id": oid(doc["customer_id"])})
+        customer_name = (customer or {}).get("company") or (customer or {}).get("name") or customer_name
+    kind = {"estimates": "Estimate", "sales_orders": "Sales Order", "invoices": "Invoice"}.get(
+        rec.get("collection"),
+        "Document",
+    )
+    payment_label = "50/50 down payment" if request_type == "deposit" else "COD payment"
+    amount = _money(rec.get("amount") or 0)
+    number = (doc or {}).get("number") or rec.get("invoice_number") or ""
+    html = (
+        '<div style="font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        '<h2 style="margin:0 0 14px">Customer payment received</h2>'
+        f'<p><strong>{escape(payment_label)}</strong> has been made through Stripe.</p>'
+        '<table style="border-collapse:collapse;font-size:14px">'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Customer</td><td><strong>{escape(customer_name)}</strong></td></tr>'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Document</td><td>{escape(kind)} {escape(str(number))}</td></tr>'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Amount received</td><td><strong>{amount}</strong></td></tr>'
+        '</table></div>'
+    )
+    try:
+        await send_email(
+            to=BCC_COPY_EMAIL,
+            subject=f"Payment received — {payment_label} · {number}",
+            html=html,
+        )
+        await db.payment_transactions.update_one(
+            {"_id": rec["_id"]},
+            {"$set": {"sales_notified_at": now_iso(), "sales_notification_status": "sent"}},
+        )
+    except Exception as error:
+        logger.warning(f"Sales payment notification failed: {error}")
+        await db.payment_transactions.update_one(
+            {"_id": rec["_id"]},
+            {"$set": {"sales_notification_status": "failed", "sales_notification_error": str(error)}},
+        )
+
+
 async def _apply_payment(payment_intent_id: str) -> None:
     # Idempotent: only the first flip pending->paid applies the amount(s)
     res = await db.payment_transactions.update_one(
@@ -2336,6 +2387,7 @@ async def _apply_payment(payment_intent_id: str) -> None:
             {"_id": oid(rec["payment_request_id"])},
             {"$set": {"status": "paid", "paid_at": now_iso()}},
         )
+    await _notify_sales_of_payment(rec)
 
 
 @api_router.post("/payments/create-intent")
