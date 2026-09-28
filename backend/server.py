@@ -3731,6 +3731,7 @@ def render_install_schedule_email(
     doc_label: str,
     number: str,
     schedule_url: str,
+    tracking_url: str,
     company: Optional[dict] = None,
 ) -> str:
     co = company or {}
@@ -3754,7 +3755,7 @@ def render_install_schedule_email(
         '<div style="border-top:1px solid #E5E7EB;margin-top:18px;padding-top:12px">'
         f'<div style="font-weight:bold">{escape(cname)}</div>'
         '<div style="color:#6B7280;font-size:11px;letter-spacing:2px;text-transform:uppercase">Image Is Everything</div>'
-        '</div></td></tr></table></div>'
+        f'</div></td></tr></table></div><img src="{tracking_url}" width="1" height="1" alt="" style="display:none" />'
     )
 
 
@@ -3827,6 +3828,7 @@ async def _create_install_schedule_request(
         "status": "sent",
         "created_at": now_iso(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        "opened_at": None,
     }
     result = await db.install_schedule_requests.insert_one(request)
     request["_id"] = result.inserted_id
@@ -3865,11 +3867,13 @@ async def _set_work_status(collection, doc_id: str, kind_label: str, status: str
                     str(doc.get("contact_id")) if doc.get("contact_id") else None,
                 )
                 schedule_url = f"{PUBLIC_BASE_URL}/installation-schedule/{request['token']}"
+                tracking_url = f"{PUBLIC_BASE_URL}/api/track/install-schedule-open/{request['token']}"
                 html = render_install_schedule_email(
                     greeting,
                     kind_label,
                     doc.get("number", ""),
                     schedule_url,
+                    tracking_url,
                     company,
                 )
                 subject = f"Your Decals Are Completed — choose an installation date"
@@ -4063,6 +4067,12 @@ async def _enrich_install(d: dict) -> dict:
                 {"number": 1},
             )
             d["linked_number"] = linked_doc.get("number") if linked_doc else None
+    if d.get("customer_request_id") and ObjectId.is_valid(str(d["customer_request_id"])):
+        request = await db.install_schedule_requests.find_one(
+            {"_id": oid(d["customer_request_id"])},
+            {"opened_at": 1},
+        )
+        d["schedule_email_opened_at"] = (request or {}).get("opened_at")
     return d
 
 
@@ -4229,6 +4239,19 @@ async def pub_install_schedule_info(token: str):
         "date_from": datetime.now(timezone.utc).date().isoformat(),
         "date_to": (datetime.now(timezone.utc).date() + timedelta(days=90)).isoformat(),
     }
+
+
+@api_router.get("/track/install-schedule-open/{token}")
+async def track_install_schedule_open(token: str):
+    await db.install_schedule_requests.update_one(
+        {"token": token, "opened_at": None},
+        {"$set": {"opened_at": now_iso()}},
+    )
+    return Response(
+        content=_PIXEL,
+        media_type="image/gif",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @api_router.post("/pub/install-schedule/{token}")

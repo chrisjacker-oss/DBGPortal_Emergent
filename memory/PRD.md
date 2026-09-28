@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Completed / Installation Schedule emails now include their own
+  tracking pixel. Tentative install cards show `OPENED` when the customer loads the email,
+  and the staff install dialog displays the opened timestamp or `Unread` status.
 - **September 2026**: Replaced the shared company logo with the supplied DBG Signs &
   Graphics PNG. The stored logo is used by CRM navigation/settings, public email images,
   and every PDF generator that reads the company logo setting.
@@ -148,6 +151,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Completed/install schedule email pixel and Install Calendar
+  Opened/Unread indicator were API and browser verified; temporary records were removed.
 - September 2026: Proof email-read tracking pixel and the Artwork Proofs `Opened 1/1`
   indicator were API/browser verified. The temporary verification proof was removed.
 - September 2026: Alternate-date workflow was API-verified end-to-end: customer tentative

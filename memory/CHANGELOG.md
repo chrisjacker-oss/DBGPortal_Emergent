@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Installation scheduling read receipts**: The Completed / Installation Schedule email
+  now tracks opens. Staff see `OPENED` on tentative calendar cards and an opened timestamp
+  or `Unread` in the request dialog.
 - **Company logo**: Updated the shared DBG Signs & Graphics logo used across CRM screens,
   customer-facing email templates, and generated documents.
 - **Artwork proof read receipts**: Proof emails now include the customer approval/change

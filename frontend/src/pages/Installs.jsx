@@ -162,6 +162,7 @@ export default function Installs() {
                           <button key={it.id} onClick={() => openEdit(it)} data-testid={`install-item-${it.id}`}
                             className={`w-full text-left px-1.5 py-1 text-[11px] leading-tight ${it.status === "tentative" || it.status === "offered" ? "bg-[#F59E0B]/15 text-[#78350F] hover:bg-[#F59E0B]/25" : "bg-[#0A0A0A] text-white hover:bg-[#0A0A0A]/85"}`}>
                             <span className={`inline-block text-[9px] font-bold uppercase px-1 mr-1 ${it.status === "tentative" || it.status === "offered" ? "bg-[#F59E0B] text-[#0A0A0A]" : "bg-[#06B6D4] text-white"}`}>{it.status === "tentative" ? "REQ" : it.status === "offered" ? "OFFER" : it.time_label === "Afternoon" ? "PM" : "AM"}</span>
+                            {it.status === "tentative" && it.schedule_email_opened_at && <span className="inline-block bg-[#16A34A] px-1 text-[9px] font-bold text-white">OPENED</span>}
                             <span className="font-medium">{it.customer_name}</span>
                             {it.linked_number ? (
                               <span role="link" tabIndex={0}
@@ -209,6 +210,12 @@ export default function Installs() {
                 <option value="offered">Open date offered to customer</option>
               </select>
             </label>
+            {editing?.customer_request_id && (
+              <div className="border-l-2 border-[#06B6D4] bg-secondary/30 px-3 py-2 text-xs" data-testid="install-schedule-email-read-state">
+                <span className="font-semibold">Completed / installation schedule email: </span>
+                {editing.schedule_email_opened_at ? `Opened ${String(editing.schedule_email_opened_at).slice(0, 16).replace("T", " ")}` : "Unread"}
+              </div>
+            )}
             <div className="block">
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="install-customer" value={form.customer_id} placeholder="Select customer…"
