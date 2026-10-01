@@ -12,6 +12,8 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Paid Stripe invoice alert**: Fully paid Stripe/Credit Card invoices now send sales a
+  separate, one-time paid-in-full notification when the Invoice moves into Paid.
 - **Stripe COD/deposit receipts**: Confirmed payment-request charges now display payment
   state on Estimates, Sales Orders, and Invoices. A one-time email notifies sales when a
   50/50 down payment or COD charge confirms.

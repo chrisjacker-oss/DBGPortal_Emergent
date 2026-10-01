@@ -2314,7 +2314,7 @@ async def _apply_amount_to_estimate(estimate_id: str, amount: float) -> None:
 
 async def _notify_sales_of_payment(rec: dict) -> None:
     request_type = rec.get("payment_request_type")
-    if request_type not in _PAYMENT_REQUEST_TYPES:
+    if request_type != "deposit":
         return
     collection = {
         "estimates": db.estimates,
@@ -2332,7 +2332,7 @@ async def _notify_sales_of_payment(rec: dict) -> None:
         rec.get("collection"),
         "Document",
     )
-    payment_label = "50/50 down payment" if request_type == "deposit" else "COD payment"
+    payment_label = "50/50 down payment"
     amount = _money(rec.get("amount") or 0)
     number = (doc or {}).get("number") or rec.get("invoice_number") or ""
     html = (
@@ -2363,6 +2363,50 @@ async def _notify_sales_of_payment(rec: dict) -> None:
         )
 
 
+async def _notify_sales_invoice_paid_via_stripe(invoice_id: str, rec: dict) -> None:
+    invoice = await db.invoices.find_one({"_id": oid(invoice_id), "status": "paid"})
+    if not invoice:
+        return
+    claimed = await db.invoices.update_one(
+        {
+            "_id": invoice["_id"],
+            "stripe_paid_sales_notified_at": {"$exists": False},
+            "stripe_paid_sales_notification_claimed": {"$ne": True},
+        },
+        {"$set": {"stripe_paid_sales_notification_claimed": True}},
+    )
+    if claimed.modified_count != 1:
+        return
+    customer_name = "Customer"
+    if ObjectId.is_valid(str(invoice.get("customer_id") or "")):
+        customer = await db.customers.find_one({"_id": oid(invoice["customer_id"])})
+        customer_name = (customer or {}).get("company") or (customer or {}).get("name") or customer_name
+    html = (
+        '<div style="font-family:Arial,Helvetica,sans-serif;color:#0A0A0A">'
+        '<h2 style="margin:0 0 14px">Invoice paid via Stripe / Credit Card</h2>'
+        '<p>The customer has paid this invoice in full via Stripe / Credit Card.</p>'
+        '<table style="border-collapse:collapse;font-size:14px">'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Customer</td><td><strong>{escape(customer_name)}</strong></td></tr>'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Invoice</td><td>{escape(str(invoice.get("number") or ""))}</td></tr>'
+        f'<tr><td style="padding:5px 18px 5px 0;color:#6B7280">Amount paid</td><td><strong>{_money(invoice.get("total") or 0)}</strong></td></tr>'
+        '</table></div>'
+    )
+    try:
+        await send_email(
+            to=BCC_COPY_EMAIL,
+            subject=f"Invoice paid via Stripe / Credit Card — {invoice.get('number', '')}",
+            html=html,
+        )
+        await db.invoices.update_one(
+            {"_id": invoice["_id"]},
+            {"$set": {"stripe_paid_sales_notified_at": now_iso()}},
+        )
+    except Exception as error:
+        logger.warning(f"Stripe paid invoice sales notification failed: {error}")
+        await db.invoices.update_one(
+            {"_id": invoice["_id"]},
+            {"$set": {"stripe_paid_sales_notification_claimed": False}},
+        )
 async def _apply_payment(payment_intent_id: str) -> None:
     # Idempotent: only the first flip pending->paid applies the amount(s)
     res = await db.payment_transactions.update_one(
@@ -2388,6 +2432,16 @@ async def _apply_payment(payment_intent_id: str) -> None:
             {"$set": {"status": "paid", "paid_at": now_iso()}},
         )
     await _notify_sales_of_payment(rec)
+    invoice_ids = []
+    if allocations:
+        invoice_ids = [allocation["invoice_id"] for allocation in allocations]
+    elif rec.get("collection") == "invoices" and rec.get("doc_id"):
+        invoice_ids = [rec["doc_id"]]
+    elif rec.get("invoice_id"):
+        invoice_ids = [rec["invoice_id"]]
+    for invoice_id in dict.fromkeys(invoice_ids):
+        if ObjectId.is_valid(str(invoice_id)):
+            await _notify_sales_invoice_paid_via_stripe(invoice_id, rec)
 
 
 @api_router.post("/payments/create-intent")
