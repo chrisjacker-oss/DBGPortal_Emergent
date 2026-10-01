@@ -46,12 +46,13 @@ export function PaymentState({ doc, testid }) {
   const paid = doc?.status === "paid" ? total : Number(doc?.amount_paid || 0);
   if (paid <= 0) return <span className="text-muted-foreground" data-testid={testid}>—</span>;
   const full = paid >= total - 0.005;
+  const stripe = doc?.last_payment_method === "Stripe / Credit Card";
   return (
     <span
       className={full ? "font-mono text-[#15803D]" : "font-mono text-[#B45309]"}
       data-testid={testid}
     >
-      {full ? "Paid" : "Deposit"} {currency(paid)}
+      {stripe ? "Stripe " : ""}{full ? "Paid" : "Deposit"} {currency(paid)}
     </span>
   );
 }

@@ -12,6 +12,9 @@
 - **Installer work orders**: installers view/create/edit own work orders, cannot delete.
 
 ## Sep 2026
+- **Explicit Stripe payment state**: Estimate, Sales Order, and Invoice lists now show
+  `Stripe Deposit` or `Stripe Paid`. COD payments on Estimates and Sales Orders send the
+  sales customer-paid Stripe/Credit Card notification too.
 - **Paid Stripe invoice alert**: Fully paid Stripe/Credit Card invoices now send sales a
   separate, one-time paid-in-full notification when the Invoice moves into Paid.
 - **Stripe COD/deposit receipts**: Confirmed payment-request charges now display payment

@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **September 2026**: Document payment state now identifies the customer payment source:
+  `Stripe Deposit $…` or `Stripe Paid $…` on Estimates, Sales Orders, and Invoices.
+  COD payments on Estimates/Sales Orders now also notify sales as paid via Stripe/Credit Card.
 - **September 2026**: When a Stripe/Credit Card payment fully moves an Invoice into the
   **Paid** state, `sales@dbgsigns.com` receives a separate one-time “Invoice paid via
   Stripe / Credit Card” email. Deposit notices remain separate from the full-paid alert.
@@ -158,6 +161,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- September 2026: Controlled COD payment verified the Sales Order becomes `Stripe Paid`,
+  stores the Stripe/Credit Card source, and sends the sales customer-paid notice once.
 - September 2026: Controlled full Stripe invoice payment verified Paid status, one sales
   email, and idempotent retry protection. Temporary invoice/payment records were removed.
 - September 2026: Controlled Stripe-confirmation verification proved a 50/50 payment

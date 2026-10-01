@@ -2270,7 +2270,11 @@ async def _apply_amount_to_invoice(invoice_id: str, amount: float) -> None:
     total = float(inv.get("total") or 0)
     paid = round(float(inv.get("amount_paid") or 0) + float(amount or 0), 2)
     fully = paid >= total - 0.005
-    upd = {"amount_paid": paid, "status": "paid" if fully else "partial"}
+    upd = {
+        "amount_paid": paid,
+        "status": "paid" if fully else "partial",
+        "last_payment_method": "Stripe / Credit Card",
+    }
     if fully:
         upd["paid_at"] = now_iso()
         upd["paid_via"] = "stripe"
@@ -2288,7 +2292,11 @@ async def _apply_amount_to_so(so_id: str, amount: float) -> None:
     total = float(so.get("total") or 0)
     paid = round(float(so.get("amount_paid") or 0) + float(amount or 0), 2)
     fully = paid >= total - 0.005
-    upd = {"amount_paid": paid, "payment_status": "paid" if fully else "partial"}
+    upd = {
+        "amount_paid": paid,
+        "payment_status": "paid" if fully else "partial",
+        "last_payment_method": "Stripe / Credit Card",
+    }
     if fully:
         upd["paid_at"] = now_iso()
         upd["paid_via"] = "stripe"
@@ -2305,6 +2313,7 @@ async def _apply_amount_to_estimate(estimate_id: str, amount: float) -> None:
     update = {
         "amount_paid": paid,
         "payment_status": "paid" if fully else "partial",
+        "last_payment_method": "Stripe / Credit Card",
     }
     if fully:
         update["paid_at"] = now_iso()
@@ -2314,7 +2323,12 @@ async def _apply_amount_to_estimate(estimate_id: str, amount: float) -> None:
 
 async def _notify_sales_of_payment(rec: dict) -> None:
     request_type = rec.get("payment_request_type")
-    if request_type != "deposit":
+    is_invoice = rec.get("collection") == "invoices" or bool(rec.get("invoice_id"))
+    if request_type == "deposit":
+        payment_label = "50/50 down payment"
+    elif request_type == "cod" and not is_invoice:
+        payment_label = "Customer paid via Stripe / Credit Card"
+    else:
         return
     collection = {
         "estimates": db.estimates,
@@ -2332,7 +2346,6 @@ async def _notify_sales_of_payment(rec: dict) -> None:
         rec.get("collection"),
         "Document",
     )
-    payment_label = "50/50 down payment"
     amount = _money(rec.get("amount") or 0)
     number = (doc or {}).get("number") or rec.get("invoice_number") or ""
     html = (
