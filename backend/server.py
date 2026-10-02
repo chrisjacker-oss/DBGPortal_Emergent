@@ -1642,8 +1642,10 @@ async def create_estimate(payload: EstimateInput, user: dict = Depends(require_s
 
 
 @api_router.put("/estimates/{eid}")
-async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
+async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends(require_admin)):
     existing = await get_or_404(db.estimates, eid, "Estimate")
+    if str(existing.get("customer_id")) != str(payload.customer_id):
+        raise HTTPException(status_code=400, detail="The customer is locked for this estimate number")
     disc = payload.discount_rate if payload.discount_rate is not None else await customer_discount(payload.customer_id)
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
@@ -1747,8 +1749,10 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
 
 
 @api_router.put("/sales-orders/{sid}")
-async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
+async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_admin)):
     existing = await get_or_404(db.sales_orders, sid, "Sales order")
+    if str(existing.get("customer_id")) != str(payload.customer_id):
+        raise HTTPException(status_code=400, detail="The customer is locked for this sales order number")
     disc = payload.discount_rate if payload.discount_rate is not None else await customer_discount(payload.customer_id)
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
@@ -1765,7 +1769,7 @@ async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depe
 
 
 @api_router.patch("/sales-orders/{sid}/status")
-async def set_so_status(sid: str, status: str, user: dict = Depends(require_staff)):
+async def set_so_status(sid: str, status: str, user: dict = Depends(require_admin)):
     if status not in ("open", "in_production", "fulfilled"):
         raise HTTPException(status_code=400, detail="Invalid status")
     await get_or_404(db.sales_orders, sid, "Sales order")
@@ -1880,8 +1884,10 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
 
 
 @api_router.put("/invoices/{iid}")
-async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_staff)):
+async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_admin)):
     existing = await get_or_404(db.invoices, iid, "Invoice")
+    if str(existing.get("customer_id")) != str(payload.customer_id):
+        raise HTTPException(status_code=400, detail="The customer is locked for this invoice number")
     disc = payload.discount_rate if payload.discount_rate is not None else await customer_discount(payload.customer_id)
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
@@ -1917,17 +1923,17 @@ async def _duplicate_document(collection, source_id: str, kind: str, prefix: str
 
 
 @api_router.post("/estimates/{eid}/duplicate")
-async def duplicate_estimate(eid: str, user: dict = Depends(require_staff)):
+async def duplicate_estimate(eid: str, user: dict = Depends(require_admin)):
     return await _duplicate_document(db.estimates, eid, "Estimate", "EST", "estimates", "draft")
 
 
 @api_router.post("/sales-orders/{sid}/duplicate")
-async def duplicate_sales_order(sid: str, user: dict = Depends(require_staff)):
+async def duplicate_sales_order(sid: str, user: dict = Depends(require_admin)):
     return await _duplicate_document(db.sales_orders, sid, "Sales order", "SO", "sales_orders", "open")
 
 
 @api_router.post("/invoices/{iid}/duplicate")
-async def duplicate_invoice(iid: str, user: dict = Depends(require_staff)):
+async def duplicate_invoice(iid: str, user: dict = Depends(require_admin)):
     return await _duplicate_document(db.invoices, iid, "Invoice", "INV", "invoices", "unpaid")
 
 
@@ -2112,7 +2118,7 @@ async def public_invoice_pdf(token: str):
 
 
 @api_router.patch("/invoices/{iid}/status")
-async def set_invoice_status(iid: str, status: str, user: dict = Depends(require_staff)):
+async def set_invoice_status(iid: str, status: str, user: dict = Depends(require_admin)):
     if status not in ("unpaid", "partial", "paid", "overdue"):
         raise HTTPException(status_code=400, detail="Invalid status")
     await get_or_404(db.invoices, iid, "Invoice")

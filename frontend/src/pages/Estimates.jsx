@@ -107,7 +107,7 @@ export default function Estimates() {
       </PageHeader>
 
       <div className="p-8">
-        <div className="border border-border bg-card">
+        <div className="border border-border bg-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
@@ -132,7 +132,19 @@ export default function Estimates() {
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`estimate-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`estimate-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
-                    <button onClick={() => { setEditing(r); setOpen(true); }} data-testid={`estimate-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
+                    {isAdmin ? (
+                      <button
+                        onClick={() => { setEditing(r); setOpen(true); }}
+                        data-testid={`estimate-number-${r.id}`}
+                        className="text-[#0E7490] hover:underline font-semibold"
+                      >
+                        {r.number}
+                      </button>
+                    ) : (
+                      <span data-testid={`estimate-number-${r.id}`} className="font-semibold">
+                        {r.number}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
@@ -200,6 +212,7 @@ export default function Estimates() {
                             onConfirm: () => duplicate(r.id),
                           }),
                           testid: `duplicate-estimate-${r.id}`,
+                          hidden: !isAdmin,
                         },
                         {
                           label: "Approve → Sales Order",
@@ -213,7 +226,7 @@ export default function Estimates() {
                           testid: `approve-estimate-${r.id}`,
                           hidden: !!r.sales_order_id,
                         },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: isSalesman },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-estimate-${r.id}`, hidden: !isAdmin },
                         { label: "Internal note", icon: <LockKey size={16} />, onClick: () => setNoteDoc(r), testid: `note-estimate-${r.id}`, hidden: !isAdmin },
                         { separator: true, hidden: !isAdmin },
                         { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelEst(r), testid: `delete-estimate-${r.id}`, danger: true, hidden: !isAdmin },

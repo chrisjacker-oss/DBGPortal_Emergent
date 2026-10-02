@@ -296,7 +296,7 @@ export default function Invoices() {
             )}
           </div>
         </div>
-        <div className="border border-border bg-card">
+        <div className="border border-border bg-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
@@ -408,7 +408,7 @@ export default function Invoices() {
                             onConfirm: () => duplicate(r.id),
                           }),
                           testid: `duplicate-invoice-${r.id}`,
-                          hidden: isSalesman,
+                          hidden: !isAdmin,
                         },
                         { label: "Pay now (card)", icon: <CreditCard size={16} />, onClick: () => setPayInv(r), testid: `pay-invoice-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
                         { label: "Record payment", icon: <CheckCircle size={16} />, onClick: () => setRecInv(r), testid: `mark-paid-${r.id}`, hidden: r.voided || r.status === "paid" || isSalesman },
@@ -428,7 +428,7 @@ export default function Invoices() {
                           testid: `acct-pdf-invoice-${r.id}`,
                           hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman,
                         },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || isSalesman },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || !isAdmin },
                         {
                           label: "Void",
                           icon: <Prohibit size={16} />,
@@ -614,7 +614,7 @@ export default function Invoices() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
-                {!detailInv.voided && (
+                {isAdmin && !detailInv.voided && (
                   <Btn variant="outline" onClick={() => { const inv = detailInv; setDetailInv(null); setEditing(inv); setOpen(true); }} data-testid="detail-edit-btn"><PencilSimple size={16} weight="bold" /> Edit invoice</Btn>
                 )}
                 {isAdmin && Number(detailInv.commission_amount || 0) > 0 && (

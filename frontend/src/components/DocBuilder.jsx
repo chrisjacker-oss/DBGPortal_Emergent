@@ -210,6 +210,7 @@ export default function DocBuilder({ open, onClose, onSave, initial, kind }) {
               <span className="overline text-muted-foreground">Customer</span>
               <SearchSelect testid="doc-customer" value={form.customer_id} placeholder="Select customer…"
                 options={customers.map((c) => ({ value: c.id, label: c.company || c.name }))}
+                disabled={!!initial}
                 onChange={(v) => { const c = customers.find((x) => x.id === v); const ex = !!c?.tax_exempt; setForm({ ...form, customer_id: v, contact_id: "", tax_exempt: ex || form.tax_exempt, tax_exempt_number: ex ? (c.tax_exempt_number || form.tax_exempt_number || "") : form.tax_exempt_number, tax_rate: (ex || form.tax_exempt) ? 0 : (Number(form.tax_rate) || settings.default_tax_rate || 0), discount_rate: ({ 1: 35, 2: 25, 3: 15 }[c?.tier] || 0) }); }} />
             </div>
             <label className="block min-w-0">
