@@ -1,6 +1,9 @@
 # Changelog
 
 ## Oct 2026
+- **COD/Deposit sales copies**: Successful COD and 50/50 deposit payment-link sends now
+  email a matching internal copy to `sales@dbgsigns.com`. A failure to send that internal
+  copy never prevents delivery to the selected customer recipient.
 - **Estimate status removal**: Work status is no longer shown, editable, emailed, or
   printed for Estimates. Sales Orders and Invoices retain their existing work-status flow.
 - **Admin-only document locks**: Estimates, Sales Orders, and Invoices can only be edited

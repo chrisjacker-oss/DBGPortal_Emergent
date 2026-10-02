@@ -2219,10 +2219,30 @@ async def _send_payment_request(
         except Exception as error:
             logger.warning(f"Payment request email failed for {recipient}: {error}")
             failed.append(recipient)
+    sales_copy_sent = False
+    if sent:
+        try:
+            await send_email(
+                to=BCC_COPY_EMAIL,
+                subject=(
+                    f"[Copy] Payment requested — {kind_label} "
+                    f"{doc.get('number', '')} sent to {customer_name}"
+                ),
+                html=html,
+            )
+            sales_copy_sent = True
+        except Exception as error:
+            logger.warning(f"Payment request copy to {BCC_COPY_EMAIL} failed: {error}")
     status = "sent" if sent else "failed"
     await db.payment_requests.update_one(
         {"_id": result.inserted_id},
-        {"$set": {"status": status, "sent_at": now_iso(), "sent_to": sent, "failed_to": failed}},
+        {"$set": {
+            "status": status,
+            "sent_at": now_iso(),
+            "sent_to": sent,
+            "failed_to": failed,
+            "sales_copy_sent_at": now_iso() if sales_copy_sent else None,
+        }},
     )
     return {
         "to": len(sent),
@@ -2230,6 +2250,7 @@ async def _send_payment_request(
         "failed": failed,
         "amount": amount,
         "payment_type": payment_type,
+        "sales_copy_sent": sales_copy_sent,
     }
 
 

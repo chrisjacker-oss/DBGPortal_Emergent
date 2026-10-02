@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Every COD/Deposit payment-link email now sends a separate matching
+  copy to `sales@dbgsigns.com` after at least one customer recipient is delivered.
+  Sales-copy failures are logged without interrupting customer delivery.
 - **October 2026**: Removed work status from Estimates only. Estimate tables, PDFs, and
   API updates no longer expose it; Sales Orders and Invoices retain their work statuses.
 - **October 2026**: Document editing and duplication are now admin-only for Estimates,
@@ -165,6 +168,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: A controlled COD payment-link request delivered to the managed-email test
+  recipient and confirmed the matching sales copy was sent. Temporary customer, Estimate,
+  and payment-request records were removed.
 - October 2026: Estimate work-status removal passed 8 focused API regression tests and
   browser checks. Estimate controls and its API route are absent; Sales Order work status
   remains available. Backend compile and frontend build passed with the existing
