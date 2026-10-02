@@ -22,6 +22,7 @@ export default function Invoices() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const isSalesman = user?.role === "salesman";
+  const canEditDocuments = isAdmin || isSalesman;
   const canSeeMargin = user?.role === "admin" || user?.role === "salesman";
   const navigate = useNavigate();
   const [rows, setRows] = useState([]);
@@ -428,7 +429,7 @@ export default function Invoices() {
                           testid: `acct-pdf-invoice-${r.id}`,
                           hidden: !(Number(r.amount_paid || 0) > 0 || r.status === "paid") || isSalesman,
                         },
-                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || !isAdmin },
+                        { label: "Edit", icon: <PencilSimple size={16} />, onClick: () => { setEditing(r); setOpen(true); }, testid: `edit-invoice-${r.id}`, hidden: r.voided || !canEditDocuments },
                         {
                           label: "Void",
                           icon: <Prohibit size={16} />,
@@ -614,7 +615,7 @@ export default function Invoices() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-border flex-wrap">
-                {isAdmin && !detailInv.voided && (
+                {canEditDocuments && !detailInv.voided && (
                   <Btn variant="outline" onClick={() => { const inv = detailInv; setDetailInv(null); setEditing(inv); setOpen(true); }} data-testid="detail-edit-btn"><PencilSimple size={16} weight="bold" /> Edit invoice</Btn>
                 )}
                 {isAdmin && Number(detailInv.commission_amount || 0) > 0 && (

@@ -1,8 +1,8 @@
-"""Iteration 20: Admin-only document locking tests for Estimates/SOs/Invoices.
+"""Iteration 20: Document locking tests for Estimates/SOs/Invoices.
 
 Tests:
-- Admin can edit (non-customer fields) and duplicate; cannot change customer_id (400).
-- Salesman PUT and duplicate return 403 for all 3 doc types.
+- Admin and salesmen can edit non-customer fields; no role can change customer_id (400).
+- Only an admin can duplicate all 3 document types.
 - Salesman PATCH status/void on SO and Invoice return 403.
 - Salesman work-status PATCH remains available on Sales Orders and Invoices only.
 - Estimate work-status PATCH is removed (404).
@@ -140,14 +140,23 @@ class TestAdminDuplicate:
             admin.request("DELETE", f"{API}/{coll}/{did}", json=pw, timeout=20)
 
 
-class TestSalesmanBlocked:
-    def test_salesman_put_denied(self, sales, created_docs):
+class TestSalesmanEditing:
+    def test_salesman_put_allowed_and_customer_remains_locked(self, sales, created_docs, customers):
         for coll, doc in [("estimates", created_docs["estimate"]),
                           ("sales-orders", created_docs["sales_order"]),
                           ("invoices", created_docs["invoice"])]:
-            payload = _mk_payload(doc["customer_id"], title="TEST_sm_hack")
+            payload = _mk_payload(doc["customer_id"], title="TEST_salesman_edit")
             r = sales.put(f"{API}/{coll}/{doc['id']}", json=payload, timeout=20)
-            assert r.status_code == 403, f"{coll} salesman PUT should 403 got {r.status_code}"
+            assert r.status_code == 200, f"{coll} salesman edit failed: {r.status_code} {r.text}"
+            assert r.json()["title"] == "TEST_salesman_edit"
+            assert str(r.json()["customer_id"]) == str(doc["customer_id"])
+            assert r.json().get("salesman_id") == doc.get("salesman_id")
+
+            locked = _mk_payload(customers[1]["id"], title="TEST_salesman_reassign")
+            blocked = sales.put(f"{API}/{coll}/{doc['id']}", json=locked, timeout=20)
+            assert blocked.status_code == 400, (
+                f"{coll} salesman customer change expected 400, got {blocked.status_code}"
+            )
 
     def test_salesman_duplicate_denied(self, sales, created_docs):
         for coll, doc in [("estimates", created_docs["estimate"]),

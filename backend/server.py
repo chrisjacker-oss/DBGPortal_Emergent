@@ -1605,8 +1605,8 @@ async def list_estimates(user: dict = Depends(require_staff)):
     return out
 
 
-async def apply_commission(doc: dict, user: dict) -> dict:
-    if user["role"] == "salesman":
+async def apply_commission(doc: dict, user: dict, preserve_salesman: bool = False) -> dict:
+    if user["role"] == "salesman" and not preserve_salesman:
         doc["salesman_id"] = user["id"]
         doc["salesman_name"] = user.get("name")
     elif doc.get("salesman_id"):
@@ -1647,7 +1647,7 @@ async def create_estimate(payload: EstimateInput, user: dict = Depends(require_s
 
 
 @api_router.put("/estimates/{eid}")
-async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends(require_admin)):
+async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.estimates, eid, "Estimate")
     if str(existing.get("customer_id")) != str(payload.customer_id):
         raise HTTPException(status_code=400, detail="The customer is locked for this estimate number")
@@ -1655,7 +1655,10 @@ async def update_estimate(eid: str, payload: EstimateInput, user: dict = Depends
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
-    await apply_commission(doc, user)
+    if user.get("role") == "salesman":
+        for field in ("salesman_id", "salesman_name", "commission_rate"):
+            doc[field] = existing.get(field)
+    await apply_commission(doc, user, preserve_salesman=user.get("role") == "salesman")
     # don't let an edit desync an already-approved estimate from its sales order
     if existing.get("sales_order_id"):
         doc["status"] = existing.get("status", "approved")
@@ -1754,7 +1757,7 @@ async def create_sales_order(payload: EstimateInput, user: dict = Depends(requir
 
 
 @api_router.put("/sales-orders/{sid}")
-async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_admin)):
+async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.sales_orders, sid, "Sales order")
     if str(existing.get("customer_id")) != str(payload.customer_id):
         raise HTTPException(status_code=400, detail="The customer is locked for this sales order number")
@@ -1762,7 +1765,10 @@ async def update_sales_order(sid: str, payload: EstimateInput, user: dict = Depe
     totals = await compute_totals([li.model_dump() for li in payload.line_items], payload.tax_rate, disc, shipping_cost=payload.shipping_cost)
     doc = payload.model_dump()
     doc.update(totals)
-    await apply_commission(doc, user)
+    if user.get("role") == "salesman":
+        for field in ("salesman_id", "salesman_name", "commission_rate"):
+            doc[field] = existing.get(field)
+    await apply_commission(doc, user, preserve_salesman=user.get("role") == "salesman")
     doc["status"] = payload.status if payload.status in _SO_STATUSES else existing.get("status", "open")
     for k in ("estimate_id", "from_estimate", "invoice_id"):
         if existing.get(k):
@@ -1889,7 +1895,7 @@ async def create_invoice(payload: InvoiceInput, user: dict = Depends(require_sta
 
 
 @api_router.put("/invoices/{iid}")
-async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_admin)):
+async def update_invoice(iid: str, payload: InvoiceInput, user: dict = Depends(require_staff)):
     existing = await get_or_404(db.invoices, iid, "Invoice")
     if str(existing.get("customer_id")) != str(payload.customer_id):
         raise HTTPException(status_code=400, detail="The customer is locked for this invoice number")
@@ -4468,18 +4474,27 @@ async def submit_tentative_install_schedule(token: str, payload: TentativeInstal
         customer = await db.customers.find_one({"_id": oid(claimed["customer_id"])})
         customer_name = (customer or {}).get("company") or (customer or {}).get("name") or customer_name
     time_label = INSTALL_TIME_LABELS[payload.time_of_day]
-    subject = f"Tentative installation request — {doc.get('number', '')}"
+    subject = f"Customer replied with an install date — {doc.get('number', '')}"
     internal_html = (
-        f'<p><strong>{escape(customer_name)}</strong> requested a tentative installation slot.</p>'
+        f'<p><strong>{escape(customer_name)}</strong> replied with a tentative install date.</p>'
         f'<p><strong>Date:</strong> {escape(chosen.isoformat())}<br />'
         f'<strong>Time:</strong> {escape(time_label)}<br />'
         f'<strong>Order:</strong> {escape(str(doc.get("number") or ""))}</p>'
         f'<p><strong>Customer notes:</strong><br />{escape(notes or "None provided")}</p>'
+        '<p>Review this tentative request in the Install Calendar.</p>'
     )
     try:
         await send_email(to=BCC_COPY_EMAIL, subject=subject, html=internal_html)
+        await db.install_schedule_requests.update_one(
+            {"_id": claimed["_id"], "status": "submitted"},
+            {"$set": {"sales_notified_at": now_iso(), "sales_notification_failed_at": None}},
+        )
     except Exception as error:
         logger.warning(f"Tentative installation request notification failed: {error}")
+        await db.install_schedule_requests.update_one(
+            {"_id": claimed["_id"], "status": "submitted"},
+            {"$set": {"sales_notification_failed_at": now_iso()}},
+        )
     return {
         "status": "submitted",
         "preferred_date": chosen.isoformat(),

@@ -1,7 +1,7 @@
 """Iteration 19 - Completed / Installation Schedule work status + public tentative scheduling.
 
 Covers:
-- Work status list includes `completed_install_schedule` on Estimate/Sales Order/Invoice.
+- Work status list includes `completed_install_schedule` on Sales Orders and Invoices.
 - PATCH work-status to `completed_install_schedule` creates an install_schedule_requests
   token (30-day expiry) and returns the doc updated.
 - GET /pub/install-schedule/{token} returns doc summary, date bounds, status.
@@ -11,7 +11,8 @@ Covers:
   Friday afternoon, malformed date, unknown time_of_day; accepts Monday-Thursday
   AM/PM and Friday AM.
 - Valid submit creates an install with status=tentative, tentative_notes copied,
-  linked_type/linked_id present. Second submit -> 409.
+  linked_type/linked_id present, and records sales-notification delivery state.
+  Second submit -> 409.
 - Staff editing tentative -> confirmed on /installs/{id} does not raise and sets
   status=confirmed (notify email may fail against test recipient, that's ok).
 - Cleanup: all test customers, contacts, documents, install_schedule_requests, installs.
@@ -78,7 +79,7 @@ def anon():
 
 
 @pytest.fixture(scope="module")
-def test_estimate(admin):
+def test_schedule_order(admin):
     # Create a customer with TEST_ prefix and delivered@resend.dev email
     cust_payload = {
         "name": "TEST_Install Schedule Customer",
@@ -108,7 +109,7 @@ def test_estimate(admin):
     est_payload = {
         "customer_id": cust["id"],
         "contact_id": contact["id"],
-        "title": "TEST_Install Schedule Estimate",
+        "title": "TEST_Install Schedule Sales Order",
         "line_items": [{
             "description": "Fleet decals",
             "quantity": 1,
@@ -117,28 +118,28 @@ def test_estimate(admin):
         "tax_rate": 0.0,
         "status": "draft",
     }
-    r = admin.post(f"{API}/estimates", json=est_payload, timeout=30)
+    r = admin.post(f"{API}/sales-orders", json=est_payload, timeout=30)
     assert r.status_code == 200, r.text
-    est = r.json()
-    _registry["estimates"].append(est["id"])
-    return {"customer": cust, "contact": contact, "estimate": est}
+    sales_order = r.json()
+    _registry["sales_orders"].append(sales_order["id"])
+    return {"customer": cust, "contact": contact, "sales_order": sales_order}
 
 
 # ---------- work status ----------
 class TestWorkStatus:
-    def test_invalid_status_rejected(self, admin, test_estimate):
-        eid = test_estimate["estimate"]["id"]
+    def test_invalid_status_rejected(self, admin, test_schedule_order):
+        sid = test_schedule_order["sales_order"]["id"]
         r = admin.patch(
-            f"{API}/estimates/{eid}/work-status",
+            f"{API}/sales-orders/{sid}/work-status",
             params={"status": "not_a_real_status"},
             timeout=30,
         )
         assert r.status_code == 400, r.text
 
-    def test_estimate_set_completed_install_schedule(self, admin, test_estimate):
-        eid = test_estimate["estimate"]["id"]
+    def test_sales_order_set_completed_install_schedule(self, admin, test_schedule_order):
+        sid = test_schedule_order["sales_order"]["id"]
         r = admin.patch(
-            f"{API}/estimates/{eid}/work-status",
+            f"{API}/sales-orders/{sid}/work-status",
             params={"status": "completed_install_schedule"},
             timeout=30,
         )
@@ -148,7 +149,7 @@ class TestWorkStatus:
 
         # A token doc must exist in install_schedule_requests
         req = db.install_schedule_requests.find_one({
-            "doc_id": eid, "doc_collection": "estimates",
+            "doc_id": sid, "doc_collection": "sales_orders",
         })
         assert req is not None
         assert req.get("status") == "sent"
@@ -161,17 +162,17 @@ class TestWorkStatus:
         assert 29 <= delta.days <= 30
         _registry["install_schedule_requests"].append(token)
 
-    def test_setting_same_status_is_idempotent(self, admin, test_estimate):
-        eid = test_estimate["estimate"]["id"]
+    def test_setting_same_status_is_idempotent(self, admin, test_schedule_order):
+        sid = test_schedule_order["sales_order"]["id"]
         r = admin.patch(
-            f"{API}/estimates/{eid}/work-status",
+            f"{API}/sales-orders/{sid}/work-status",
             params={"status": "completed_install_schedule"},
             timeout=30,
         )
         assert r.status_code == 200
         # There should still be exactly one request
         count = db.install_schedule_requests.count_documents({
-            "doc_id": eid, "doc_collection": "estimates",
+            "doc_id": sid, "doc_collection": "sales_orders",
         })
         assert count == 1
 
@@ -182,13 +183,13 @@ class TestPublicGet:
         r = anon.get(f"{API}/pub/install-schedule/not-a-real-token", timeout=30)
         assert r.status_code == 404
 
-    def test_valid_token_returns_summary(self, anon, test_estimate):
+    def test_valid_token_returns_summary(self, anon, test_schedule_order):
         token = _registry["install_schedule_requests"][0]
         r = anon.get(f"{API}/pub/install-schedule/{token}", timeout=30)
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["number"] == test_estimate["estimate"]["number"]
-        assert data["title"] == "TEST_Install Schedule Estimate"
+        assert data["number"] == test_schedule_order["sales_order"]["number"]
+        assert data["title"] == "TEST_Install Schedule Sales Order"
         assert data["customer_name"] == "TEST_Install Schedule Co"
         assert data["status"] == "sent"
         # date bounds
@@ -272,7 +273,7 @@ class TestPublicSubmitValidation:
 # ---------- happy path submit ----------
 class TestPublicSubmitSuccess:
     def test_accept_monday_morning_and_create_tentative_install(
-        self, anon, admin, test_estimate
+        self, anon, admin, test_schedule_order
     ):
         token = _registry["install_schedule_requests"][0]
         # Prefer a Tuesday to also cover a M-Th AM path (Monday works too)
@@ -297,14 +298,18 @@ class TestPublicSubmitSuccess:
         assert install_id
         _registry["installs"].append(install_id)
 
-        # DB: install created with tentative status + linked estimate
+        assert req.get("sales_notified_at") or req.get("sales_notification_failed_at"), (
+            "sales reply notification delivery state was not recorded"
+        )
+
+        # DB: install created with tentative status + linked sales order
         install = db.installs.find_one({"_id": ObjectId(install_id)})
         assert install is not None
         assert install["status"] == "tentative"
         assert install["date"] == chosen
         assert install["time_of_day"] == "morning"
-        assert install["linked_type"] == "estimate"
-        assert install["linked_id"] == test_estimate["estimate"]["id"]
+        assert install["linked_type"] == "sales_order"
+        assert install["linked_id"] == test_schedule_order["sales_order"]["id"]
         assert install["tentative_notes"] == payload["notes"]
         # Description carries customer notes
         assert "gate code 1234" in install["description"]
@@ -315,7 +320,7 @@ class TestPublicSubmitSuccess:
         assert r.status_code == 200
         found = [i for i in r.json() if i["id"] == install_id]
         assert found and found[0]["status"] == "tentative"
-        assert found[0]["linked_number"] == test_estimate["estimate"]["number"]
+        assert found[0]["linked_number"] == test_schedule_order["sales_order"]["number"]
 
     def test_duplicate_submit_conflicts(self, anon):
         token = _registry["install_schedule_requests"][0]
@@ -330,7 +335,7 @@ class TestPublicSubmitSuccess:
 
 # ---------- confirmation path ----------
 class TestStaffConfirmation:
-    def test_confirm_tentative_install(self, admin, test_estimate):
+    def test_confirm_tentative_install(self, admin, test_schedule_order):
         install_id = _registry["installs"][0]
         install = db.installs.find_one({"_id": ObjectId(install_id)})
         assert install["status"] == "tentative"
@@ -353,26 +358,32 @@ class TestStaffConfirmation:
 
 # ---------- sales order and invoice status labels also accept new status ----------
 class TestOtherCollections:
-    def test_sales_order_accepts_new_status(self, admin, test_estimate):
-        # Approve the estimate to create a sales order
-        eid = test_estimate["estimate"]["id"]
-        r = admin.post(f"{API}/estimates/{eid}/approve", timeout=30)
+    def test_invoice_accepts_new_status(self, admin, test_schedule_order):
+        invoice_payload = {
+            "customer_id": test_schedule_order["customer"]["id"],
+            "contact_id": test_schedule_order["contact"]["id"],
+            "title": "TEST_Install Schedule Invoice",
+            "line_items": [{"description": "Invoice decals", "quantity": 1, "price": 100.0}],
+            "tax_rate": 0.0,
+            "status": "unpaid",
+        }
+        r = admin.post(f"{API}/invoices", json=invoice_payload, timeout=30)
         assert r.status_code == 200, r.text
-        so = r.json()
-        sid = so["id"]
-        _registry["sales_orders"].append(sid)
+        invoice = r.json()
+        iid = invoice["id"]
+        _registry["invoices"].append(iid)
 
         r = admin.patch(
-            f"{API}/sales-orders/{sid}/work-status",
+            f"{API}/invoices/{iid}/work-status",
             params={"status": "completed_install_schedule"},
             timeout=30,
         )
         assert r.status_code == 200, r.text
         assert r.json().get("work_status") == "completed_install_schedule"
 
-        # A new token doc was created for the SO
+        # A new token doc was created for the Invoice.
         req = db.install_schedule_requests.find_one({
-            "doc_id": sid, "doc_collection": "sales_orders",
+            "doc_id": iid, "doc_collection": "invoices",
         })
         assert req is not None
         _registry["install_schedule_requests"].append(req["token"])
