@@ -26,6 +26,12 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Customer tentative-date submissions now send a server-side email to
+  `sales@dbgsigns.com` stating that the customer replied with an install date. Delivery
+  acceptance or failure is recorded without blocking the customer’s calendar request.
+- **October 2026**: Salesmen can edit existing Estimates, Sales Orders, and Invoices.
+  Customer binding, commission ownership, and commission rate stay locked during those
+  edits; document copying remains admin-only.
 - **October 2026**: Every COD/Deposit payment-link email now sends a separate matching
   copy to `sales@dbgsigns.com` after at least one customer recipient is delivered.
   Sales-copy failures are logged without interrupting customer delivery.
@@ -57,8 +63,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
   emails acceptance of the selected date, while **Date taken / offer open date** lets staff
   select a replacement slot and email a secure customer **Accept this date** action.
   Offered dates show as `OFFER` in the calendar and become confirmed only after acceptance.
-- **September 2026**: Added **Completed / Installation Schedule** work status across
-  Estimates, Sales Orders, and Invoices. It sends the completed-decals email and a
+- **September 2026**: Added **Completed / Installation Schedule** work status for Sales
+  Orders and Invoices. It sends the completed-decals email and a
   30-day secure scheduling link. Customers can request Monday–Thursday AM/PM or Friday
   AM, leave notes, and create a tentative calendar entry for staff review/confirmation.
 - **September 2026**: Install Calendar now flags tentative customer requests as `REQ`.
@@ -168,6 +174,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Iteration 21 QA passed 30/30 checks across install scheduling, document
+  role controls, and salesman UI. It confirmed a provider-accepted sales notification,
+  locked customers/commission attribution, admin-only copying, and mobile-safe tables.
 - October 2026: A controlled COD payment-link request delivered to the managed-email test
   recipient and confirmed the matching sales copy was sent. Temporary customer, Estimate,
   and payment-request records were removed.

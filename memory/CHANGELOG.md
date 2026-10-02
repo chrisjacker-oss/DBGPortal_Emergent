@@ -1,17 +1,22 @@
 # Changelog
 
 ## Oct 2026
+- **Install reply alert**: When a customer submits a tentative installation date, the CRM
+  emails `sales@dbgsigns.com` that the customer replied with an install date. The request
+  retains delivery-state timestamps and continues saving if the provider is throttled.
+- **Salesman document editing**: Salesmen can edit existing Estimates, Sales Orders, and
+  Invoices. Customer assignment and commission ownership/rate remain locked, while
+  document copying remains admin-only. Verified by iteration_21 backend and browser QA.
 - **COD/Deposit sales copies**: Successful COD and 50/50 deposit payment-link sends now
   email a matching internal copy to `sales@dbgsigns.com`. A failure to send that internal
   copy never prevents delivery to the selected customer recipient.
 - **Estimate status removal**: Work status is no longer shown, editable, emailed, or
   printed for Estimates. Sales Orders and Invoices retain their existing work-status flow.
-- **Admin-only document locks**: Estimates, Sales Orders, and Invoices can only be edited
-  or duplicated by admins. The original customer assignment is permanently locked for a
-  document number, including during admin edits. Salesmen retain work-status-only updates;
-  direct document/status edits are denied. Salesman menus hide edit/copy controls, the
-  admin edit customer picker is locked, and document tables keep mobile overflow contained.
-  Verified with iteration_20 backend and browser QA.
+- **Document customer locks**: Each document number permanently retains its original
+  customer, including during admin or salesman edits. Salesmen retain work-status updates;
+  direct document-status routes remain admin-only. The customer picker stays locked while
+  editing, and document tables keep mobile overflow contained. Verified with iteration_20
+  backend and browser QA.
 
 ## Jun 2026
 - **Work status email personalization**: `render_work_status_email` now greets the order's **contact by name** (falls back to company name) and shows a **"Job: {title}"** line so the customer knows what's being worked on. `_set_work_status` resolves the doc's `contact_id` for both the greeting and the recipient (prefers the contact's email, then customer email). Verified via render output.

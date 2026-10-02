@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 21 verification covering salesman edit RBAC, admin-only duplication, document customer lock, install schedule sales notification state, server-side recipient enforcement, work-status UI scope, and mobile overflow. Backend: 8/8 doc-locking (test_iteration20) + 17/17 install schedule (test_iteration19, -n 0) + 5/5 new iter21 regression suite all PASS. Frontend: salesman Estimate action menu exposes Edit (no 'Create a copy'); clicking the Estimate number opens DocBuilder with [data-testid=save-doc-btn] visible and [data-testid=doc-customer] disabled. Salesman Sales Order action menu exposes Edit; SO number opens DocBuilder with doc-customer disabled, save-doc-btn present, no 'Create a copy'. Mobile 390px: /estimates, /sales-orders, /invoices scrollWidth == innerWidth (no page-level horizontal overflow). Work-status label absent on /estimates, present on /sales-orders and /invoices. Install submit route confirmed in code to notify BCC_COPY_EMAIL (= sales@dbgsigns.com); iter21 pytest injected caller fields (notify_email/recipient/sales_email=attacker@example.com) and asserted no leakage into stored request fields. Live email send kept to one submission per spec; sales_notified_at was present (provider accepted via delivered@resend.dev).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_salesman_edit_and_install_notify.py",
+    "/app/backend/tests/test_iteration20_doc_locking.py",
+    "/app/backend/tests/test_iteration19_install_schedule.py",
+    "/app/test_reports/pytest/iter21.xml",
+    "/app/test_reports/pytest/iter21_doc_locking.xml",
+    "/app/test_reports/pytest/iter21_install_schedule.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "pytest.ini still ships default -n auto; iter19 install schedule suite requires -n 0 due to shared token registry. Consider adding a per-file worker-override (e.g., pytestmark = pytest.mark.serial with -p no:xdist) or breaking the module-scoped registry into function-scoped fixtures.",
+    "server.py update_estimate/update_sales_order/update_invoice duplicate the customer-lock + salesman-preserve logic — extract into a helper (e.g., preserve_salesman_fields_or_401(existing, payload, user)) to prevent drift.",
+    "install submit route: notification error path is caught broadly (bare Exception) — logger.warning is fine but include provider status code when available for faster triage of future 429 vs transient errors."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_salesman_edit_and_install_notify.py"
+  ],
+  "success_rate": {"backend": "100% (30/30 across iter19 + iter20 + new iter21)", "frontend": "100% (all salesman gates and mobile overflow checks passed)"},
+  "test_credentials": "Admin sales@dbgsigns.com/10297099, Salesman sam@dbgsigns.com/Sales2026! (sourced from /app/memory/test_credentials.md)",
+  "seed_data_creation": "iter21 pytest created TEST_iter21_* customers (2 for RBAC, 1 for notify) + 1 estimate / 1 SO / 1 invoice + their admin duplicates + 1 notify-flow SO + its tentative install + install_schedule_requests token; all cleaned up by module teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 21 uses `pytest -n 0` for install schedule and the new iter21 regression file. If invoice UI needs E2E coverage, create an invoice via admin first (both admin and salesman accounts currently have 0 invoices in all tabs on the preview DB). Rate-limit awareness: live Resend sending via BCC_COPY_EMAIL (sales@dbgsigns.com) returns 429 under rapid repeated test runs; the server already captures this as sales_notification_failed_at (non-blocking)."
+}
