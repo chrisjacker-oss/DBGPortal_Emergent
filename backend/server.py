@@ -1597,7 +1597,12 @@ async def _attach_contact_name(doc: dict) -> dict:
 @api_router.get("/estimates")
 async def list_estimates(user: dict = Depends(require_staff)):
     docs = await db.estimates.find().sort("created_at", -1).to_list(1000)
-    return [_apply_doc_margin(await enrich_customer(clean(d))) for d in docs]
+    out = []
+    for doc in docs:
+        row = clean(doc)
+        row.pop("work_status", None)
+        out.append(_apply_doc_margin(await enrich_customer(row)))
+    return out
 
 
 async def apply_commission(doc: dict, user: dict) -> dict:
@@ -4105,11 +4110,6 @@ async def set_so_work_status(sid: str, status: str, user: dict = Depends(require
     return await _set_work_status(db.sales_orders, sid, "Sales Order", status)
 
 
-@api_router.patch("/estimates/{eid}/work-status")
-async def set_estimate_work_status(eid: str, status: str, user: dict = Depends(require_staff)):
-    return await _set_work_status(db.estimates, eid, "Estimate", status)
-
-
 @api_router.patch("/invoices/{iid}/work-status")
 async def set_invoice_work_status(iid: str, status: str, user: dict = Depends(require_staff)):
     return await _set_work_status(db.invoices, iid, "Invoice", status)
@@ -5473,7 +5473,7 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
     y = rule_y - 30
     # Meta (right)
     meta = [("Date", str(doc.get("created_at", ""))[:10])]
-    if doc.get("work_status") in WORK_STATUS_LABELS:
+    if kind_label != "Estimate" and doc.get("work_status") in WORK_STATUS_LABELS:
         meta.append(("Work Status", WORK_STATUS_LABELS[doc["work_status"]]))
     if doc.get("customer_po"):
         meta.append(("Customer PO", str(doc.get("customer_po"))))

@@ -4,7 +4,7 @@ import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/Layout";
-import { Btn, StatusBadge, ReceiptBadge, WorkStatusSelect, PaymentState } from "@/components/kit";
+import { Btn, StatusBadge, ReceiptBadge, PaymentState } from "@/components/kit";
 import DocBuilder from "@/components/DocBuilder";
 import SendDialog from "@/components/SendDialog";
 import PaymentRequestDialog from "@/components/PaymentRequestDialog";
@@ -86,19 +86,6 @@ export default function Estimates() {
       toast.success(`Deleted ${data.deleted} estimate(s)`); setBulkOpen(false); setSel({}); load(); return true;
     } catch (e) { toast.error(e.response?.data?.detail || "Delete failed"); return false; }
   };
-  const changeWork = async (r, status) => {
-    if (!status || status === r.work_status) return;
-    try {
-      const { data } = await api.patch(`/estimates/${r.id}/work-status`, null, { params: { status } });
-      toast.success("Work status set · customer emailed");
-      setRows((rs) => rs.map((x) => (
-        x.id === r.id ? { ...x, work_status: data.work_status } : x
-      )));
-    } catch (e) {
-      toast.error(e.response?.data?.detail || "Failed to update work status");
-    }
-  };
-
   return (
     <div>
       <PageHeader overline="Sales" title="Estimates">
@@ -118,7 +105,6 @@ export default function Estimates() {
                 <th className="px-6 py-3 font-mono">Order Date</th>
                 <th className="px-6 py-3 font-mono">Salesman</th>
                 <th className="px-6 py-3 font-mono">Status</th>
-                <th className="px-6 py-3 font-mono">Work status</th>
                 <th className="px-6 py-3 font-mono text-right">Commission</th>
                 <th className="px-6 py-3 font-mono text-right">Total</th>
                 <th className="px-6 py-3 font-mono">Payment</th>
@@ -160,14 +146,6 @@ export default function Estimates() {
                         </span>
                       )}
                     </div>
-                  </td>
-                  <td className="px-6 py-3">
-                    <WorkStatusSelect
-                      value={r.work_status}
-                      onChange={(s) => changeWork(r, s)}
-                      disabled={false}
-                      testid={`estimate-work-status-${r.id}`}
-                    />
                   </td>
                   <td className="px-6 py-3 text-right font-mono text-[#A21CAF]">{r.commission_amount ? `${currency(r.commission_amount)} (${r.commission_rate}%)` : "—"}</td>
                   <td className="px-6 py-3 text-right font-mono">{currency(r.total)}</td>
@@ -235,7 +213,7 @@ export default function Estimates() {
                   </td>
                 </tr>
               ))}
-              {visibleRows.length === 0 && <tr><td colSpan={12 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
+              {visibleRows.length === 0 && <tr><td colSpan={11 + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No estimates yet.</td></tr>}
             </tbody>
           </table>
         </div>

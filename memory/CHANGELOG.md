@@ -1,6 +1,8 @@
 # Changelog
 
 ## Oct 2026
+- **Estimate status removal**: Work status is no longer shown, editable, emailed, or
+  printed for Estimates. Sales Orders and Invoices retain their existing work-status flow.
 - **Admin-only document locks**: Estimates, Sales Orders, and Invoices can only be edited
   or duplicated by admins. The original customer assignment is permanently locked for a
   document number, including during admin edits. Salesmen retain work-status-only updates;

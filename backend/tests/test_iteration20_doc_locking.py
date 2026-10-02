@@ -4,7 +4,8 @@ Tests:
 - Admin can edit (non-customer fields) and duplicate; cannot change customer_id (400).
 - Salesman PUT and duplicate return 403 for all 3 doc types.
 - Salesman PATCH status/void on SO and Invoice return 403.
-- Salesman work-status PATCH on all 3 doc types succeeds (200).
+- Salesman work-status PATCH remains available on Sales Orders and Invoices only.
+- Estimate work-status PATCH is removed (404).
 """
 
 import os
@@ -167,9 +168,8 @@ class TestSalesmanBlocked:
 
 
 class TestSalesmanWorkStatusAllowed:
-    def test_salesman_work_status_all(self, sales, created_docs):
-        for coll, doc in [("estimates", created_docs["estimate"]),
-                          ("sales-orders", created_docs["sales_order"]),
+    def test_salesman_work_status_on_orders_and_invoices(self, sales, created_docs):
+        for coll, doc in [("sales-orders", created_docs["sales_order"]),
                           ("invoices", created_docs["invoice"])]:
             # Use a plausible work status; backend validates set — try common ones
             tried = []
@@ -179,3 +179,16 @@ class TestSalesmanWorkStatusAllowed:
                 if r.status_code == 200:
                     break
             assert any(code == 200 for _, code in tried), f"{coll} work-status all failed: {tried}"
+
+
+def test_estimate_work_status_is_removed(sales, created_docs):
+    estimate_id = created_docs["estimate"]["id"]
+    response = sales.patch(
+        f"{API}/estimates/{estimate_id}/work-status?status=in_production",
+        timeout=20,
+    )
+    assert response.status_code == 404
+    estimates = sales.get(f"{API}/estimates", timeout=20)
+    assert estimates.status_code == 200
+    estimate = next(row for row in estimates.json() if row["id"] == estimate_id)
+    assert "work_status" not in estimate

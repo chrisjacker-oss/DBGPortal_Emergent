@@ -26,6 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Removed work status from Estimates only. Estimate tables, PDFs, and
+  API updates no longer expose it; Sales Orders and Invoices retain their work statuses.
 - **October 2026**: Document editing and duplication are now admin-only for Estimates,
   Sales Orders, and Invoices. Every document permanently retains the customer assigned at
   creation, even for admins; salesmen retain their limited work-status updates only.
@@ -90,9 +92,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - **September 2026**: Admin-only CRM Backup & Restore in Settings. Backup exports every
   MongoDB CRM collection as a portable Extended JSON file; restore replaces current
   database records only after an admin password and typed `RESTORE` confirmation.
-- **September 2026**: Salesmen can now update customer work status on Estimates,
-  Sales Orders, and Invoices. Estimate status changes use the same customer-email
-  workflow as existing SO/Invoice updates.
+- **September 2026**: Salesmen can update customer work status on Sales Orders and
+  Invoices. The Estimate-specific status workflow was removed in October 2026.
 - **September 2026**: Documents now include an optional manual **Shipping address**
   that carries Estimate → Sales Order → Invoice and is shown in customer email and
   PDF exports as Ship To.
@@ -164,6 +165,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Estimate work-status removal passed 8 focused API regression tests and
+  browser checks. Estimate controls and its API route are absent; Sales Order work status
+  remains available. Backend compile and frontend build passed with the existing
+  non-blocking Install Calendar hook warning.
 - October 2026: Document-locking QA passed 7 backend tests and salesman/admin browser
   flows. Admin edits and copies work, customer reassignment is rejected, salesman direct
   edits/copies/status changes are denied, work-status-only updates remain allowed, and
