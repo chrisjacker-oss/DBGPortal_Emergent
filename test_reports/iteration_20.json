@@ -1,0 +1,23 @@
+{
+  "summary": "Verified admin-only document locking across Estimates, Sales Orders, and Invoices. Backend: 7/7 pytest cases passing — admin can edit non-customer fields and duplicate; admin PUT with a different customer_id returns 400 and customer binding is unchanged; salesman direct PUT, POST duplicate, and PATCH status (SO + Invoice) all return 403; salesman work-status PATCH on all three doc types returns 200. Frontend: salesman action menus for Estimates/SOs expose only Print/Email/COD/Approve|Convert (no Edit, no Create a copy); salesman has no edit-estimate/edit-so/duplicate-* buttons; salesman number cells for Estimates and Sales Orders do not open an editor (no save-doc-btn, no URL change). Admin edit screen renders doc-customer SearchSelect with disabled=true. Mobile viewport (390px) shows no page-level horizontal overflow on /estimates, /sales-orders, or /invoices (doc.scrollWidth equals window width).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_doc_locking.py",
+    "/app/test_reports/pytest/iteration20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is very large (~6880 lines). Consider splitting into modules (estimates/sales_orders/invoices/auth/etc.) for maintainability — not blocking.",
+    "No GET-by-id endpoint for /estimates/{id}, /sales-orders/{id}, /invoices/{id} (returns 405). Not required for this task but would simplify client fetches and tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration20_doc_locking.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin sales@dbgsigns.com/10297099, Salesman sam@dbgsigns.com/Sales2026!",
+  "seed_data_creation": "Three temporary documents (1 estimate, 1 sales order, 1 invoice titled TEST_locking_doc) and admin-duplicated copies were created and all deleted by the pytest fixture teardown using admin password confirmation. No stray TEST_ documents or customers remain.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Document customer-lock + salesman restriction behavior is enforced server-side (routes use require_admin for PUT/duplicate/status and reject customer_id change with 400). Frontend DocBuilder.jsx disables doc-customer when editing (initial truthy). Salesman list pages hide edit/duplicate actions and the number cells no longer open an editor. Mobile tables are wrapped so page-level horizontal overflow is absent."
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## Oct 2026
+- **Admin-only document locks**: Estimates, Sales Orders, and Invoices can only be edited
+  or duplicated by admins. The original customer assignment is permanently locked for a
+  document number, including during admin edits. Salesmen retain work-status-only updates;
+  direct document/status edits are denied. Salesman menus hide edit/copy controls, the
+  admin edit customer picker is locked, and document tables keep mobile overflow contained.
+  Verified with iteration_20 backend and browser QA.
+
 ## Jun 2026
 - **Work status email personalization**: `render_work_status_email` now greets the order's **contact by name** (falls back to company name) and shows a **"Job: {title}"** line so the customer knows what's being worked on. `_set_work_status` resolves the doc's `contact_id` for both the greeting and the recipient (prefers the contact's email, then customer email). Verified via render output.
 - **Google sign-in (Emergent Auth, staff only)**: "Sign in with Google" button on the staff /login (not portal). Frontend redirects to auth.emergentagent.com with `window.location.origin + '/dashboard'`; return `#session_id` is caught synchronously in `AppRoutes` (App.js) → `AuthCallback` POSTs to `POST /api/auth/google/session`. Backend exchanges the session_id at Emergent `/auth/v1/env/oauth/session-data`, matches the Google email to an EXISTING staff user (admin/salesman/installer) — no auto-create; unknown/customer → 403 — then issues our normal JWT cookie session (`set_auth_cookies`). Email/password login kept. AuthContext skips `/auth/me` when hash has `session_id`. Owner `chrisjacker@gmail.com` promoted from a duplicate installer record to admin. Endpoint wiring + deny path agent-verified; live Google round-trip needs user confirmation.

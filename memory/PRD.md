@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Document editing and duplication are now admin-only for Estimates,
+  Sales Orders, and Invoices. Every document permanently retains the customer assigned at
+  creation, even for admins; salesmen retain their limited work-status updates only.
 - **September 2026**: Document payment state now identifies the customer payment source:
   `Stripe Deposit $…` or `Stripe Paid $…` on Estimates, Sales Orders, and Invoices.
   COD payments on Estimates/Sales Orders now also notify sales as paid via Stripe/Credit Card.
@@ -161,6 +164,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Document-locking QA passed 7 backend tests and salesman/admin browser
+  flows. Admin edits and copies work, customer reassignment is rejected, salesman direct
+  edits/copies/status changes are denied, work-status-only updates remain allowed, and
+  document tables do not create mobile page overflow. Temporary QA data was deleted.
 - September 2026: Controlled COD payment verified the Sales Order becomes `Stripe Paid`,
   stores the Stripe/Credit Card source, and sends the sales customer-paid notice once.
 - September 2026: Controlled full Stripe invoice payment verified Paid status, one sales
