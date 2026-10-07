@@ -1,7 +1,10 @@
 # Changelog
 
 ## Oct 2026
-- **Paid invoice In Zero field**: Paid invoice rows now include an admin-only **In Zero**
+- **Document table readability**: Estimate, Sales Order, and Invoice list tables now use
+  semibold body text with bold, high-contrast column headers. The paid-invoice flag label
+  is now **Input Zero**.
+- **Paid invoice Input Zero field**: Paid invoice rows now include an admin-only **Input Zero**
   Yes/No dropdown between invoice number and customer. The secure server update accepts it
   only for non-voided paid invoices; other staff see the stored value without an editor.
 - **Invoice accounting-tab protection**: Invoiced & Waiting Payment and Paid invoice tabs

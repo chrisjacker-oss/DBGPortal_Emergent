@@ -2149,7 +2149,7 @@ async def set_invoice_in_zero(
 ):
     invoice = await get_or_404(db.invoices, iid, "Invoice")
     if invoice.get("status") != "paid" or invoice.get("voided"):
-        raise HTTPException(status_code=400, detail="In Zero is available only on paid invoices")
+        raise HTTPException(status_code=400, detail="Input Zero is available only on paid invoices")
     await db.invoices.update_one(
         {"_id": oid(iid)},
         {"$set": {"in_zero": payload.in_zero, "in_zero_updated_at": now_iso()}},

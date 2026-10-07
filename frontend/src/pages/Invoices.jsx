@@ -253,9 +253,9 @@ export default function Invoices() {
     try {
       const { data } = await api.patch(`/invoices/${r.id}/in-zero`, { in_zero: inZero });
       setRows((current) => current.map((row) => (row.id === r.id ? data : row)));
-      toast.success(`In Zero marked ${inZero ? "Yes" : "No"}`);
+      toast.success(`Input Zero marked ${inZero ? "Yes" : "No"}`);
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Could not update In Zero");
+      toast.error(error.response?.data?.detail || "Could not update Input Zero");
     } finally {
       setInZeroSaving((current) => ({ ...current, [r.id]: false }));
     }
@@ -313,12 +313,12 @@ export default function Invoices() {
           </div>
         </div>
         <div className="border border-border bg-card overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm font-semibold text-foreground">
             <thead>
-              <tr className="border-b border-border text-left overline text-muted-foreground">
+              <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-[0.08em] text-foreground">
                 {canDeleteCurrentInvoices && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="invoice-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
-                {isPaid && <th className="px-6 py-3 font-mono">In Zero</th>}
+                {isPaid && <th className="px-6 py-3 font-mono">Input Zero</th>}
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
                 <th className="px-6 py-3 font-mono">Order Date</th>

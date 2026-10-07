@@ -96,9 +96,9 @@ export default function Estimates() {
 
       <div className="p-8">
         <div className="border border-border bg-card overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm font-semibold text-foreground">
             <thead>
-              <tr className="border-b border-border text-left overline text-muted-foreground">
+              <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-[0.08em] text-foreground">
                 {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="estimate-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
