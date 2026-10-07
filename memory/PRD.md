@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Sidebar search now presents results in a selection popup. Selecting a
+  result opens its CRM page in a new tab; document results also focus the matching record
+  instead of moving staff away from their current workspace.
 - **October 2026**: Estimate, Sales Order, and Invoice list tables now use stronger
   semibold body text and bold, high-contrast headers for easier scanning.
 - **October 2026**: The Paid invoice tab now includes an **Input Zero** Yes/No field between
@@ -182,6 +185,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Live search verified a popup with matching Estimate and Customer results;
+  selecting the Estimate opened a separate, focused CRM tab. Temporary QA records were
+  removed and the frontend production build passed with the existing non-blocking warning.
 - October 2026: Browser checks confirmed **Input Zero** appears on Paid invoices and all
   three document tables render stronger body text and bold headers. Backend compile and
   frontend production build passed with the existing non-blocking Install Calendar warning.

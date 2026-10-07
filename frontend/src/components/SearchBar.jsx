@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { MagnifyingGlass } from "@phosphor-icons/react";
+import { ArrowSquareOut, MagnifyingGlass } from "@phosphor-icons/react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const typeColor = {
   Estimate: "text-[#0E7490]",
@@ -15,27 +21,35 @@ export const SearchBar = () => {
   const [q, setQ] = useState("");
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
-  const navigate = useNavigate();
-  const boxRef = useRef(null);
 
   useEffect(() => {
-    if (!q.trim()) { setResults([]); return; }
+    if (!q.trim()) {
+      setResults([]);
+      setOpen(false);
+      return;
+    }
     const t = setTimeout(() => {
-      api.get(`/search?q=${encodeURIComponent(q)}`).then((r) => { setResults(r.data.results); setOpen(true); }).catch(() => {});
+      api.get(`/search?q=${encodeURIComponent(q)}`)
+        .then((response) => {
+          setResults(response.data.results);
+          setOpen(true);
+        })
+        .catch(() => setOpen(false));
     }, 250);
     return () => clearTimeout(t);
   }, [q]);
 
-  useEffect(() => {
-    const onClick = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, []);
-
-  const go = (r) => { setOpen(false); setQ(""); navigate(r.route, { state: { highlight: r.id } }); };
+  const openResult = (result) => {
+    const query = new URLSearchParams({ focus: result.id });
+    const destination = `${result.route}?${query.toString()}`;
+    const opened = window.open(destination, "_blank", "noopener,noreferrer");
+    if (!opened) window.location.assign(destination);
+    setOpen(false);
+    setQ("");
+  };
 
   return (
-    <div className="relative" ref={boxRef}>
+    <div>
       <div className="flex items-center gap-2 border border-input bg-secondary/60 px-3 py-2">
         <MagnifyingGlass size={16} className="text-muted-foreground" />
         <input
@@ -47,24 +61,45 @@ export const SearchBar = () => {
           className="bg-transparent text-sm w-full focus:outline-none"
         />
       </div>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full max-h-96 overflow-y-auto bg-card border border-border shadow-lg" data-testid="search-results">
-          {results.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-muted-foreground">No matches</div>
-          ) : (
-            results.map((r) => (
-              <button key={`${r.type}-${r.id}`} onClick={() => go(r)} data-testid={`search-result-${r.id}`}
-                className="w-full text-left px-4 py-2.5 border-b border-border last:border-0 hover:bg-secondary transition-colors duration-150 flex items-center gap-3">
-                <span className={`overline w-24 shrink-0 ${typeColor[r.type] || ""}`}>{r.type}</span>
-                <span className="flex-1 min-w-0">
-                  <span className="text-sm font-medium block truncate">{r.label}</span>
-                  <span className="text-xs text-muted-foreground block truncate">{r.subtitle}</span>
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl rounded-none p-0" data-testid="search-results-dialog">
+          <DialogHeader className="border-b border-border px-6 py-5">
+            <DialogTitle className="font-display text-2xl">Search results</DialogTitle>
+            <DialogDescription>
+              Select a result to open it in a new tab.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto" data-testid="search-results">
+            {results.length === 0 ? (
+              <div className="px-6 py-8 text-sm text-muted-foreground">No matches for “{q}”.</div>
+            ) : (
+              results.map((result) => (
+                <button
+                  key={`${result.type}-${result.id}`}
+                  type="button"
+                  onClick={() => openResult(result)}
+                  data-testid={`search-result-${result.id}`}
+                  className={[
+                    "flex w-full items-center gap-4 border-b border-border px-6 py-4 text-left",
+                    "last:border-0 hover:bg-secondary transition-colors duration-150",
+                  ].join(" ")}
+                >
+                  <span className={`overline w-24 shrink-0 ${typeColor[result.type] || ""}`}>
+                    {result.type}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{result.label}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {result.subtitle}
+                    </span>
+                  </span>
+                  <ArrowSquareOut size={18} className="shrink-0 text-muted-foreground" />
+                </button>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
