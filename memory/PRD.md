@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Every customer invoice email now presents a prominent, secure
+  **Download Invoice PDF** button. The managed email service does not support attachments,
+  so the button delivers the same protected PDF without weakening document security.
 - **October 2026**: Sidebar search now requires an explicit **Search** submit button before
   presenting results in a selection popup. Selecting a result opens its CRM page in a new
   popup window; Estimate and Sales Order results open their document editor, while Invoice
@@ -186,6 +189,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Invoice email markup verified the prominent secure **Download Invoice PDF**
+  button and its protected link. The invoice-send dialog also tells staff that the button is
+  included; temporary QA data was removed. Backend compile and frontend build passed.
 - October 2026: Search popup QA opened separate document windows for an Estimate, Sales
   Order, and Invoice while preserving the original search page. Each window loaded the
   selected document view; all temporary QA records were removed and the frontend build passed.

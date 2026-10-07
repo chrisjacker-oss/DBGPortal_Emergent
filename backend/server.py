@@ -4966,10 +4966,27 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         )
     dl_btn = ""
     if pdf_url:
+        download_label = (
+            "DOWNLOAD INVOICE PDF"
+            if kind_label == "Invoice"
+            else f"DOWNLOAD {escape(kind_label.upper())} (PDF) →"
+        )
+        download_note = (
+            "A secure PDF copy of your invoice is ready to download and save."
+            if kind_label == "Invoice"
+            else f"Download a PDF copy of your {escape(kind_label.lower())} for your records."
+        )
+        download_style = (
+            "display:inline-block;background:#0E7490;color:#ffffff;text-decoration:none;"
+            "padding:16px 40px;font-weight:bold;letter-spacing:1px;font-size:14px"
+            if kind_label == "Invoice"
+            else "display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;"
+            "padding:13px 32px;font-weight:bold;letter-spacing:1px;font-size:13px"
+        )
         dl_btn = (
             f'<tr><td style="padding:20px 32px 0" align="center">'
-            f'<a href="{pdf_url}" style="display:inline-block;background:#0A0A0A;color:#ffffff;text-decoration:none;padding:13px 32px;font-weight:bold;letter-spacing:1px;font-size:13px">DOWNLOAD {escape(kind_label.upper())} (PDF) →</a>'
-            f'<div style="color:#9CA3AF;font-size:11px;margin-top:8px">Download a PDF copy of your {escape(kind_label.lower())} for your records.</div>'
+            f'<a href="{pdf_url}" style="{download_style}">{download_label}</a>'
+            f'<div style="color:#6B7280;font-size:12px;margin-top:9px">{download_note}</div>'
             f'</td></tr>'
         )
     approve_btn = ""

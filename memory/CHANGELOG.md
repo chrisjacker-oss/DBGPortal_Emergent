@@ -1,6 +1,9 @@
 # Changelog
 
 ## Oct 2026
+- **Invoice PDF email delivery**: Customer invoice emails now feature a prominent secure
+  **Download Invoice PDF** button, and the send dialog makes this clear to staff. Managed
+  email attachment delivery is unavailable, so protected PDF links remain the safe method.
 - **Search result picker**: Sidebar search now has an explicit Search button. Submitting
   displays matching records in a modal picker; choosing one opens the relevant page in a
   separate popup window. Estimates and Sales Orders open their editors; Invoices open their

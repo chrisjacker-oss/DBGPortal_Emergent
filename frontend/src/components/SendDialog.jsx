@@ -78,6 +78,15 @@ export default function SendDialog({ open, doc, path, kindLabel = "document", al
           <DialogDescription className="font-mono text-xs">Select who should receive this {kindLabel}. You can choose more than one.</DialogDescription>
         </DialogHeader>
 
+        {kindLabel === "invoice" && (
+          <div
+            className="border-l-4 border-[#0E7490] bg-[#06B6D4]/10 px-3 py-2 text-sm"
+            data-testid="invoice-pdf-link-notice"
+          >
+            The customer email includes a secure <strong>Download Invoice PDF</strong> button.
+          </div>
+        )}
+
         <div className="space-y-1 max-h-72 overflow-y-auto border border-border p-1" data-testid="send-recipients">
           {options.length === 0 && <div className="px-3 py-6 text-center text-sm text-muted-foreground">No contacts with an email on file. Add one below.</div>}
           {options.map((o) => (
