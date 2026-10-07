@@ -1,6 +1,9 @@
 # Changelog
 
 ## Oct 2026
+- **Invoice accounting-tab protection**: Invoiced & Waiting Payment and Paid invoice tabs
+  hide select-all/row checkboxes, bulk delete, and individual Delete actions. Active and
+  Voided views retain their existing admin deletion behavior.
 - **Install reply alert**: When a customer submits a tentative installation date, the CRM
   emails `sales@dbgsigns.com` that the customer replied with an install date. The request
   retains delivery-state timestamps and continues saving if the provider is throttled.

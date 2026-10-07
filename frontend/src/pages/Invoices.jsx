@@ -214,6 +214,7 @@ export default function Invoices() {
     return false;
   });
   const isPaid = tab === "paid";
+  const canDeleteCurrentInvoices = isAdmin && tab !== "invoiced" && !isPaid;
   const showComm = tab !== "voided";
   const filtered = isPaid ? visible.filter((r) => {
     const d = (r.paid_at || "").slice(0, 10);
@@ -249,7 +250,7 @@ export default function Invoices() {
   return (
     <div>
       <PageHeader overline="Billing" title="Invoices">
-        {isAdmin && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-invoices-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
+        {canDeleteCurrentInvoices && selIds.length > 0 && <Btn variant="outline" onClick={() => setBulkOpen(true)} data-testid="bulk-delete-invoices-btn"><Trash size={16} weight="bold" /> Delete {selIds.length}</Btn>}
         <Btn variant="outline" onClick={() => setXeroOpen(true)} data-testid="export-xero-invoices-btn">
           <DownloadSimple size={16} weight="bold" /> Export to Xero
         </Btn>
@@ -301,7 +302,7 @@ export default function Invoices() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left overline text-muted-foreground">
-                {isAdmin && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="invoice-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
+                {canDeleteCurrentInvoices && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="invoice-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
@@ -322,7 +323,7 @@ export default function Invoices() {
             <tbody data-testid="invoices-table">
               {sorted.map((r) => (
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`invoice-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
-                  {isAdmin && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`invoice-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
+                  {canDeleteCurrentInvoices && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`invoice-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
                     <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
                   </td>
@@ -456,7 +457,7 @@ export default function Invoices() {
                           hidden: !isAdmin || !r.voided,
                         },
                         { separator: true, hidden: !isAdmin },
-                        { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelInv(r), testid: `delete-invoice-${r.id}`, danger: true, hidden: !isAdmin },
+                        { label: "Delete", icon: <Trash size={16} />, onClick: () => setDelInv(r), testid: `delete-invoice-${r.id}`, danger: true, hidden: !canDeleteCurrentInvoices },
                       ]} />
                     </div>
                   </td>

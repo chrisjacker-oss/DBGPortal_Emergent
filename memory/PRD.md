@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Invoice **Invoiced & Waiting Payment** and **Paid** tabs no longer
+  display selection checkboxes, bulk deletion, or a Delete action. Active and Voided
+  invoice workflows keep their existing admin deletion controls.
 - **October 2026**: Customer tentative-date submissions now send a server-side email to
   `sales@dbgsigns.com` stating that the customer replied with an install date. Delivery
   acceptance or failure is recorded without blocking the customer’s calendar request.
@@ -174,6 +177,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Admin browser checks verified that Waiting Payment and Paid invoice rows
+  omit select-all, row checkboxes, bulk deletion, and Delete actions. Temporary QA
+  invoices were removed; the frontend production build passed with the existing warning.
 - October 2026: Iteration 21 QA passed 30/30 checks across install scheduling, document
   role controls, and salesman UI. It confirmed a provider-accepted sales notification,
   locked customers/commission attribution, admin-only copying, and mobile-safe tables.
