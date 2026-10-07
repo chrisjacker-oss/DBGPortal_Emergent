@@ -44,11 +44,21 @@ export default function SalesOrders() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const focusId = params.get("focus");
+  const openId = params.get("open");
   const focusRef = useRef(null);
+  const openedFromSearchRef = useRef(null);
   const load = () => api.get("/sales-orders").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
   useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
+  useEffect(() => {
+    if (!openId || openedFromSearchRef.current === openId) return;
+    const salesOrder = rows.find((row) => row.id === openId);
+    if (!salesOrder) return;
+    openedFromSearchRef.current = openId;
+    setEditing(salesOrder);
+    setOpen(true);
+  }, [openId, rows]);
 
   const save = async (payload) => {
     try {

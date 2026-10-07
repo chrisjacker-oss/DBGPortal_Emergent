@@ -48,10 +48,22 @@ export const SearchBar = () => {
   };
 
   const openResult = (result) => {
-    const query = new URLSearchParams({ focus: result.id });
+    const documentTypes = new Set(["Estimate", "Sales Order", "Invoice"]);
+    const query = new URLSearchParams({
+      [documentTypes.has(result.type) ? "open" : "focus"]: result.id,
+    });
     const destination = `${result.route}?${query.toString()}`;
-    const opened = window.open(destination, "_blank", "noopener,noreferrer");
-    if (!opened) window.location.assign(destination);
+    const windowName = `dbg-${result.type.toLowerCase().replace(/\s+/g, "-")}-${result.id}`;
+    const opened = window.open(
+      destination,
+      windowName,
+      "popup=yes,width=1280,height=900"
+    );
+    if (opened) {
+      opened.opener = null;
+    } else {
+      window.location.assign(destination);
+    }
     setOpen(false);
     setQ("");
   };
@@ -88,7 +100,7 @@ export const SearchBar = () => {
           <DialogHeader className="border-b border-border px-6 py-5">
             <DialogTitle className="font-display text-2xl">Search results</DialogTitle>
             <DialogDescription>
-              Select a result to open it in a new tab.
+              Select a result to open it in a separate window.
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto" data-testid="search-results">

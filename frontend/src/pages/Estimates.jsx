@@ -42,12 +42,22 @@ export default function Estimates() {
   const [actionConfirm, setActionConfirm] = useState(null);
   const [params] = useSearchParams();
   const focusId = params.get("focus");
+  const openId = params.get("open");
   const focusRef = useRef(null);
+  const openedFromSearchRef = useRef(null);
 
   const load = () => api.get("/estimates").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
   useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
+  useEffect(() => {
+    if (!openId || openedFromSearchRef.current === openId) return;
+    const estimate = rows.find((row) => row.id === openId);
+    if (!estimate) return;
+    openedFromSearchRef.current = openId;
+    setEditing(estimate);
+    setOpen(true);
+  }, [openId, rows]);
 
   const save = async (payload) => {
     try {

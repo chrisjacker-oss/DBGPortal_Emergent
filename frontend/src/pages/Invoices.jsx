@@ -55,7 +55,9 @@ export default function Invoices() {
   const [inZeroSaving, setInZeroSaving] = useState({});
   const [params] = useSearchParams();
   const focusId = params.get("focus");
+  const openId = params.get("open");
   const focusRef = useRef(null);
+  const openedFromSearchRef = useRef(null);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
   const exportInvoicesPdf = async () => {
     setXeroBusy(true);
@@ -70,6 +72,13 @@ export default function Invoices() {
   const load = () => api.get("/invoices").then((r) => setRows(r.data));
   useEffect(() => { load(); }, []);
   useEffect(() => { api.get("/settings").then((r) => { setLowThreshold(Number(r.data.low_margin_threshold || 0)); }).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!openId || openedFromSearchRef.current === openId) return;
+    const invoice = rows.find((row) => row.id === openId);
+    if (!invoice) return;
+    openedFromSearchRef.current = openId;
+    openDetail(invoice);
+  }, [openId, rows]);
 
   const openHistory = async (r) => {
     try {

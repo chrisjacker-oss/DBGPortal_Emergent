@@ -28,7 +28,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 ## Recent changes
 - **October 2026**: Sidebar search now requires an explicit **Search** submit button before
   presenting results in a selection popup. Selecting a result opens its CRM page in a new
-  tab; document results also focus the matching record.
+  popup window; Estimate and Sales Order results open their document editor, while Invoice
+  results open their document detail view.
 - **October 2026**: Estimate, Sales Order, and Invoice list tables now use stronger
   semibold body text and bold, high-contrast headers for easier scanning.
 - **October 2026**: The Paid invoice tab now includes an **Input Zero** Yes/No field between
@@ -185,6 +186,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Search popup QA opened separate document windows for an Estimate, Sales
+  Order, and Invoice while preserving the original search page. Each window loaded the
+  selected document view; all temporary QA records were removed and the frontend build passed.
 - October 2026: Search input no longer opens results while typing. A Search-button click
   displayed the popup and opened the chosen Estimate in a separate focused tab; temporary
   QA records were removed. Frontend production build passed with the existing warning.
