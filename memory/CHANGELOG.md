@@ -1,8 +1,9 @@
 # Changelog
 
 ## Oct 2026
-- **Search result picker**: Sidebar search results now display in a modal picker. Choosing
-  a result opens the relevant page in a new tab, with document results focused.
+- **Search result picker**: Sidebar search now has an explicit Search button. Submitting
+  displays matching records in a modal picker; choosing one opens the relevant page in a
+  new tab, with document results focused.
 - **Document table readability**: Estimate, Sales Order, and Invoice list tables now use
   semibold body text with bold, high-contrast column headers. The paid-invoice flag label
   is now **Input Zero**.
