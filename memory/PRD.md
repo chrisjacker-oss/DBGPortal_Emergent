@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: The Paid invoice tab now includes an **In Zero** Yes/No field between
+  the invoice number and customer. Only admins can change this internal paid-invoice flag;
+  it is unavailable for unpaid or voided invoices.
 - **October 2026**: Invoice **Invoiced & Waiting Payment** and **Paid** tabs no longer
   display selection checkboxes, bulk deletion, or a Delete action. Active and Voided
   invoice workflows keep their existing admin deletion controls.
@@ -177,6 +180,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Admin API and browser checks confirmed **In Zero** saves Yes/No on paid
+  invoices only, while salesmen receive a server-side `403`. The temporary QA invoice and
+  customer were removed. Backend compile and frontend production build passed.
 - October 2026: Admin browser checks verified that Waiting Payment and Paid invoice rows
   omit select-all, row checkboxes, bulk deletion, and Delete actions. Temporary QA
   invoices were removed; the frontend production build passed with the existing warning.

@@ -52,6 +52,7 @@ export default function Invoices() {
   const [xeroOpen, setXeroOpen] = useState(false);
   const [xeroMonth, setXeroMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [xeroBusy, setXeroBusy] = useState(false);
+  const [inZeroSaving, setInZeroSaving] = useState({});
   const [params] = useSearchParams();
   const focusId = params.get("focus");
   const focusRef = useRef(null);
@@ -246,6 +247,19 @@ export default function Invoices() {
       setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, work_status: data.work_status } : x)));
     } catch (e) { toast.error(e.response?.data?.detail || "Failed to update work status"); }
   };
+  const setInZero = async (r, inZero) => {
+    if (Boolean(r.in_zero) === inZero) return;
+    setInZeroSaving((current) => ({ ...current, [r.id]: true }));
+    try {
+      const { data } = await api.patch(`/invoices/${r.id}/in-zero`, { in_zero: inZero });
+      setRows((current) => current.map((row) => (row.id === r.id ? data : row)));
+      toast.success(`In Zero marked ${inZero ? "Yes" : "No"}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not update In Zero");
+    } finally {
+      setInZeroSaving((current) => ({ ...current, [r.id]: false }));
+    }
+  };
 
   return (
     <div>
@@ -304,6 +318,7 @@ export default function Invoices() {
               <tr className="border-b border-border text-left overline text-muted-foreground">
                 {canDeleteCurrentInvoices && <th className="px-4 py-3 w-10"><input type="checkbox" checked={allChecked} onChange={toggleAll} data-testid="invoice-select-all" className="h-4 w-4 accent-[#0A0A0A]" /></th>}
                 <th className="px-6 py-3 font-mono">#</th>
+                {isPaid && <th className="px-6 py-3 font-mono">In Zero</th>}
                 <th className="px-6 py-3 font-mono">Customer</th>
                 <th className="px-6 py-3 font-mono">Job</th>
                 <th className="px-6 py-3 font-mono">Order Date</th>
@@ -327,6 +342,29 @@ export default function Invoices() {
                   <td className="px-6 py-3 font-mono">
                     <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
                   </td>
+                  {isPaid && (
+                    <td className="px-6 py-3">
+                      {isAdmin ? (
+                        <select
+                          value={r.in_zero ? "yes" : "no"}
+                          onChange={(event) => setInZero(r, event.target.value === "yes")}
+                          disabled={!!inZeroSaving[r.id]}
+                          data-testid={`invoice-in-zero-${r.id}`}
+                          className={[
+                            "border border-input bg-card px-2 py-1 text-sm rounded-none",
+                            "focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50",
+                          ].join(" ")}
+                        >
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
+                        </select>
+                      ) : (
+                        <span data-testid={`invoice-in-zero-value-${r.id}`}>
+                          {r.in_zero ? "Yes" : "No"}
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-6 py-3 font-medium">{r.customer_name}</td>
                   <td className="px-6 py-3 text-muted-foreground">{r.title}</td>
                   <td className="px-6 py-3 font-mono text-muted-foreground">{r.order_date || "—"}</td>
@@ -463,7 +501,17 @@ export default function Invoices() {
                   </td>
                 </tr>
               ))}
-              {sorted.length === 0 && <tr><td colSpan={(isPaid ? 14 : 11) + (showComm ? 1 : 0) + (canSeeMargin ? 1 : 0) + (isAdmin ? 1 : 0)} className="px-6 py-10 text-center text-muted-foreground">No {tab} invoices.</td></tr>}
+              {sorted.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={11 + (isPaid ? 3 : 0) + (showComm ? 1 : 0) +
+                      (canSeeMargin ? 1 : 0) + (canDeleteCurrentInvoices ? 1 : 0)}
+                    className="px-6 py-10 text-center text-muted-foreground"
+                  >
+                    No {tab} invoices.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

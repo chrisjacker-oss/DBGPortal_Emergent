@@ -1,6 +1,9 @@
 # Changelog
 
 ## Oct 2026
+- **Paid invoice In Zero field**: Paid invoice rows now include an admin-only **In Zero**
+  Yes/No dropdown between invoice number and customer. The secure server update accepts it
+  only for non-voided paid invoices; other staff see the stored value without an editor.
 - **Invoice accounting-tab protection**: Invoiced & Waiting Payment and Paid invoice tabs
   hide select-all/row checkboxes, bulk delete, and individual Delete actions. Active and
   Voided views retain their existing admin deletion behavior.
