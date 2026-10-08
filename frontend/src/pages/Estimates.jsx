@@ -18,7 +18,14 @@ const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/a
 const printDoc = (path) => {
   const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
   if (!w) { toast.error("Please allow pop-ups to print"); return; }
-  const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+  const go = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch (error) {
+      console.warn("Browser PDF print did not start; use the viewer toolbar instead:", error);
+    }
+  };
   w.addEventListener?.("load", go);
   setTimeout(go, 1200);
 };

@@ -502,7 +502,11 @@ export default function Customers() {
                 <div><b>{importResult.created}</b> added · <b>{importResult.skipped}</b> skipped</div>
                 {importResult.errors?.length > 0 && (
                   <ul className="mt-2 text-xs text-muted-foreground list-disc pl-5 max-h-32 overflow-y-auto">
-                    {importResult.errors.map((er, i) => <li key={i}>{er}</li>)}
+                    {importResult.errors.map((error) => (
+                      <li key={`${error.row || error.line || "error"}-${error.message || error}`}>
+                        {error.message || error}
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>

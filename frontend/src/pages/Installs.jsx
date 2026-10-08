@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -38,9 +38,24 @@ export default function Installs() {
   const [decisionBusy, setDecisionBusy] = useState(false);
 
   const ym = ymOf(cursor);
-  const load = () => api.get(`/installs?month=${ym}`).then((r) => setInstalls(r.data)).catch(() => setInstalls([]));
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [ym]);
-  useEffect(() => { api.get("/customers").then((r) => setCustomers(r.data)).catch(() => {}); }, []);
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/installs?month=${ym}`);
+      setInstalls(data);
+    } catch (error) {
+      console.error("Could not load installs:", error);
+      setInstalls([]);
+    }
+  }, [ym]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    api.get("/customers")
+      .then((response) => setCustomers(response.data))
+      .catch((error) => {
+        console.error("Could not load install customers:", error);
+        setCustomers([]);
+      });
+  }, []);
   useEffect(() => {
     if (open && form.customer_id) {
       api.get(`/customers/${form.customer_id}/contacts`).then((r) => setContacts(r.data)).catch(() => setContacts([]));
@@ -150,7 +165,7 @@ export default function Installs() {
               const dateStr = d ? `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(d)}` : null;
               const items = d ? (byDate[dateStr] || []) : [];
               return (
-                <div key={i} className={`min-h-[118px] border-b border-r border-border p-1.5 last:border-r-0 ${i % 7 === 6 ? "border-r-0" : ""} ${d ? "" : "bg-secondary/30"}`}>
+                <div key={dateStr || `calendar-pad-${ym}-${i}`} className={`min-h-[118px] border-b border-r border-border p-1.5 last:border-r-0 ${i % 7 === 6 ? "border-r-0" : ""} ${d ? "" : "bg-secondary/30"}`}>
                   {d && (
                     <div className="h-full flex flex-col">
                       <div className="flex items-center justify-between">

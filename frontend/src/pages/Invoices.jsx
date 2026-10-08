@@ -15,6 +15,20 @@ import RecordPaymentDialog from "@/components/RecordPaymentDialog";
 import ActionsMenu from "@/components/ActionsMenu";
 import { MarginCell } from "@/components/MarginCell";
 import { downloadFile } from "@/lib/download";
+
+const paymentKey = (payment) => payment.id || payment.payment_id || [
+  payment.date,
+  payment.amount,
+  payment.method,
+  payment.reference,
+].join("-");
+const invoiceLineKey = (line) => line.id || line.material_id || [
+  line.description,
+  line.quantity,
+  line.width_in,
+  line.height_in,
+  line.line_total,
+].join("-");
 import { Plus, PencilSimple, Trash, CheckCircle, DownloadSimple, EnvelopeSimple, FilePdf, CreditCard, Prohibit, ArrowCounterClockwise, ClockCounterClockwise, Printer, LockKey, Eye, Receipt, CopySimple } from "@phosphor-icons/react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
@@ -109,7 +123,14 @@ export default function Invoices() {
   const printDoc = (path) => {
     const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
     if (!w) { toast.error("Please allow pop-ups to print"); return; }
-    const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+    const go = () => {
+      try {
+        w.focus();
+        w.print();
+      } catch (error) {
+        console.warn("Browser PDF print did not start; use the viewer toolbar instead:", error);
+      }
+    };
     w.addEventListener?.("load", go);
     setTimeout(go, 1200);
   };
@@ -571,8 +592,8 @@ export default function Invoices() {
             <div className="py-6 text-center text-muted-foreground text-sm">No card payments recorded.</div>
           ) : (
             <div className="divide-y divide-border" data-testid="payment-history-list">
-              {histRows.map((p, i) => (
-                <div key={i} className="flex items-center justify-between py-3 text-sm">
+              {histRows.map((p) => (
+                <div key={paymentKey(p)} className="flex items-center justify-between py-3 text-sm">
                   <div>
                     <div className="font-mono">{p.date ? new Date(p.date).toLocaleString() : "—"}</div>
                     <div className="text-xs text-muted-foreground">{p.method}</div>
@@ -634,8 +655,8 @@ export default function Invoices() {
                     {canSeeMargin && <th className="px-3 py-2 font-mono text-right text-[#0E7490]">Margin</th>}
                   </tr></thead>
                   <tbody data-testid="invoice-detail-items">
-                    {(detailInv.line_items || []).map((li, i) => (
-                      <tr key={i} className="border-b border-border last:border-0">
+                    {(detailInv.line_items || []).map((li) => (
+                      <tr key={invoiceLineKey(li)} className="border-b border-border last:border-0">
                         <td className="px-3 py-2">{li.description}{li.details && <div className="text-xs text-muted-foreground">{li.details}</div>}</td>
                         <td className="px-3 py-2 text-center font-mono text-muted-foreground">{li.width_in}" × {li.height_in}" × {li.quantity}</td>
                         <td className="px-3 py-2 text-right font-mono">{Number(li.area_sqft || 0).toFixed(2)}</td>
@@ -664,8 +685,8 @@ export default function Invoices() {
                   <div className="text-muted-foreground text-sm py-3">No payments recorded.</div>
                 ) : (
                   <div className="divide-y divide-border border border-border" data-testid="invoice-detail-payments">
-                    {detailPays.map((p, i) => (
-                      <div key={i} className="flex items-center justify-between px-3 py-2">
+                    {detailPays.map((p) => (
+                      <div key={paymentKey(p)} className="flex items-center justify-between px-3 py-2">
                         <div>
                           <div className="font-mono text-sm">{p.date ? new Date(p.date).toLocaleString() : "—"}</div>
                           <div className="text-xs text-muted-foreground">{p.method}{p.notes ? ` · “${p.notes}”` : ""}</div>

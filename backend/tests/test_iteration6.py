@@ -9,6 +9,7 @@ exclusion from dashboard/overdue/portal, admin-password protected deletes.
 """
 import os
 import re
+import uuid
 from pathlib import Path
 
 import pytest
@@ -21,10 +22,10 @@ if not base_url:
     raise RuntimeError("REACT_APP_BACKEND_URL missing")
 API = base_url.rstrip("/") + "/api"
 
-ADMIN_EMAIL = "sales@dbgsigns.com"
-ADMIN_PASS = "10297099"
-SALES_EMAIL = "sam@dbgsigns.com"
-SALES_PASS = "Sales2026!"
+ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+ADMIN_PASS = os.environ.get("TEST_ADMIN_PASSWORD", "")
+SALES_EMAIL = os.environ.get("TEST_SALESMAN_EMAIL", "")
+SALES_PASS = os.environ.get("TEST_SALESMAN_PASSWORD", "")
 
 
 def _read_creds():
@@ -42,6 +43,11 @@ def _login(email, password):
     return s
 
 
+def _require_staff_credentials():
+    if not all((ADMIN_EMAIL, ADMIN_PASS, SALES_EMAIL, SALES_PASS)):
+        pytest.skip("TEST_ADMIN_* and TEST_SALESMAN_* credentials are required")
+
+
 @pytest.fixture(scope="module")
 def creds_file():
     return _read_creds()
@@ -49,12 +55,14 @@ def creds_file():
 
 @pytest.fixture(scope="module")
 def admin(creds_file):
+    _require_staff_credentials()
     assert ADMIN_EMAIL in creds_file
     return _login(ADMIN_EMAIL, ADMIN_PASS)
 
 
 @pytest.fixture(scope="module")
 def salesman(creds_file):
+    _require_staff_credentials()
     assert SALES_EMAIL in creds_file
     return _login(SALES_EMAIL, SALES_PASS)
 
@@ -72,7 +80,8 @@ def customer(admin):
     admin.delete(f"{API}/customers/{cid}")
 
 
-def _admin_delete(sess, path, password=ADMIN_PASS):
+def _admin_delete(sess, path, password=None):
+    password = password or ADMIN_PASS
     return sess.delete(f"{API}{path}", json={"password": password})
 
 
@@ -162,11 +171,11 @@ class TestMaterialCategories:
     def test_delete_custom_category(self, admin):
         assert TestMaterialCategories.created, "no category created"
         cid = TestMaterialCategories.created.pop()
-        r = admin.delete(f"{API}/material-categories/{cid}")
+        r = _admin_delete(admin, f"/material-categories/{cid}")
         assert r.status_code == 200
         lst = admin.get(f"{API}/material-categories").json()
         assert "TEST_it6 Cat" not in [c["name"] for c in lst["custom"]]
-        assert admin.delete(f"{API}/material-categories/{cid}").status_code == 404
+        assert _admin_delete(admin, f"/material-categories/{cid}").status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +279,7 @@ class TestSalesOrders:
         so = r.json()
         sid = so["id"]
         try:
-            assert re.match(r"^SO-\d{4}$", so["number"]), so["number"]
+            assert re.match(r"^SO-\d+$", so["number"]), so["number"]
             assert so["status"] == "in_production"
             assert so["commission_base"] == pytest.approx(40.0, abs=0.01)
             assert so["commission_amount"] == pytest.approx(2.0, abs=0.01)
@@ -469,15 +478,15 @@ class TestStripePayments:
 # ---------------------------------------------------------------------------
 class TestPortalAccounts:
     EMAIL = "test_it6_portal@it6test.example.com"
-    PASSWORD = "PortalTest2026!"
 
     def test_full_lifecycle(self, admin, salesman):
+        portal_password = os.environ.get("TEST_PORTAL_PASSWORD") or f"PortalTest{uuid.uuid4().hex}!"
         # cleanup any leftovers
         for a in admin.get(f"{API}/portal-accounts").json():
             if a["email"] == self.EMAIL:
-                admin.delete(f"{API}/portal-accounts/{a['id']}")
+                _admin_delete(admin, f"/portal-accounts/{a['id']}")
         r = admin.post(f"{API}/portal-accounts", json={
-            "name": "TEST_it6 Portal User", "email": self.EMAIL, "password": self.PASSWORD,
+            "name": "TEST_it6 Portal User", "email": self.EMAIL, "password": portal_password,
             "company": "TEST_it6 Portal Co", "phone": "555-0100", "tier": 2, "net_terms": "Net 10",
         })
         assert r.status_code == 200, r.text
@@ -491,13 +500,13 @@ class TestPortalAccounts:
             cid = acct["customer_id"]
             # duplicate email
             dup = admin.post(f"{API}/portal-accounts", json={
-                "name": "dup", "email": self.EMAIL, "password": self.PASSWORD})
+                "name": "dup", "email": self.EMAIL, "password": portal_password})
             assert dup.status_code == 400
             # appears in list
             lst = admin.get(f"{API}/portal-accounts").json()
             assert uid in [a["id"] for a in lst]
             # customer can log in and read portal
-            cs = _login(self.EMAIL, self.PASSWORD)
+            cs = _login(self.EMAIL, portal_password)
             po = cs.get(f"{API}/portal/orders")
             assert po.status_code == 200, po.text
             assert po.json()["customer"]["email"] == self.EMAIL
@@ -508,7 +517,7 @@ class TestPortalAccounts:
             sp = admin.patch(f"{API}/portal-accounts/{uid}/status?suspended=true")
             assert sp.status_code == 200 and sp.json()["suspended"] is True
             assert sp.json()["portal_enabled"] is False
-            bad = requests.post(f"{API}/auth/login", json={"email": self.EMAIL, "password": self.PASSWORD})
+            bad = requests.post(f"{API}/auth/login", json={"email": self.EMAIL, "password": portal_password})
             assert bad.status_code == 403, bad.status_code
             assert "suspend" in bad.json()["detail"].lower()
             # existing session also blocked
@@ -516,7 +525,7 @@ class TestPortalAccounts:
             # reactivate
             rp = admin.patch(f"{API}/portal-accounts/{uid}/status?suspended=false")
             assert rp.status_code == 200 and rp.json()["suspended"] is False
-            cs2 = _login(self.EMAIL, self.PASSWORD)
+            cs2 = _login(self.EMAIL, portal_password)
             assert cs2.get(f"{API}/portal/orders").status_code == 200
             # RBAC
             assert salesman.get(f"{API}/portal-accounts").status_code == 403
@@ -525,17 +534,17 @@ class TestPortalAccounts:
             assert salesman.patch(f"{API}/portal-accounts/{uid}/status?suspended=true").status_code == 403
             assert salesman.delete(f"{API}/portal-accounts/{uid}").status_code == 403
             # delete keeps customer record
-            d = admin.delete(f"{API}/portal-accounts/{uid}")
+            d = _admin_delete(admin, f"/portal-accounts/{uid}")
             assert d.status_code == 200, d.text
             assert requests.post(f"{API}/auth/login",
-                                 json={"email": self.EMAIL, "password": self.PASSWORD}).status_code == 401
+                                 json={"email": self.EMAIL, "password": portal_password}).status_code == 401
             cust = [c for c in admin.get(f"{API}/customers").json() if c["id"] == cid]
             assert cust, "customer business record should survive portal account deletion"
             assert cust[0].get("portal_enabled") is False
-            admin.delete(f"{API}/customers/{cid}")
-            assert admin.delete(f"{API}/portal-accounts/{uid}").status_code == 404
+            _admin_delete(admin, f"/customers/{cid}")
+            assert _admin_delete(admin, f"/portal-accounts/{uid}").status_code == 404
         finally:
-            admin.delete(f"{API}/portal-accounts/{uid}")
+            _admin_delete(admin, f"/portal-accounts/{uid}")
 
     def test_customer_can_only_pay_own_invoice(self, admin, customer):
         email = "test_it6_pay@it6test.example.com"

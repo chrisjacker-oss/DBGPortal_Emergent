@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
@@ -33,9 +33,26 @@ export default function WorkOrders() {
   const [sel, setSel] = useState({});
   const [bulkOpen, setBulkOpen] = useState(false);
 
-  const load = () => api.get("/work-orders").then((r) => setRows(r.data));
-  useEffect(() => { load(); }, []);
-  useEffect(() => { api.get("/installers").then((r) => setInstallers(r.data)).catch(() => {}); }, []);
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get("/work-orders");
+      setRows(data);
+    } catch (error) {
+      console.error("Could not load work orders:", error);
+      setRows([]);
+    }
+  }, []);
+  const loadInstallers = useCallback(async () => {
+    try {
+      const { data } = await api.get("/installers");
+      setInstallers(data);
+    } catch (error) {
+      console.error("Could not load installers:", error);
+      setInstallers([]);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadInstallers(); }, [loadInstallers]);
 
   const custOptions = Array.from(new Set(rows.map((r) => r.customer_name).filter(Boolean))).sort();
   const workerOptions = Array.from(new Set([...rows.map((r) => r.worker_name).filter(Boolean), ...installers.map((u) => u.name)])).sort();

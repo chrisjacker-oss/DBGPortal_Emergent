@@ -156,8 +156,16 @@ export default function Portal() {
               <div className="border border-border bg-secondary/30" data-testid="reorder-source-items">
                 <div className="px-3 py-2 overline text-muted-foreground border-b border-border">Previously ordered{reorderNum ? ` · ${reorderNum}` : ""}</div>
                 <div className="divide-y divide-border">
-                  {reorderItems.map((li, idx) => (
-                    <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm" data-testid={`reorder-item-${idx}`}>
+                  {reorderItems.map((li) => {
+                    const itemKey = li.id || li.material_id || [
+                      li.description,
+                      li.width_in,
+                      li.height_in,
+                      li.quantity,
+                      li.line_total,
+                    ].join("-");
+                    return (
+                    <div key={itemKey} className="flex items-center justify-between px-3 py-2 text-sm" data-testid={`reorder-item-${itemKey}`}>
                       <div className="min-w-0">
                         <div className="font-medium truncate">{li.description || "Item"}</div>
                         <div className="text-xs text-muted-foreground font-mono">
@@ -167,7 +175,8 @@ export default function Portal() {
                       </div>
                       <div className="font-mono text-sm shrink-0 ml-3">{currency(li.line_total || 0)}</div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border">These are the items from your previous order. Add any changes in the notes below.</div>
               </div>

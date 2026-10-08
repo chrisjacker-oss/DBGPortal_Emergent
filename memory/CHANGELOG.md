@@ -1,6 +1,10 @@
 # Changelog
 
 ## Oct 2026
+- **Critical code-quality hardening**: Replaced named test credentials with environment
+  variables, stabilized high-risk loading effects, surfaced previously silent client errors,
+  and replaced reviewed array-index keys. The requested large component and server-function
+  refactor is deferred for a dedicated change set.
 - **Sales Order copy workflow**: The admin-only copy action on Estimates, Sales Orders,
   and Invoices now confirms creation of a new open Sales Order for the same customer. It
   carries document details and line items while clearing payment, email, work-status, and

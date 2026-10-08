@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/Layout";
@@ -36,17 +36,44 @@ export default function TimeClock() {
   const [open, setOpen] = useState(false);
   const [delRow, setDelRow] = useState(null);
 
-  const loadStatus = () => api.get("/timeclock/status").then((r) => setStatus(r.data)).catch(() => {});
-  const loadEntries = () => {
+  const loadStatus = useCallback(async () => {
+    try {
+      const { data } = await api.get("/timeclock/status");
+      setStatus(data);
+    } catch (error) {
+      console.error("Could not load time clock status:", error);
+      setStatus(null);
+    }
+  }, []);
+  const loadEntries = useCallback(async () => {
     const q = [];
     if (isAdmin && fUser) q.push(`user_id=${fUser}`);
     if (fFrom) q.push(`start=${fFrom}`);
     if (fTo) q.push(`end=${fTo}`);
-    api.get(`/timeclock/entries${q.length ? `?${q.join("&")}` : ""}`).then((r) => setEntries(r.data)).catch(() => {});
-  };
-  useEffect(() => { if (canClock) loadStatus(); }, []);           // eslint-disable-line
-  useEffect(() => { loadEntries(); }, [fUser, fFrom, fTo]);       // eslint-disable-line
-  useEffect(() => { if (isAdmin) api.get("/users").then((r) => setStaff(r.data.filter((u) => u.role !== "admin"))).catch(() => {}); }, [isAdmin]);
+    try {
+      const { data } = await api.get(`/timeclock/entries${q.length ? `?${q.join("&")}` : ""}`);
+      setEntries(data);
+    } catch (error) {
+      console.error("Could not load time entries:", error);
+      setEntries([]);
+    }
+  }, [fFrom, fTo, fUser, isAdmin]);
+  const loadStaff = useCallback(async () => {
+    if (!isAdmin) {
+      setStaff([]);
+      return;
+    }
+    try {
+      const { data } = await api.get("/users");
+      setStaff(data.filter((staffUser) => staffUser.role !== "admin"));
+    } catch (error) {
+      console.error("Could not load staff:", error);
+      setStaff([]);
+    }
+  }, [isAdmin]);
+  useEffect(() => { if (canClock) loadStatus(); }, [canClock, loadStatus]);
+  useEffect(() => { loadEntries(); }, [loadEntries]);
+  useEffect(() => { loadStaff(); }, [loadStaff]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   const clockIn = async () => { try { await api.post("/timeclock/clock-in"); toast.success("Clocked in"); loadStatus(); loadEntries(); } catch (e) { toast.error(e.response?.data?.detail || "Failed"); } };

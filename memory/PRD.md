@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Applied critical code-quality hardening: named test credentials now
+  come from environment variables, async loading uses stable React callbacks, silent catches
+  report errors, and reviewed list keys are stable. The larger component/server refactor is
+  deferred at the user’s request.
 - **October 2026**: Admin-only **Create Sales Order Copy** actions on Estimates, Sales
   Orders, and Invoices now show a confirmation popup and create a new open Sales Order for
   the same customer. Customer details, pricing, and line items carry over; payments,
@@ -193,6 +197,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Frontend production build is clean. Targeted auth/portal tests passed 5/5,
+  static Python checks found no undefined names, and Work Orders, Time Clock, Sales Orders,
+  and Install Calendar loaded successfully in the browser after dependency cleanup.
 - October 2026: Copy-flow API checks passed 8/8. A live Estimate action confirmation
   created an open Sales Order with the same customer and line items; temporary source and
   copied records were removed. Backend compile and frontend build passed.

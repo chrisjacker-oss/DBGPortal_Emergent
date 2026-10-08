@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import api, { currency } from "@/lib/api";
 import { toast } from "sonner";
@@ -18,7 +18,14 @@ const viewDocPdf = (path) => window.open(`${process.env.REACT_APP_BACKEND_URL}/a
 const printDoc = (path) => {
   const w = window.open(`${process.env.REACT_APP_BACKEND_URL}/api${path}?inline=1`, "_blank");
   if (!w) { toast.error("Please allow pop-ups to print"); return; }
-  const go = () => { try { w.focus(); w.print(); } catch (e) { /* PDF viewer print toolbar available */ } };
+  const go = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch (error) {
+      console.warn("Browser PDF print did not start; use the viewer toolbar instead:", error);
+    }
+  };
   w.addEventListener?.("load", go);
   setTimeout(go, 1200);
 };
@@ -47,9 +54,25 @@ export default function SalesOrders() {
   const openId = params.get("open");
   const focusRef = useRef(null);
   const openedFromSearchRef = useRef(null);
-  const load = () => api.get("/sales-orders").then((r) => setRows(r.data));
-  useEffect(() => { load(); }, []);
-  useEffect(() => { api.get("/settings").then((r) => setLowThreshold(Number(r.data.low_margin_threshold || 0))).catch(() => {}); }, []);
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get("/sales-orders");
+      setRows(data);
+    } catch (error) {
+      console.error("Could not load sales orders:", error);
+      setRows([]);
+    }
+  }, []);
+  const loadSettings = useCallback(async () => {
+    try {
+      const { data } = await api.get("/settings");
+      setLowThreshold(Number(data.low_margin_threshold || 0));
+    } catch (error) {
+      console.error("Could not load sales order settings:", error);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadSettings(); }, [loadSettings]);
   useEffect(() => { if (focusId && focusRef.current) focusRef.current.scrollIntoView({ behavior: "smooth", block: "center" }); }, [focusId, rows]);
   useEffect(() => {
     if (!openId || openedFromSearchRef.current === openId) return;

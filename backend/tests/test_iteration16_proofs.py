@@ -13,10 +13,10 @@ BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://signshop-crm.preview
 MONGO_URL = "mongodb://localhost:27017"
 DB_NAME = "test_database"
 
-ADMIN_EMAIL = "sales@dbgsigns.com"
-ADMIN_PASSWORD = "10297099"
-SALESMAN_EMAIL = "sam@dbgsigns.com"
-SALESMAN_PASSWORD = "Sales2026!"
+ADMIN_EMAIL = os.environ.get("TEST_ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.environ.get("TEST_ADMIN_PASSWORD", "")
+SALESMAN_EMAIL = os.environ.get("TEST_SALESMAN_EMAIL", "")
+SALESMAN_PASSWORD = os.environ.get("TEST_SALESMAN_PASSWORD", "")
 
 # 1x1 transparent PNG
 PNG_BYTES = bytes.fromhex(
@@ -33,6 +33,8 @@ def db():
 
 @pytest.fixture(scope="module")
 def admin_session():
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        pytest.skip("TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD are required")
     s = requests.Session()
     r = s.post(f"{BASE_URL}/api/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, f"admin login failed: {r.status_code} {r.text}"
@@ -41,6 +43,8 @@ def admin_session():
 
 @pytest.fixture(scope="module")
 def salesman_session():
+    if not SALESMAN_EMAIL or not SALESMAN_PASSWORD:
+        pytest.skip("TEST_SALESMAN_EMAIL and TEST_SALESMAN_PASSWORD are required")
     s = requests.Session()
     r = s.post(f"{BASE_URL}/api/auth/login", json={"email": SALESMAN_EMAIL, "password": SALESMAN_PASSWORD})
     assert r.status_code == 200, f"salesman login failed: {r.status_code} {r.text}"

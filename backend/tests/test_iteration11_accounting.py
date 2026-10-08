@@ -13,7 +13,6 @@ if not base_url:
     raise RuntimeError("REACT_APP_BACKEND_URL missing")
 BASE_URL = base_url.rstrip("/")
 API = f"{BASE_URL}/api"
-ADMIN_PASSWORD = "10297099"
 ACCOUNTING_EMAIL = "michelle@dbgsigns.com"
 
 
@@ -59,8 +58,9 @@ def created_invoice_ids():
 def cleanup(client, created_invoice_ids):
     yield
     if created_invoice_ids:
+        admin_password = _admin_creds()["password"]
         r = client.post(f"{API}/invoices/bulk-delete",
-                        json={"ids": created_invoice_ids, "password": ADMIN_PASSWORD}, timeout=90)
+                        json={"ids": created_invoice_ids, "password": admin_password}, timeout=90)
         print(f"CLEANUP bulk-delete -> {r.status_code} {r.text[:200]}")
 
 

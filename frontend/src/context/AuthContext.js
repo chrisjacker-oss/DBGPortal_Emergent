@@ -27,8 +27,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   const idleLogout = useCallback(async () => {
-    try { await api.post("/auth/logout"); } catch { /* cookie may already be gone */ }
-    try { sessionStorage.setItem("idle_logout", "1"); } catch { /* ignore */ }
+    try {
+      await api.post("/auth/logout");
+    } catch (error) {
+      console.warn("Logout request failed; clearing the local session:", error);
+    }
+    try {
+      sessionStorage.setItem("idle_logout", "1");
+    } catch (error) {
+      console.warn("Could not save the idle logout marker:", error);
+    }
     setUser(false);
   }, []);
 
@@ -78,7 +86,11 @@ export function AuthProvider({ children }) {
   }, [user, idleLogout, setWarn]);
 
   const stayActive = useCallback(async () => {
-    try { await api.post("/auth/refresh"); } catch { /* ignore */ }
+    try {
+      await api.post("/auth/refresh");
+    } catch (error) {
+      console.warn("Session refresh failed:", error);
+    }
     if (resetRef.current) resetRef.current();
   }, []);
 

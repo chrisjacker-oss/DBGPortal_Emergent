@@ -31,7 +31,9 @@ export default function Login({ variant = "staff" }) {
         sessionStorage.removeItem("google_error");
         setError(gerr);
       }
-    } catch { /* ignore */ }
+    } catch (error) {
+      console.warn("Could not restore a prior login message:", error);
+    }
   }, []);
 
   const googleSignIn = () => {

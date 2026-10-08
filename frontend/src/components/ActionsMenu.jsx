@@ -14,17 +14,20 @@ export default function ActionsMenu({ items, testid }) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="rounded-none w-52">
-        {visible.map((it, i) =>
-          it.separator ? (
-            <DropdownMenuSeparator key={i} />
+        {visible.map((it, index) => {
+          const previous = visible[index - 1]?.testid || "start";
+          const next = visible[index + 1]?.testid || "end";
+          const itemKey = it.testid || `${it.label || "separator"}-${previous}-${next}`;
+          return it.separator ? (
+            <DropdownMenuSeparator key={itemKey} />
           ) : (
-            <DropdownMenuItem key={i} data-testid={it.testid}
+            <DropdownMenuItem key={itemKey} data-testid={it.testid}
               onSelect={() => setTimeout(() => it.onClick?.(), 0)}
               className={`rounded-none cursor-pointer gap-2 ${it.danger ? "text-destructive focus:text-destructive" : ""}`}>
               {it.icon}<span>{it.label}</span>
             </DropdownMenuItem>
-          )
-        )}
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
