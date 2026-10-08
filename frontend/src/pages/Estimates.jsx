@@ -77,8 +77,13 @@ export default function Estimates() {
   };
   const sendEmail = (id) => { const r = rows.find((x) => x.id === id); if (r) setSendDoc(r); };
   const duplicate = async (id) => {
-    try { const { data } = await api.post(`/estimates/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
+    try {
+      const { data } = await api.post(`/estimates/${id}/duplicate`);
+      toast.success(`Sales Order ${data.number} created`);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not create sales order");
+    }
   };
   const confirmDelete = async (password) => {
     try {
@@ -192,12 +197,12 @@ export default function Estimates() {
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-estimate-${r.id}` },
                         { label: "COD/Deposit Email", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-estimate-${r.id}` },
                         {
-                          label: "Create a copy",
+                          label: "Create Sales Order Copy",
                           icon: <CopySimple size={16} />,
                           onClick: () => setActionConfirm({
-                            title: `Copy Estimate ${r.number}`,
-                            description: "Create a new editable copy of this estimate.",
-                            confirmLabel: "Create copy",
+                            title: `Create Sales Order from ${r.number}?`,
+                            description: `Create a new Sales Order for ${r.customer_name} with this estimate's details.`,
+                            confirmLabel: "Create sales order",
                             onConfirm: () => duplicate(r.id),
                           }),
                           testid: `duplicate-estimate-${r.id}`,

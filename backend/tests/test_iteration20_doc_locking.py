@@ -2,7 +2,7 @@
 
 Tests:
 - Admin and salesmen can edit non-customer fields; no role can change customer_id (400).
-- Only an admin can duplicate all 3 document types.
+- Only an admin can make a Sales Order copy from all 3 document types.
 - Salesman PATCH status/void on SO and Invoice return 403.
 - Salesman work-status PATCH remains available on Sales Orders and Invoices only.
 - Estimate work-status PATCH is removed (404).
@@ -122,18 +122,22 @@ class TestAdminEditLocking:
             assert str(found["customer_id"]) == str(doc["customer_id"])
 
 
-class TestAdminDuplicate:
-    def test_admin_duplicate_all(self, admin, created_docs):
+class TestAdminSalesOrderCopy:
+    def test_admin_copy_creates_sales_order_for_same_customer(self, admin, created_docs):
         dups = []
         for coll, doc in [("estimates", created_docs["estimate"]),
                           ("sales-orders", created_docs["sales_order"]),
                           ("invoices", created_docs["invoice"])]:
             r = admin.post(f"{API}/{coll}/{doc['id']}/duplicate", timeout=20)
-            assert r.status_code == 200, f"{coll} dup failed: {r.status_code} {r.text}"
+            assert r.status_code == 200, f"{coll} copy failed: {r.status_code} {r.text}"
             d = r.json()
             assert d["id"] != doc["id"]
-            assert d["number"] != doc["number"]
-            dups.append((coll, d["id"]))
+            assert d["number"].startswith("SO-")
+            assert d["status"] == "open"
+            assert str(d["customer_id"]) == str(doc["customer_id"])
+            assert d["title"].endswith("(Copy)")
+            assert d["copied_from_type"]
+            dups.append(("sales-orders", d["id"]))
         # cleanup dups
         pw = {"password": ADMIN["password"]}
         for coll, did in dups:

@@ -1,6 +1,10 @@
 # Changelog
 
 ## Oct 2026
+- **Sales Order copy workflow**: The admin-only copy action on Estimates, Sales Orders,
+  and Invoices now confirms creation of a new open Sales Order for the same customer. It
+  carries document details and line items while clearing payment, email, work-status, and
+  shipment history.
 - **Invoice PDF email delivery**: Customer invoice emails now feature a prominent secure
   **Download Invoice PDF** button, and the send dialog makes this clear to staff. Managed
   email attachment delivery is unavailable, so protected PDF links remain the safe method.

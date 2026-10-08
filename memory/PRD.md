@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Admin-only **Create Sales Order Copy** actions on Estimates, Sales
+  Orders, and Invoices now show a confirmation popup and create a new open Sales Order for
+  the same customer. Customer details, pricing, and line items carry over; payments,
+  email history, production work status, and shipment tracking reset.
 - **October 2026**: Every customer invoice email now presents a prominent, secure
   **Download Invoice PDF** button. The managed email service does not support attachments,
   so the button delivers the same protected PDF without weakening document security.
@@ -52,8 +56,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
   Sales-copy failures are logged without interrupting customer delivery.
 - **October 2026**: Removed work status from Estimates only. Estimate tables, PDFs, and
   API updates no longer expose it; Sales Orders and Invoices retain their work statuses.
-- **October 2026**: Document editing and duplication are now admin-only for Estimates,
-  Sales Orders, and Invoices. Every document permanently retains the customer assigned at
+- **October 2026**: Document Sales Order copies remain admin-only for Estimates, Sales
+  Orders, and Invoices. Every document permanently retains the customer assigned at
   creation, even for admins; salesmen retain their limited work-status updates only.
 - **September 2026**: Document payment state now identifies the customer payment source:
   `Stripe Deposit $…` or `Stripe Paid $…` on Estimates, Sales Orders, and Invoices.
@@ -189,6 +193,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Copy-flow API checks passed 8/8. A live Estimate action confirmation
+  created an open Sales Order with the same customer and line items; temporary source and
+  copied records were removed. Backend compile and frontend build passed.
 - October 2026: Invoice email markup verified the prominent secure **Download Invoice PDF**
   button and its protected link. The invoice-send dialog also tells staff that the button is
   included; temporary QA data was removed. Backend compile and frontend build passed.

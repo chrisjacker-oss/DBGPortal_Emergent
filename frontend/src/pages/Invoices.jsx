@@ -211,8 +211,13 @@ export default function Invoices() {
   };
   const sendEmail = (id) => { const r = rows.find((x) => x.id === id); if (r) setSendDoc(r); };
   const duplicate = async (id) => {
-    try { const { data } = await api.post(`/invoices/${id}/duplicate`); toast.success(`Copied → ${data.number}`); load(); }
-    catch (e) { toast.error(e.response?.data?.detail || "Copy failed"); }
+    try {
+      const { data } = await api.post(`/invoices/${id}/duplicate`);
+      toast.success(`Sales Order ${data.number} created`);
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Could not create sales order");
+    }
   };
 
   const visible = rows.filter((r) => {
@@ -448,12 +453,12 @@ export default function Invoices() {
                         { label: "Email to customer", icon: <EnvelopeSimple size={16} />, onClick: () => sendEmail(r.id), testid: `send-invoice-${r.id}`, hidden: r.voided },
                         { label: "COD/Deposit Email", icon: <CreditCard size={16} />, onClick: () => setPaymentDoc(r), testid: `payment-invoice-${r.id}`, hidden: r.voided || r.status === "paid" },
                         {
-                          label: "Create a copy",
+                          label: "Create Sales Order Copy",
                           icon: <CopySimple size={16} />,
                           onClick: () => setActionConfirm({
-                            title: `Copy Invoice ${r.number}`,
-                            description: "Create a new editable copy of this invoice.",
-                            confirmLabel: "Create copy",
+                            title: `Create Sales Order from ${r.number}?`,
+                            description: `Create a new Sales Order for ${r.customer_name} with this invoice's details.`,
+                            confirmLabel: "Create sales order",
                             onConfirm: () => duplicate(r.id),
                           }),
                           testid: `duplicate-invoice-${r.id}`,

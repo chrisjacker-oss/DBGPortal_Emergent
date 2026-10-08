@@ -1914,38 +1914,45 @@ _DUP_STRIP = {
     "email_status", "email_to", "email_sent_at", "email_opened_at", "email_token", "email_id",
     "sales_order_id", "estimate_id", "invoice_id", "converted_invoice_id", "from_estimate",
     "paid_at", "amount_paid", "balance_due", "payments", "stripe_payment_intent_id", "stripe_session_id",
+    "paid_via", "payment_method", "payment_notes", "last_payment_method",
+    "last_payment_reference", "in_zero", "in_zero_updated_at",
+    "work_status", "tracking_number", "shipped_date", "fulfilled_at",
     "commission_po", "commission_po_number", "commission_paid_at", "commission_paid",
     "voided", "voided_at", "voided_by", "voided_reason", "fulfilled_at",
     "terms_start_date", "payment_due_date", "past_due_sent_at",
     "customer_approved", "customer_approved_at", "customer_approved_by",
     "customer_name", "salesman_name", "contact_name", "internal_notes",
+    "copied_from_type", "copied_from_id", "copied_from_number",
 }
 
 
-async def _duplicate_document(collection, source_id: str, kind: str, prefix: str, counter_key: str, status: str):
+async def _create_sales_order_copy(collection, source_id: str, kind: str):
     src = await get_or_404(collection, source_id, kind)
     doc = {k: v for k, v in src.items() if k not in _DUP_STRIP}
     doc["title"] = ((src.get("title") or "").strip() + " (Copy)").strip()
-    doc["status"] = status
-    doc["number"] = await next_number(prefix, counter_key, collection, start=29500)
+    doc["status"] = "open"
+    doc["number"] = await next_number("SO", "sales_orders", db.sales_orders, start=29500)
     doc["created_at"] = now_iso()
-    res = await collection.insert_one(doc)
-    return await enrich_customer(clean(await collection.find_one({"_id": res.inserted_id})))
+    doc["copied_from_type"] = kind
+    doc["copied_from_id"] = str(src["_id"])
+    doc["copied_from_number"] = src.get("number")
+    res = await db.sales_orders.insert_one(doc)
+    return await enrich_customer(clean(await db.sales_orders.find_one({"_id": res.inserted_id})))
 
 
 @api_router.post("/estimates/{eid}/duplicate")
 async def duplicate_estimate(eid: str, user: dict = Depends(require_admin)):
-    return await _duplicate_document(db.estimates, eid, "Estimate", "EST", "estimates", "draft")
+    return await _create_sales_order_copy(db.estimates, eid, "Estimate")
 
 
 @api_router.post("/sales-orders/{sid}/duplicate")
 async def duplicate_sales_order(sid: str, user: dict = Depends(require_admin)):
-    return await _duplicate_document(db.sales_orders, sid, "Sales order", "SO", "sales_orders", "open")
+    return await _create_sales_order_copy(db.sales_orders, sid, "Sales Order")
 
 
 @api_router.post("/invoices/{iid}/duplicate")
 async def duplicate_invoice(iid: str, user: dict = Depends(require_admin)):
-    return await _duplicate_document(db.invoices, iid, "Invoice", "INV", "invoices", "unpaid")
+    return await _create_sales_order_copy(db.invoices, iid, "Invoice")
 
 
 class InternalNotesInput(BaseModel):
