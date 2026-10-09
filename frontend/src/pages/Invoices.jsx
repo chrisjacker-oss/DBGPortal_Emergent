@@ -375,7 +375,20 @@ export default function Invoices() {
                 <tr key={r.id} ref={r.id === focusId ? focusRef : null} data-testid={`invoice-row-${r.id}`} className={`border-b border-border last:border-0 hover:bg-secondary/50 ${r.id === focusId ? "ring-2 ring-[#0E7490] ring-inset bg-[#06B6D4]/5" : ""}`}>
                   {canDeleteCurrentInvoices && <td className="px-4 py-3"><input type="checkbox" checked={!!sel[r.id]} onChange={() => setSel((s) => ({ ...s, [r.id]: !s[r.id] }))} data-testid={`invoice-select-${r.id}`} className="h-4 w-4 accent-[#0A0A0A]" /></td>}
                   <td className="px-6 py-3 font-mono">
-                    <button onClick={() => openDetail(r)} data-testid={`invoice-number-${r.id}`} className="text-[#0E7490] hover:underline font-semibold">{r.number}</button>
+                    <button
+                      onClick={() => {
+                        if (canEditDocuments && !r.voided) {
+                          setEditing(r);
+                          setOpen(true);
+                          return;
+                        }
+                        openDetail(r);
+                      }}
+                      data-testid={`invoice-number-${r.id}`}
+                      className="text-[#0E7490] hover:underline font-semibold"
+                    >
+                      {r.number}
+                    </button>
                   </td>
                   {isPaid && (
                     <td className="px-6 py-3">

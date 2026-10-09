@@ -1,6 +1,8 @@
 # Changelog
 
 ## Oct 2026
+- **Invoice number Quick Edit**: Selecting an invoice number now opens the Quick Edit
+  document builder for admins and salesmen; other roles keep the read-only detail view.
 - **Critical code-quality hardening**: Replaced named test credentials with environment
   variables, stabilized high-risk loading effects, surfaced previously silent client errors,
   and replaced reviewed array-index keys. The requested large component and server-function

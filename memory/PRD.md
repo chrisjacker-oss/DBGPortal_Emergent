@@ -26,6 +26,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Selecting an Invoice number now opens the Quick Edit document builder
+  directly for admins and salesmen. Other roles continue to receive the read-only detail view.
 - **October 2026**: Applied critical code-quality hardening: named test credentials now
   come from environment variables, async loading uses stable React callbacks, silent catches
   report errors, and reviewed list keys are stable. The larger component/server refactor is
@@ -197,6 +199,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Admin browser testing verified an Invoice number opens Quick Edit with a
+  locked customer selector and save control, rather than the read-only detail dialog.
+  Temporary QA data was removed and the frontend production build passed.
 - October 2026: Frontend production build is clean. Targeted auth/portal tests passed 5/5,
   static Python checks found no undefined names, and Work Orders, Time Clock, Sales Orders,
   and Install Calendar loaded successfully in the browser after dependency cleanup.
