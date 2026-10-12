@@ -4862,9 +4862,25 @@ async def send_email(*, to, subject: str, html: str) -> Optional[str]:
         resp.raise_for_status()
         return resp.json().get("id")
     except httpx.HTTPStatusError as e:
-        logger.error(f"Email send failed: {e.response.status_code} {e.response.text}")
-        if e.response.status_code == 429:
-            raise HTTPException(status_code=429, detail="Email rate limit reached, please try again shortly")
+        status = e.response.status_code
+        try:
+            provider_error = e.response.json()
+        except ValueError:
+            provider_error = {}
+        provider_code = str(provider_error.get("code") or "")
+        provider_message = str(provider_error.get("message") or "").strip()
+        logger.error(f"Email send failed: {status} {e.response.text}")
+        if status == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="Email rate limit reached, please try again shortly",
+            )
+        if provider_code in {"insufficient_credits", "integration_disabled", "daily_limit_reached"}:
+            logger.warning(f"Email service unavailable: {provider_code} {provider_message}")
+            raise HTTPException(status_code=503, detail="Email is temporarily unavailable")
+        if 400 <= status < 500:
+            detail = provider_message or "Recipient address was rejected by the email provider"
+            raise HTTPException(status_code=422, detail=detail)
         raise HTTPException(status_code=502, detail="Failed to send email")
     except Exception as e:
         logger.error(f"Email send error: {str(e)}")
@@ -5261,20 +5277,39 @@ async def _send_document(collection, doc_id: str, kind_label: str, recipients: O
     company = await get_settings()
     # Send an individual email to each recipient with its own tracking pixel so we know exactly who opened.
     receipts, first_token, last_email_id, failed = [], None, None, []
+    failure_statuses, failure_details = [], []
     for addr in to_list:
         rtoken = secrets.token_urlsafe(16)
         html = render_doc_email(kind_label, doc, cname, rtoken, company, pdf_url=pdf_url, note=note)
         try:
             last_email_id = await send_email(to=addr, subject=f"{kind_label} {doc.get('number', '')} from DBG Signs, Inc.", html=html)
-        except Exception as e:
-            logger.warning(f"Email to {addr} failed: {e}")
+        except HTTPException as error:
+            logger.warning(f"Email to {addr} failed: {error.detail}")
             failed.append(addr)
+            failure_statuses.append(error.status_code)
+            failure_details.append(str(error.detail))
+            continue
+        except Exception as error:
+            logger.exception(f"Unexpected email failure for {addr}: {error}")
+            failed.append(addr)
+            failure_statuses.append(502)
             continue
         first_token = first_token or rtoken
         await db.email_tracking.insert_one({"token": rtoken, "collection": collection.name, "doc_id": str(doc["_id"]), "email": addr, "created_at": now_iso()})
         receipts.append({"email": addr, "token": rtoken, "opened_at": None})
     if not receipts:
-        raise HTTPException(status_code=502, detail="Could not send to any of the selected recipients")
+        if 429 in failure_statuses:
+            status = 429
+            detail = "Email rate limit reached, please try again shortly"
+        elif 503 in failure_statuses:
+            status = 503
+            detail = "Email is temporarily unavailable"
+        else:
+            status = 422
+            detail = "Could not send to these recipients: " + ", ".join(failed)
+            if failure_details:
+                detail = f"{detail}. {failure_details[0]}"
+        raise HTTPException(status_code=status, detail=detail)
     sent_to = [r["email"] for r in receipts]
     # Blind copy to the shop so there is always an internal record of what was sent (no tracking pixel).
     try:
@@ -6708,19 +6743,39 @@ async def send_proof(pid: str, payload: ProofSendInput = ProofSendInput(), user:
     cname = (cust.get("company") or cust.get("name")) if cust else "Customer"
     company = await get_settings()
     sent_to, failed, receipts = [], [], []
+    failure_statuses, failure_details = [], []
     for addr in to_list:
         token = secrets.token_urlsafe(16)
         html = render_proof_email(proof, v, cname, token, company)
         try:
             await send_email(to=addr, subject=f"Artwork proof {proof.get('number', '')} from DBG Signs, Inc.", html=html)
-        except Exception as e:
-            logger.warning(f"Proof email to {addr} failed: {e}")
-            failed.append(addr); continue
+        except HTTPException as error:
+            logger.warning(f"Proof email to {addr} failed: {error.detail}")
+            failed.append(addr)
+            failure_statuses.append(error.status_code)
+            failure_details.append(str(error.detail))
+            continue
+        except Exception as error:
+            logger.exception(f"Unexpected proof email failure for {addr}: {error}")
+            failed.append(addr)
+            failure_statuses.append(502)
+            continue
         await db.proof_tokens.insert_one({"token": token, "proof_id": pid, "version": v["version"], "email": addr, "created_at": now_iso(), "opened_at": None})
         sent_to.append(addr)
         receipts.append({"email": addr, "token": token, "opened_at": None})
     if not sent_to:
-        raise HTTPException(status_code=502, detail="Could not send to any of the selected recipients")
+        if 429 in failure_statuses:
+            status = 429
+            detail = "Email rate limit reached, please try again shortly"
+        elif 503 in failure_statuses:
+            status = 503
+            detail = "Email is temporarily unavailable"
+        else:
+            status = 422
+            detail = "Could not send to these recipients: " + ", ".join(failed)
+            if failure_details:
+                detail = f"{detail}. {failure_details[0]}"
+        raise HTTPException(status_code=status, detail=detail)
     # mark the current version as sent
     await db.proofs.update_one(
         {"_id": oid(pid), "versions.version": v["version"]},

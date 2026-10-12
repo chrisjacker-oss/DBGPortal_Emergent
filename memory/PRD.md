@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Document and proof email sends now surface email-provider recipient
+  rejections as clear in-app validation errors instead of a generic Cloudflare/origin 502.
+  Provider rate-limit and temporary-service responses retain their appropriate retry status.
 - **October 2026**: Settings now includes an admin-managed **Checks / remit-to address**.
   When set, it appears only on Invoice PDFs, invoice emails, and the customer portal so
   customers know where to mail check payments.
@@ -202,6 +205,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Production RCA confirmed the email service is configured and healthy; the
+  affected recipient was rejected as undeliverable by the provider. A controlled end-to-end
+  Invoice send now returns an actionable HTTP 422 instead of 502, and test data was removed.
 - October 2026: A rendered Invoice PDF, email-template assertion, and customer-portal
   browser check all displayed the alternate check-remittance address clearly. Original
   settings and every temporary invoice/customer/portal account were restored afterward.

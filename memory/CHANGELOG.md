@@ -1,6 +1,9 @@
 # Changelog
 
 ## Oct 2026
+- **Email delivery errors**: Document and artwork-proof send paths now map provider recipient
+  rejections to actionable validation messages instead of generic 502/Cloudflare failures.
+  Rate-limit and temporary-provider errors retain retry-appropriate responses.
 - **Alternate check-remittance address**: Added a Checks / remit-to field in Settings. Its
   value appears on Invoice PDFs, invoice emails, and the customer portal for check payments.
 - **Invoice number Quick Edit**: Selecting an invoice number now opens the Quick Edit
