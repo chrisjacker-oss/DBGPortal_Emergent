@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Google mailbox sending through `sales@dbgsigns.com` is deferred. The
+  managed sender remains active until the required Google Client ID, Client Secret, and
+  Gmail API permissions are provided and configured.
 - **October 2026**: Document and proof email sends now surface email-provider recipient
   rejections as clear in-app validation errors instead of a generic Cloudflare/origin 502.
   Provider rate-limit and temporary-service responses retain their appropriate retry status.

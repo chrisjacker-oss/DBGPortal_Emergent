@@ -1,6 +1,8 @@
 # Changelog
 
 ## Oct 2026
+- **Gmail sender deferred**: Customer-facing Gmail delivery through `sales@dbgsigns.com`
+  remains deferred until Google OAuth client credentials and Gmail API permissions are ready.
 - **Email delivery errors**: Document and artwork-proof send paths now map provider recipient
   rejections to actionable validation messages instead of generic 502/Cloudflare failures.
   Rate-limit and temporary-provider errors retain retry-appropriate responses.
