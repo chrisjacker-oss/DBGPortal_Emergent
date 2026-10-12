@@ -1,6 +1,8 @@
 # Changelog
 
 ## Oct 2026
+- **Google mailbox validation**: User confirmed the completed `sales@dbgsigns.com` mailbox
+  setup and email flow worked in the live app.
 - **Google Gmail sender preparation**: Added a secret-safe Settings sender-status card,
   OAuth state/token protection, and a Gmail API sender that becomes required only after
   `sales@dbgsigns.com` completes consent. Production secret setup and user authorization are

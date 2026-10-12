@@ -212,6 +212,8 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: User confirmed the completed Google mailbox setup and current email flow
+  worked in the live app.
 - October 2026: Gmail sender status correctly reports preview credentials without exposing
   secrets. The OAuth start URL was validated for the `sales@dbgsigns.com` login hint, secure
   state, Gmail scopes, and callback URI; no Google account has authorized sending yet.
