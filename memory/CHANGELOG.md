@@ -1,6 +1,10 @@
 # Changelog
 
 ## Oct 2026
+- **Google Gmail sender preparation**: Added a secret-safe Settings sender-status card,
+  OAuth state/token protection, and a Gmail API sender that becomes required only after
+  `sales@dbgsigns.com` completes consent. Production secret setup and user authorization are
+  still pending.
 - **Gmail sender deferred**: Customer-facing Gmail delivery through `sales@dbgsigns.com`
   remains deferred until Google OAuth client credentials and Gmail API permissions are ready.
 - **Email delivery errors**: Document and artwork-proof send paths now map provider recipient

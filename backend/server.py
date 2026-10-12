@@ -10,13 +10,15 @@ import secrets
 import asyncio
 import hmac
 import base64
+import hashlib
 import re
 import io
 import uuid
 import ipaddress
+from email.message import EmailMessage
 from html import escape
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Annotated
 
@@ -24,6 +26,7 @@ import bcrypt
 import jwt
 import httpx
 import stripe
+from cryptography.fernet import Fernet, InvalidToken
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -33,6 +36,7 @@ from bson import ObjectId, json_util
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, UploadFile, File, Form, Query, Header
+from fastapi.responses import RedirectResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, BeforeValidator, ConfigDict
@@ -320,6 +324,7 @@ class SettingsInput(BaseModel):
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
     remit_to_address: Optional[str] = ""
+    email_sender_mode: str = "managed"
     company_phone: Optional[str] = ""
     company_web: Optional[str] = ""
     company_email: Optional[str] = ""
@@ -386,7 +391,7 @@ DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machin
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0, "idle_timeout_min": 90.0,
                     "company_name": "DBG Signs, Inc.", "company_address": "",
                     "remit_to_address": "", "company_phone": "", "company_web": "",
-                    "company_email": ""}
+                    "company_email": "", "email_sender_mode": "managed"}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold", "idle_timeout_min"}
 CRM_BACKUP_FORMAT = "dbg-signs-crm-backup"
 CRM_BACKUP_MAX_BYTES = 100 * 1024 * 1024
@@ -1365,6 +1370,167 @@ async def read_settings(user: dict = Depends(require_staff)):
 async def write_settings(payload: SettingsInput, user: dict = Depends(require_admin)):
     await db.settings.update_one({"key": "shop"}, {"$set": payload.model_dump()}, upsert=True)
     return await get_settings()
+
+
+@api_router.get("/settings/email-sender-status")
+async def email_sender_status(user: dict = Depends(require_admin)):
+    settings = await get_settings()
+    gmail_connection = await db.email_sender_connections.find_one({"key": "gmail_sender"})
+    google_credentials_ready = bool(
+        os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET")
+    )
+    gmail_connected = bool(gmail_connection and gmail_connection.get("refresh_token_encrypted"))
+    google_required = settings.get("email_sender_mode") == "google_required"
+    return {
+        "active_sender": "google" if google_required else "managed",
+        "active_sender_label": "Google mailbox" if google_required else "Managed email service",
+        "reply_to": EMAIL_REPLY_TO or "",
+        "managed_sender_ready": bool(EMAIL_KEY),
+        "gmail_credentials_ready": google_credentials_ready,
+        "gmail_connected": gmail_connected,
+        "gmail_sender_email": (gmail_connection or {}).get("sender_email") or "",
+        "google_required": google_required,
+        "recipient_guidance": "Recipient addresses must be valid and deliverable.",
+    }
+
+
+GOOGLE_GMAIL_SCOPES = (
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.labels",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+)
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+GOOGLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+GOOGLE_REQUIRED_SENDER = "sales@dbgsigns.com"
+
+
+def _google_client_config() -> tuple[str, str, str]:
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    frontend_url = os.environ.get("FRONTEND_URL")
+    if not client_id or not client_secret or not frontend_url:
+        raise HTTPException(status_code=503, detail="Google mailbox setup is incomplete")
+    return client_id, client_secret, frontend_url.rstrip("/")
+
+
+def _google_redirect_uri() -> str:
+    _, _, frontend_url = _google_client_config()
+    return f"{frontend_url}/api/oauth/gmail/callback"
+
+
+def _gmail_token_cipher() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(get_jwt_secret().encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _encrypt_gmail_token(token: str) -> str:
+    return _gmail_token_cipher().encrypt(token.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_gmail_token(token: str) -> str:
+    try:
+        return _gmail_token_cipher().decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken as error:
+        raise HTTPException(status_code=503, detail="Reconnect the Google mailbox") from error
+
+
+@api_router.get("/oauth/gmail/start")
+async def start_gmail_oauth(user: dict = Depends(require_admin)):
+    client_id, _, _ = _google_client_config()
+    state = secrets.token_urlsafe(32)
+    await db.gmail_oauth_states.insert_one(
+        {
+            "state": state,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+            "created_by": user["id"],
+        }
+    )
+    params = {
+        "client_id": client_id,
+        "redirect_uri": _google_redirect_uri(),
+        "response_type": "code",
+        "scope": " ".join(GOOGLE_GMAIL_SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": state,
+        "login_hint": GOOGLE_REQUIRED_SENDER,
+    }
+    return {"authorization_url": f"{GOOGLE_AUTHORIZE_URL}?{urlencode(params)}"}
+
+
+@api_router.get("/oauth/gmail/callback")
+async def finish_gmail_oauth(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None):
+    _, client_secret, frontend_url = _google_client_config()
+    settings_url = f"{frontend_url}/settings"
+    if error or not code or not state:
+        return RedirectResponse(url=f"{settings_url}?gmail=error")
+    state_doc = await db.gmail_oauth_states.find_one_and_delete({"state": state})
+    state_expires_at = (state_doc or {}).get("expires_at")
+    if isinstance(state_expires_at, datetime) and state_expires_at.tzinfo is None:
+        state_expires_at = state_expires_at.replace(tzinfo=timezone.utc)
+    if not state_doc or not state_expires_at or state_expires_at < datetime.now(timezone.utc):
+        return RedirectResponse(url=f"{settings_url}?gmail=error")
+    client_id, _, _ = _google_client_config()
+    async with httpx.AsyncClient(timeout=30) as client:
+        token_response = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": _google_redirect_uri(),
+                "grant_type": "authorization_code",
+            },
+        )
+        if token_response.status_code >= 400:
+            logger.error(f"Google OAuth token exchange failed: {token_response.text}")
+            return RedirectResponse(url=f"{settings_url}?gmail=error")
+        tokens = token_response.json()
+        access_token = str(tokens.get("access_token") or "")
+        userinfo_response = await client.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if userinfo_response.status_code >= 400:
+        logger.error(f"Google OAuth userinfo failed: {userinfo_response.text}")
+        return RedirectResponse(url=f"{settings_url}?gmail=error")
+    sender_email = str(userinfo_response.json().get("email") or "").lower()
+    if sender_email != GOOGLE_REQUIRED_SENDER:
+        logger.warning(f"Google mailbox connection rejected for {sender_email or 'unknown account'}")
+        return RedirectResponse(url=f"{settings_url}?gmail=wrong-account")
+    existing = await db.email_sender_connections.find_one({"key": "gmail_sender"})
+    refresh_token = str(tokens.get("refresh_token") or "")
+    if not refresh_token and existing:
+        refresh_token = _decrypt_gmail_token(existing.get("refresh_token_encrypted") or "")
+    if not refresh_token:
+        return RedirectResponse(url=f"{settings_url}?gmail=error")
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(tokens.get("expires_in") or 3600))
+    await db.email_sender_connections.update_one(
+        {"key": "gmail_sender"},
+        {
+            "$set": {
+                "key": "gmail_sender",
+                "sender_email": sender_email,
+                "access_token_encrypted": _encrypt_gmail_token(access_token),
+                "refresh_token_encrypted": _encrypt_gmail_token(refresh_token),
+                "expires_at": expires_at,
+                "connected_at": now_iso(),
+            }
+        },
+        upsert=True,
+    )
+    await db.settings.update_one(
+        {"key": "shop"},
+        {"$set": {"email_sender_mode": "google_required"}},
+        upsert=True,
+    )
+    return RedirectResponse(url=f"{settings_url}?gmail=connected")
 
 
 @api_router.post("/settings/logo")
@@ -4845,7 +5011,7 @@ def _assert_safe_email(subject: str, html: str) -> None:
                 raise ValueError(f"Anchor text {m.group(1)!r} != real link host {real!r} (G3)")
 
 
-async def send_email(*, to, subject: str, html: str) -> Optional[str]:
+async def _send_managed_email(*, to, subject: str, html: str) -> Optional[str]:
     _assert_safe_email(subject, html)
     to_list = to if isinstance(to, list) else [to]
     to_list = [t for t in to_list if t]
@@ -4885,6 +5051,83 @@ async def send_email(*, to, subject: str, html: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Email send error: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to send email")
+
+
+async def _gmail_access_token() -> str:
+    connection = await db.email_sender_connections.find_one({"key": "gmail_sender"})
+    if not connection or not connection.get("refresh_token_encrypted"):
+        raise HTTPException(status_code=503, detail="Connect the Google mailbox before sending email")
+    expires_at = connection.get("expires_at")
+    if isinstance(expires_at, datetime) and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if isinstance(expires_at, datetime) and expires_at > datetime.now(timezone.utc) + timedelta(minutes=2):
+        return _decrypt_gmail_token(connection.get("access_token_encrypted") or "")
+    client_id, client_secret, _ = _google_client_config()
+    refresh_token = _decrypt_gmail_token(connection["refresh_token_encrypted"])
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+    if response.status_code >= 400:
+        logger.error(f"Google mailbox refresh failed: {response.text}")
+        raise HTTPException(status_code=503, detail="Reconnect the Google mailbox before sending email")
+    payload = response.json()
+    access_token = str(payload.get("access_token") or "")
+    if not access_token:
+        raise HTTPException(status_code=503, detail="Reconnect the Google mailbox before sending email")
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(payload.get("expires_in") or 3600))
+    await db.email_sender_connections.update_one(
+        {"key": "gmail_sender"},
+        {"$set": {"access_token_encrypted": _encrypt_gmail_token(access_token), "expires_at": expires_at}},
+    )
+    return access_token
+
+
+async def _send_google_email(*, to, subject: str, html: str) -> Optional[str]:
+    _assert_safe_email(subject, html)
+    recipients = to if isinstance(to, list) else [to]
+    recipients = [recipient for recipient in recipients if recipient]
+    if not recipients:
+        raise HTTPException(status_code=400, detail="At least one email recipient is required")
+    message = EmailMessage()
+    message["To"] = ", ".join(recipients)
+    message["From"] = GOOGLE_REQUIRED_SENDER
+    message["Subject"] = subject
+    message.set_content("Please view this email in an HTML-capable email client.")
+    message.add_alternative(html, subtype="html")
+    raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+    access_token = await _gmail_access_token()
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            GOOGLE_GMAIL_SEND_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"raw": raw},
+        )
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="Google email rate limit reached, please try again shortly")
+    if response.status_code in {401, 403}:
+        logger.error(f"Google mailbox authorization failed: {response.text}")
+        raise HTTPException(status_code=503, detail="Reconnect the Google mailbox before sending email")
+    if 400 <= response.status_code < 500:
+        logger.error(f"Google email request failed: {response.text}")
+        raise HTTPException(status_code=422, detail="Google rejected one or more email recipients")
+    if response.status_code >= 500:
+        logger.error(f"Google email service failed: {response.text}")
+        raise HTTPException(status_code=503, detail="Google email is temporarily unavailable")
+    return str(response.json().get("id") or "") or None
+
+
+async def send_email(*, to, subject: str, html: str) -> Optional[str]:
+    settings = await get_settings()
+    if settings.get("email_sender_mode") == "google_required":
+        return await _send_google_email(to=to, subject=subject, html=html)
+    return await _send_managed_email(to=to, subject=subject, html=html)
 
 
 def _money(n) -> str:

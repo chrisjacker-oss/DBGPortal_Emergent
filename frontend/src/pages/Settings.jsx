@@ -38,13 +38,22 @@ export default function Settings() {
   const [vaultBackups, setVaultBackups] = useState([]);
   const [vaultRunning, setVaultRunning] = useState(false);
   const [vaultDelete, setVaultDelete] = useState(null);
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [gmailConnecting, setGmailConnecting] = useState(false);
 
   const loadVault = () => api.get("/settings/backup-vault")
     .then((response) => setVaultBackups(response.data))
     .catch(() => setVaultBackups([]));
   useEffect(() => {
     api.get("/settings").then((r) => setForm(r.data));
+    api.get("/settings/email-sender-status")
+      .then((response) => setEmailStatus(response.data))
+      .catch((error) => console.error("Could not load email sender status:", error));
     loadVault();
+    const gmailState = new URLSearchParams(window.location.search).get("gmail");
+    if (gmailState === "connected") toast.success("Google mailbox connected");
+    if (gmailState === "wrong-account") toast.error("Connect the sales@dbgsigns.com Google account");
+    if (gmailState === "error") toast.error("Google mailbox connection did not complete");
   }, []);
   if (!form) return null;
 
@@ -72,9 +81,20 @@ export default function Settings() {
         company_phone: form.company_phone || "",
         company_web: form.company_web || "",
         company_email: form.company_email || "",
+        email_sender_mode: form.email_sender_mode || "managed",
       });
       toast.success("Shop settings saved");
     } catch { toast.error("Save failed"); }
+  };
+  const connectGoogleMailbox = async () => {
+    setGmailConnecting(true);
+    try {
+      const { data } = await api.get("/oauth/gmail/start");
+      window.location.assign(data.authorization_url);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Could not start Google mailbox connection");
+      setGmailConnecting(false);
+    }
   };
   const uploadLogo = async (e) => {
     const file = e.target.files?.[0];
@@ -324,6 +344,57 @@ export default function Settings() {
             <Inp label="Email" value={form.company_email || ""} onChange={set("company_email")} testid="set-company-email" />
           </div>
           <Inp label="Web address" value={form.company_web || ""} onChange={set("company_web")} testid="set-company-web" />
+        </div>
+
+        <div className="border border-border bg-card p-8 space-y-4" data-testid="email-sender-status-card">
+          <div className="overline text-muted-foreground">Email delivery</div>
+          {emailStatus ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold" data-testid="active-email-sender">
+                    {emailStatus.active_sender_label} active
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {emailStatus.reply_to ? `Reply-to: ${emailStatus.reply_to}` : "No reply-to address configured"}
+                  </div>
+                </div>
+                <span
+                  className={emailStatus.managed_sender_ready ? "tag tag-green" : "tag tag-red"}
+                  data-testid="managed-email-status"
+                >
+                  {emailStatus.managed_sender_ready ? "Ready" : "Needs setup"}
+                </span>
+              </div>
+              <div className="border-l-4 border-[#0E7490] bg-[#06B6D4]/10 px-4 py-3 text-sm">
+                <div className="font-semibold">Google mailbox sender</div>
+                <div className="mt-1 text-muted-foreground" data-testid="gmail-sender-status">
+                  {emailStatus.gmail_connected
+                    ? `Connected as ${emailStatus.gmail_sender_email}.`
+                    : emailStatus.gmail_credentials_ready
+                      ? "Credentials ready. Connect sales@dbgsigns.com to activate it."
+                      : "Setup pending. The managed sender remains active until Google is connected."}
+                </div>
+                {!emailStatus.gmail_connected && emailStatus.gmail_credentials_ready && (
+                  <Btn
+                    className="mt-3"
+                    onClick={connectGoogleMailbox}
+                    disabled={gmailConnecting}
+                    data-testid="connect-google-mailbox-button"
+                  >
+                    {gmailConnecting ? "Connecting…" : "Connect sales@dbgsigns.com"}
+                  </Btn>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground" data-testid="email-recipient-guidance">
+                {emailStatus.recipient_guidance}
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground" data-testid="email-sender-status-loading">
+              Loading sender status…
+            </div>
+          )}
         </div>
 
         <div className="border border-border bg-card p-8 space-y-4" data-testid="security-card">

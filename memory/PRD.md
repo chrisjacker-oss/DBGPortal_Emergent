@@ -26,6 +26,10 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Added a Settings email-sender status card and secure Gmail OAuth flow
+  for `sales@dbgsigns.com`. Google becomes the required sender only after the owner completes
+  consent; managed email remains active until then. Production Google secrets and consent are
+  still required before Gmail delivery can be activated.
 - **October 2026**: Google mailbox sending through `sales@dbgsigns.com` is deferred. The
   managed sender remains active until the required Google Client ID, Client Secret, and
   Gmail API permissions are provided and configured.
@@ -208,6 +212,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: Gmail sender status correctly reports preview credentials without exposing
+  secrets. The OAuth start URL was validated for the `sales@dbgsigns.com` login hint, secure
+  state, Gmail scopes, and callback URI; no Google account has authorized sending yet.
 - October 2026: Production RCA confirmed the email service is configured and healthy; the
   affected recipient was rejected as undeliverable by the provider. A controlled end-to-end
   Invoice send now returns an actionable HTTP 422 instead of 502, and test data was removed.
