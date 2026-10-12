@@ -26,6 +26,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Emergent cron (daily overdue reminders).
 
 ## Recent changes
+- **October 2026**: Settings now includes an admin-managed **Checks / remit-to address**.
+  When set, it appears only on Invoice PDFs, invoice emails, and the customer portal so
+  customers know where to mail check payments.
 - **October 2026**: Selecting an Invoice number now opens the Quick Edit document builder
   directly for admins and salesmen. Other roles continue to receive the read-only detail view.
 - **October 2026**: Applied critical code-quality hardening: named test credentials now
@@ -199,6 +202,9 @@ React frontend + FastAPI backend + MongoDB CRM for a sign shop: customers/contac
 - Doc counters: next real doc = 29500.
 
 ## Latest validation
+- October 2026: A rendered Invoice PDF, email-template assertion, and customer-portal
+  browser check all displayed the alternate check-remittance address clearly. Original
+  settings and every temporary invoice/customer/portal account were restored afterward.
 - October 2026: Admin browser testing verified an Invoice number opens Quick Edit with a
   locked customer selector and save control, rather than the read-only detail dialog.
   Temporary QA data was removed and the frontend production build passed.

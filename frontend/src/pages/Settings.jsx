@@ -68,6 +68,7 @@ export default function Settings() {
         idle_timeout_min: Number(form.idle_timeout_min || 90),
         company_name: form.company_name || "",
         company_address: form.company_address || "",
+        remit_to_address: form.remit_to_address || "",
         company_phone: form.company_phone || "",
         company_web: form.company_web || "",
         company_email: form.company_email || "",
@@ -305,6 +306,19 @@ export default function Settings() {
           <div className="overline text-muted-foreground">Company info (shown on quotes, sales orders & invoices)</div>
           <Inp label="Company name" value={form.company_name || ""} onChange={set("company_name")} testid="set-company-name" />
           <Inp label="Address" value={form.company_address || ""} onChange={set("company_address")} testid="set-company-address" />
+          <label className="block">
+            <span className="overline text-muted-foreground">Checks / remit-to address</span>
+            <textarea
+              value={form.remit_to_address || ""}
+              onChange={set("remit_to_address")}
+              data-testid="set-remit-to-address"
+              rows={3}
+              className="mt-1 w-full border border-input bg-card px-3 py-2 text-sm rounded-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              Shown on invoice PDFs, invoice emails, and the customer portal for check payments.
+            </span>
+          </label>
           <div className="grid grid-cols-2 gap-4">
             <Inp label="Phone" value={form.company_phone || ""} onChange={set("company_phone")} testid="set-company-phone" />
             <Inp label="Email" value={form.company_email || ""} onChange={set("company_email")} testid="set-company-email" />

@@ -84,6 +84,16 @@ export default function Portal() {
           <StatCard testid="portal-reorders" label="Reorder Requests" value={data.reorders.length} accent="#D946EF" />
         </div>
 
+        {data.remit_to_address && (
+          <div className="border-l-4 border-[#0E7490] bg-[#06B6D4]/10 px-5 py-4" data-testid="portal-remit-to-address">
+            <div className="overline text-foreground">Paying by check?</div>
+            <div className="mt-2 text-sm text-muted-foreground">Mail checks to:</div>
+            <div className="mt-1 whitespace-pre-wrap font-semibold text-foreground">
+              {data.remit_to_address}
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="overline text-muted-foreground mb-3 flex items-center gap-2"><Receipt size={14} weight="bold" /> Order history</div>
           <div className="border border-border bg-card">

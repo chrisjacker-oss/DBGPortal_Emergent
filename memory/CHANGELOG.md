@@ -1,6 +1,8 @@
 # Changelog
 
 ## Oct 2026
+- **Alternate check-remittance address**: Added a Checks / remit-to field in Settings. Its
+  value appears on Invoice PDFs, invoice emails, and the customer portal for check payments.
 - **Invoice number Quick Edit**: Selecting an invoice number now opens the Quick Edit
   document builder for admins and salesmen; other roles keep the read-only detail view.
 - **Critical code-quality hardening**: Replaced named test credentials with environment

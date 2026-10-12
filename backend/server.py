@@ -319,6 +319,7 @@ class SettingsInput(BaseModel):
     idle_timeout_min: float = 90.0
     company_name: Optional[str] = "DBG Signs, Inc."
     company_address: Optional[str] = ""
+    remit_to_address: Optional[str] = ""
     company_phone: Optional[str] = ""
     company_web: Optional[str] = ""
     company_email: Optional[str] = ""
@@ -383,7 +384,9 @@ def clean(doc: dict) -> dict:
 DEFAULT_SETTINGS = {"shop_rate_per_hr": 65.0, "shop_sqft_per_hr": 150.0, "machine_rate_per_hr": 35.0, "machine_sqft_per_hr": 150.0, "default_markup": 2.0,
                     "laminator_rate_per_hr": 35.0, "laminator_sqft_per_hr": 150.0, "cnc_rate_per_min": 1.30, "design_rate_per_min": 1.08,
                     "default_tax_rate": 0.0, "card_surcharge_enabled": False, "card_surcharge_pct": 0.0, "low_margin_threshold": 0.0, "idle_timeout_min": 90.0,
-                    "company_name": "DBG Signs, Inc.", "company_address": "", "company_phone": "", "company_web": "", "company_email": ""}
+                    "company_name": "DBG Signs, Inc.", "company_address": "",
+                    "remit_to_address": "", "company_phone": "", "company_web": "",
+                    "company_email": ""}
 _NUMERIC_SETTINGS = {"shop_rate_per_hr", "shop_sqft_per_hr", "machine_rate_per_hr", "machine_sqft_per_hr", "laminator_rate_per_hr", "laminator_sqft_per_hr", "cnc_rate_per_min", "design_rate_per_min", "default_markup", "default_tax_rate", "card_surcharge_pct", "low_margin_threshold", "idle_timeout_min"}
 CRM_BACKUP_FORMAT = "dbg-signs-crm-backup"
 CRM_BACKUP_MAX_BYTES = 100 * 1024 * 1024
@@ -3705,10 +3708,12 @@ async def portal_orders(user: dict = Depends(get_current_user)):
     cid = str(cust["_id"])
     invoices = await db.invoices.find({"customer_id": cid, "voided": {"$ne": True}}).sort("created_at", -1).to_list(500)
     reorders = await db.reorders.find({"customer_id": cid}).sort("created_at", -1).to_list(500)
+    company = await get_settings()
     return {
         "customer": clean(cust),
         "invoices": [strip_margins({k: v for k, v in clean(i).items() if k != "internal_notes"}) for i in invoices],
         "reorders": [clean(r) for r in reorders],
+        "remit_to_address": company.get("remit_to_address") or "",
     }
 
 
@@ -4962,6 +4967,17 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
             f'<div style="font-size:13px;color:#374151;margin-top:3px;white-space:pre-wrap">{escape(shipping_address)}</div>'
             '</div>'
         )
+    remit_to_html = ""
+    remit_to_address = str(co.get("remit_to_address") or "").strip()
+    if kind_label == "Invoice" and remit_to_address:
+        remit_to_html = (
+            '<div style="margin-top:14px;padding:12px 14px;background:#F7F7F8;'
+            'border-left:3px solid #0E7490">'
+            '<div style="font-size:10px;letter-spacing:1px;color:#6B7280;'
+            'text-transform:uppercase">Checks / Remit To</div>'
+            f'<div style="font-size:13px;color:#374151;margin-top:4px;white-space:pre-wrap">{escape(remit_to_address)}</div>'
+            '</div>'
+        )
     pay_btn = ""
     if kind_label in ("Invoice", "Sales Order") and not doc.get("voided"):
         pay_url = f"{PUBLIC_BASE_URL}/pay/{token}"
@@ -5028,6 +5044,7 @@ def render_doc_email(kind_label: str, doc: dict, customer_name: str, token: str,
         f'<div style="font-size:15px;font-weight:bold;margin-top:2px">{escape(customer_name)}</div>'
         f'{attn_html}'
         f'{ship_to_html}'
+        f'{remit_to_html}'
         f'<p style="margin:16px 0 0">Please find your {escape(kind_label.lower())} for <strong>{escape(str(doc.get("title", "")))}</strong> below.</p>'
         + (f'<div style="margin:14px 0 0;background:#F7F7F8;border-left:3px solid #06B6D4;padding:12px 14px;color:#374151;white-space:pre-wrap">{escape(str(note).strip())}</div>' if note and str(note).strip() else "")
         + f'</td></tr>'
@@ -5604,6 +5621,20 @@ def build_doc_pdf(kind_label: str, doc: dict, customer: Optional[dict], logo_byt
         yy -= 17
         c.setFont("Helvetica", 9)
         for address_line in shipping_address.splitlines() or [shipping_address]:
+            for wrapped_line in simpleSplit(address_line, "Helvetica", 9, 230):
+                c.drawString(L, yy, wrapped_line)
+                yy -= 12
+
+    remit_to_address = str(co.get("remit_to_address") or "").strip()
+    if kind_label == "Invoice" and remit_to_address:
+        from reportlab.lib.utils import simpleSplit
+
+        c.setFillColor(soft)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(L, yy - 4, "CHECKS / REMIT TO")
+        yy -= 17
+        c.setFont("Helvetica", 9)
+        for address_line in remit_to_address.splitlines() or [remit_to_address]:
             for wrapped_line in simpleSplit(address_line, "Helvetica", 9, 230):
                 c.drawString(L, yy, wrapped_line)
                 yy -= 12
